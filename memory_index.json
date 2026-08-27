@@ -1,0 +1,16 @@
+{
+  "last_update": "2026-08-27T14:04:00Z",
+  "sprint_id": "001",
+  "entries": [
+    {
+      "id": "KI-001-A",
+      "summary": "On a host, run session claim from the host root after docs/active_state.json exists; session_start --boot resolves repo_root to .agents and must not be treated as the host Zero Coordinate.",
+      "routing_class": "host"
+    },
+    {
+      "id": "KI-001-B",
+      "summary": "Cursor PreToolUse hooks must emit {\"permission\":\"allow|deny\"} on stdout; wrap on_commit.py so its prose goes to stderr.",
+      "routing_class": "host"
+    }
+  ]
+}

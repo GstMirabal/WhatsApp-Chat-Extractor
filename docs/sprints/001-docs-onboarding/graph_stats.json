@@ -1,0 +1,9 @@
+{
+  "sprint_id": "001",
+  "generated_at": "2026-08-27T14:04:00Z",
+  "skipped": true,
+  "reason": "Host has fewer than ~25 source files; graphify deferred (start_workflow read_graph).",
+  "nodes": 0,
+  "edges": 0,
+  "communities": 0
+}
