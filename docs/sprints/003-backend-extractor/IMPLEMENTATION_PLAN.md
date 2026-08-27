@@ -43,7 +43,7 @@ skill (that is P2 / #004).
 
 | # | File | Operation | Risk | Assignee (proposed) | Status |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| W0 | `.agents` gitlink | pin v4.23.0 (chore, separate commit) | low | session | pending |
+| W0 | `.agents` gitlink | pin v4.23.0 (chore, separate commit) | low | session | ✅ `d1a68cf` |
 | W1 | `pyproject.toml` | create (pkg, CLI, playwright, pytest) | medium | implementer / session | pending |
 | W2 | `src/whatsapp_chat_extractor/__init__.py` | create | low | implementer / session | pending |
 | W3 | `src/whatsapp_chat_extractor/session.py` | create (browser + wait QR/ready) | high | implementer / session | pending |
@@ -173,7 +173,7 @@ plan B.
 | :--- | :--- |
 | **Approved by** | Gustavo |
 | **Date** | 2026-08-27 |
-| **Plan commit at approval** | *(filled after first commit of this file)* |
+| **Plan commit at approval** | `0fb2e70` |
 | **Remaining locks** | Active Sprint · QA + Tester · Human OK at close |
 
 **Phase 5 Approval Gate:** OK explícito de Gustavo (2026-08-27) — P1 spike plan
