@@ -44,18 +44,18 @@ skill (that is P2 / #004).
 | # | File | Operation | Risk | Assignee (proposed) | Status |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | W0 | `.agents` gitlink | pin v4.23.0 (chore, separate commit) | low | session | ✅ `d1a68cf` |
-| W1 | `pyproject.toml` | create (pkg, CLI, playwright, pytest) | medium | implementer / session | pending |
-| W2 | `src/whatsapp_chat_extractor/__init__.py` | create | low | implementer / session | pending |
-| W3 | `src/whatsapp_chat_extractor/session.py` | create (browser + wait QR/ready) | high | implementer / session | pending |
-| W4 | `src/whatsapp_chat_extractor/export_one.py` | create (abrir 1 chat + scroll texto) | high | implementer / session | pending |
-| W5 | `src/whatsapp_chat_extractor/writers.py` | create (JSON → `data/`) | medium | implementer / session | pending |
-| W6 | `src/whatsapp_chat_extractor/__main__.py` | create (entry: login / export-one) | medium | implementer / session | pending |
-| W7 | `tests/test_writers.py` (+ fixture) | create | low | implementer / session | pending |
-| W8 | `docs/architecture/EXTRACTOR_BLUEPRINT.md` | create | medium | doc_orchestrator / session | pending |
-| W9 | `docs/sprints/003-backend-extractor/SPIKE_NOTES.md` | create (bloqueos, selectores, ToS) | medium | session | pending |
-| W10 | `docs/0_SYSTEM_OVERVIEW.md` | modify (estado #003, audit stamp) | low | session | pending |
-| W11 | `docs/roadmaps/docs/extractor/002-delivery-program.md` | modify (P1 → IN_PROGRESS; CLOSED al cierre) | low | session | pending |
-| W12 | `docs/active_state.json` | modify (`current_sprint` 003, `code_containers` tras `src/`, gaps, topology) | low | topology_mapper / session | pending |
+| W1 | `pyproject.toml` | create (pkg, CLI, playwright, pytest) | medium | implementer / session | ✅ |
+| W2 | `src/whatsapp_chat_extractor/__init__.py` | create | low | implementer / session | ✅ |
+| W3 | `src/whatsapp_chat_extractor/session.py` | create (browser + wait QR/ready) | high | implementer / session | ✅ |
+| W4 | `src/whatsapp_chat_extractor/export_one.py` | create (abrir 1 chat + scroll texto) | high | implementer / session | ✅ |
+| W5 | `src/whatsapp_chat_extractor/writers.py` | create (JSON → `data/`) | medium | implementer / session | ✅ |
+| W6 | `src/whatsapp_chat_extractor/__main__.py` | create (entry: login / export-one) | medium | implementer / session | ✅ |
+| W7 | `tests/test_writers.py` (+ fixture) | create | low | implementer / session | ✅ |
+| W8 | `docs/architecture/EXTRACTOR_BLUEPRINT.md` | create | medium | doc_orchestrator / session | ✅ |
+| W9 | `docs/sprints/003-backend-extractor/SPIKE_NOTES.md` | create (bloqueos, selectores, ToS) | medium | session | ✅ |
+| W10 | `docs/0_SYSTEM_OVERVIEW.md` | modify (estado #003, audit stamp) | low | session | ✅ |
+| W11 | `docs/roadmaps/docs/extractor/002-delivery-program.md` | modify (P1 → IN_PROGRESS; CLOSED al cierre) | low | session | ✅ |
+| W12 | `docs/active_state.json` | modify (`current_sprint` 003, `code_containers` tras `src/`, gaps, topology) | low | topology_mapper / session | ✅ |
 | W13 | `docs/sprints/003-backend-extractor/IMPLEMENTATION_PLAN.md` | create (this plan) | low | session | ✅ |
 | W14 | sprint scaffold (`SPRINT_LOG`, `task_scope`, assignments) | create | low | session | pending |
 

@@ -1,11 +1,12 @@
 # System Overview: WhatsApp Chat Extractor
-**Last Audit Sprint**: #002
+**Last Audit Sprint**: #003
 **Last Audit Date**: 2026-08-27
-**Last Audit Commit SHA**: `5578cbe`
+**Last Audit Commit SHA**: *(pending close)*
 
 This is the **Documentation Entry Point**. `agents.md §0 (Entry Point)` requires every session to read this file before anything else. It is intentionally short — for the full component inventory, see `.agents/docs/architecture/topology_map.md`.
 
 **Decisions:** [ADR-0001](decisions/ADR-0001-product-scope-whatsapp-web.md) (product) · [ADR-0002](decisions/ADR-0002-delivery-program-and-layout.md) (delivery + layout)  
+**Blueprint:** [EXTRACTOR_BLUEPRINT.md](architecture/EXTRACTOR_BLUEPRINT.md)  
 **Program roadmap:** [docs/roadmaps/docs/extractor/002-delivery-program.md](roadmaps/docs/extractor/002-delivery-program.md)
 
 ---
@@ -47,7 +48,7 @@ Governance: Token-Optimized Agent Pipeline (`.agents` submodule).
                               [Local corpus: data/ (gitignored)]
 ```
 
-Component-level (Level 3) stays advisory until `code_containers` are declared when `src/` exists.
+Component-level (Level 3) stays advisory until density history exists; `code_containers` declared for `src/` in Sprint 003.
 
 ## 3. The governance hierarchy
 | Layer | Location | Role |
@@ -76,10 +77,11 @@ Run `/agents:start`. It will:
 
 | Path | Role | Status |
 | :--- | :--- | :--- |
-| `data/` | Export JSON (gitignored) | Ignore rule in #002; writes from #003+ |
-| `src/whatsapp_chat_extractor/` | Playwright/Web export package | Planned #003+ |
-| `tests/` | Pytest | Planned #003+ |
-| `pyproject.toml` | Packaging / CLI for scripts | Planned #003+ |
+| `data/` | Export JSON + browser profile (gitignored) | Writes from #003 |
+| `src/whatsapp_chat_extractor/` | Playwright/Web export package | Present (#003) |
+| `tests/` | Pytest (fixtures; no live WA) | Present (#003) |
+| `pyproject.toml` | Packaging / CLI `wa-extract` | Present (#003) |
+| `docs/architecture/EXTRACTOR_BLUEPRINT.md` | Extractor reference | Present (#003) |
 | `docs/decisions/ADR-0001-*.md` | Product scope | Present (#002) |
 | `docs/decisions/ADR-0002-*.md` | Delivery + layout | Present (#002) |
 | `docs/` / `.agents/` | Docs + framework | Present |
