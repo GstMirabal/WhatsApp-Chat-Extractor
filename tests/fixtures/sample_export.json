@@ -1,0 +1,1 @@
+{"chat_id": "fixture-1", "title": "Fixture Chat", "exported_at": "2026-08-27T00:00:00Z", "messages": [{"sender": "me", "timestamp": "09:00", "body": "ping", "order": 0}, {"sender": "contact", "timestamp": "09:01", "body": "pong", "order": 1}]}

@@ -9,6 +9,18 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · Versioning: [SemVer](
 ## [Unreleased]
 
 ### Added
+- Python package `src/whatsapp_chat_extractor/` with Playwright session, one-chat export, and `wa-extract` CLI (`login`, `export-one`). #003
+- Offline pytest for JSON writers and chat-search locator fallbacks (no live WhatsApp in CI). #003
+- `docs/architecture/EXTRACTOR_BLUEPRINT.md` and `docs/walkthroughs/EXTRACTOR_WALKTHROUGH.md`. #003
+- Spike notes with live proof: one chat → gitignored JSON (84 messages) on operator Mac. #003
+
+### Changed
+- Chat search hardened (ES/EN placeholders + icon + CSS fallbacks) after live selector miss. #003
+- `.agents` pin bumped to v4.23.0. #003
+- Program roadmap P1 marked CLOSED. #003
+
+### Fixed
+- Duplicate Claude/Cursor `PreToolUse` `on_commit` hook (non-JSON stdout) that blocked agent commits after bridge re-merge. #003
 
 ## [0.2.0] - 2026-08-27
 
