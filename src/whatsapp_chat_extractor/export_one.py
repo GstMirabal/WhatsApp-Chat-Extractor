@@ -4,19 +4,43 @@ from __future__ import annotations
 
 import logging
 import re
+import sys
 from typing import TYPE_CHECKING
 
 from whatsapp_chat_extractor.writers import MessageRecord
 
 if TYPE_CHECKING:
-    from playwright.sync_api import Page
+    from playwright.sync_api import Locator, Page
 
 logger = logging.getLogger(__name__)
 
-CHAT_SEARCH_SELECTORS = (
+# WA Web churns testids; prefer role/placeholder (ES + EN), then CSS fallbacks.
+SEARCH_ICON_SELECTORS = (
+    'span[data-icon="search"]',
+    'span[data-icon="search-refreshed"]',
+    'button[aria-label*="Search"]',
+    'button[aria-label*="Buscar"]',
     '[data-testid="chat-list-search"]',
+)
+CHAT_SEARCH_SELECTORS = (
     'div[contenteditable="true"][data-tab="3"]',
-    '[title="Search input textbox"]',
+    'div[contenteditable="true"][role="textbox"][data-tab="3"]',
+    'div[title="Search input textbox"]',
+    'div[title="Cuadro de texto de búsqueda"]',
+    '#side div[contenteditable="true"][role="textbox"]',
+    'div[contenteditable="true"][data-tab="2"]',
+)
+SEARCH_PLACEHOLDERS = (
+    "Buscar un chat o iniciar uno nuevo",
+    "Search or start new chat",
+    "Search input textbox",
+    "Buscar o empezar un chat nuevo",
+)
+SEARCH_RESULT_SELECTORS = (
+    '#pane-side div[role="listitem"]',
+    '#pane-side div[role="row"]',
+    '[data-testid="cell-frame-container"]',
+    '#side div[role="listitem"]',
 )
 MESSAGE_PANEL_SELECTORS = (
     '[data-testid="conversation-panel-messages"]',
@@ -40,6 +64,73 @@ def _first_selector(page: Page, selectors: tuple[str, ...]) -> str | None:
     return None
 
 
+def _click_search_icon(page: Page) -> None:
+    """Open the search field if WA shows an icon instead of a permanent box."""
+    icon = _first_selector(page, SEARCH_ICON_SELECTORS)
+    if icon is None:
+        return
+    try:
+        page.click(icon, timeout=3_000)
+        page.wait_for_timeout(300)
+    except Exception:
+        logger.debug("Search icon click skipped", exc_info=True)
+
+
+def _locate_search_box(page: Page) -> Locator | None:
+    """Return a Playwright locator for the chat-list search textbox."""
+    for placeholder in SEARCH_PLACEHOLDERS:
+        loc = page.get_by_placeholder(placeholder)
+        if loc.count() > 0:
+            return loc.first
+    role = page.get_by_role("textbox", name=re.compile(r"search|buscar", re.IGNORECASE))
+    if role.count() > 0:
+        return role.first
+    css = _first_selector(page, CHAT_SEARCH_SELECTORS)
+    if css is not None:
+        return page.locator(css).first
+    return None
+
+
+def _clear_and_type(page: Page, query: str) -> None:
+    """Clear the focused field and type ``query`` (contenteditable-safe)."""
+    mod = "Meta" if sys.platform == "darwin" else "Control"
+    page.keyboard.press(f"{mod}+A")
+    page.keyboard.press("Backspace")
+    page.keyboard.type(query, delay=40)
+    page.wait_for_timeout(800)
+
+
+def _type_query(page: Page, query: str) -> None:
+    """Focus search and type ``query``."""
+    _click_search_icon(page)
+    box = _locate_search_box(page)
+    if box is None:
+        raise RuntimeError(
+            "Chat search box not found; update SEARCH_* selectors in export_one.py "
+            "(see SPIKE_NOTES.md)."
+        )
+    box.click(timeout=5_000)
+    _clear_and_type(page, query)
+
+
+def _open_first_result(page: Page, timeout_ms: int) -> None:
+    """Click the first search hit, else press Enter and wait for the panel."""
+    from playwright.sync_api import Error as PlaywrightError
+
+    for selector in SEARCH_RESULT_SELECTORS:
+        loc = page.locator(selector)
+        try:
+            if loc.count() == 0:
+                continue
+            loc.first.click(timeout=5_000)
+            return
+        except PlaywrightError as exc:
+            logger.debug("Search result click miss on %s: %s", selector, exc)
+            continue
+    page.keyboard.press("Enter")
+    page.wait_for_selector(", ".join(MESSAGE_PANEL_SELECTORS), timeout=timeout_ms)
+
+
 def open_chat_by_query(page: Page, query: str, *, timeout_ms: int = 30_000) -> str:
     """Search the chat list and open the first match for ``query``.
 
@@ -54,23 +145,15 @@ def open_chat_by_query(page: Page, query: str, *, timeout_ms: int = 30_000) -> s
     Raises:
         RuntimeError: If search UI or results cannot be used.
     """
-    search = _first_selector(page, CHAT_SEARCH_SELECTORS)
-    if search is None:
-        raise RuntimeError(
-            "Chat search box not found; update CHAT_SEARCH_SELECTORS in export_one.py"
-        )
-
-    page.click(search)
-    page.fill(search, "")
-    page.type(search, query, delay=40)
-    page.keyboard.press("Enter")
-
-    panel = ", ".join(MESSAGE_PANEL_SELECTORS)
     try:
-        page.wait_for_selector(panel, timeout=timeout_ms)
+        _type_query(page, query)
+        _open_first_result(page, timeout_ms)
+        page.wait_for_selector(", ".join(MESSAGE_PANEL_SELECTORS), timeout=timeout_ms)
+    except RuntimeError:
+        raise
     except Exception as exc:
         raise RuntimeError(
-            f"Conversation panel did not open for query={query!r}"
+            f"Could not open chat for query={query!r}; see SPIKE_NOTES.md"
         ) from exc
 
     title = read_open_chat_title(page) or query

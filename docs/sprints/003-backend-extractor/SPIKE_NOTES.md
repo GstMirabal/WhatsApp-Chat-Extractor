@@ -27,7 +27,8 @@ Output path: `data/<slug>_<UTC>.json`.
 
 | # | Date (UTC) | Command | Result | Notes |
 | :--- | :--- | :--- | :--- | :--- |
-| 1 | *(pending)* | | | Live QR → export not run in CI; operator fills after first Mac run |
+| 1 | 2026-08-27 | `wa-extract export-one` (pre-fix) | FAIL | `Chat search box not found` — old selectors |
+| 2 | 2026-08-27T15:24:44Z | `wa-extract export-one --query …` | **OK** | `data/Rocio_Luca_de_Tena_20260827T152444Z.json` — **84 messages**; search fix (icon + ES/EN placeholders) |
 
 ---
 
@@ -37,11 +38,20 @@ Output path: `data/<slug>_<UTC>.json`.
 | :--- | :--- | :--- |
 | QR | `session.QR_SELECTORS` | Fragile; WA may rotate `data-testid` |
 | Ready / chat list | `session.READY_SELECTORS` | |
-| Search | `export_one.CHAT_SEARCH_SELECTORS` | |
+| Search icon | `export_one.SEARCH_ICON_SELECTORS` | Clicked first when the box is collapsed |
+| Search box | placeholders ES/EN + `CHAT_SEARCH_SELECTORS` | 2026-08-27: old `chat-list-search` alone failed on operator Mac |
+| Search results | `SEARCH_RESULT_SELECTORS` | Click first hit before falling back to Enter |
 | Message panel / rows | `MESSAGE_PANEL_*` / `MESSAGE_ROW_*` | Scroll is limited (`--scroll-passes`) |
 
 When a selector breaks, patch the constant and add a row here with the old/new
 value — do not silently invent selectors mid-run without a note.
+
+### Attempt note — search box (2026-08-27)
+
+Operator hit: `Chat search box not found; update CHAT_SEARCH_SELECTORS`.
+Fix: open search icon → placeholder/role (ES+EN) → CSS fallbacks; type via
+keyboard (contenteditable); click first result.
+
 
 ---
 

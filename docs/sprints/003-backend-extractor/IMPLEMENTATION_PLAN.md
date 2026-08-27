@@ -57,7 +57,7 @@ skill (that is P2 / #004).
 | W11 | `docs/roadmaps/docs/extractor/002-delivery-program.md` | modify (P1 → IN_PROGRESS; CLOSED al cierre) | low | session | ✅ |
 | W12 | `docs/active_state.json` | modify (`current_sprint` 003, `code_containers` tras `src/`, gaps, topology) | low | topology_mapper / session | ✅ |
 | W13 | `docs/sprints/003-backend-extractor/IMPLEMENTATION_PLAN.md` | create (this plan) | low | session | ✅ |
-| W14 | sprint scaffold (`SPRINT_LOG`, `task_scope`, assignments) | create | low | session | pending |
+| W14 | sprint scaffold (`SPRINT_LOG`, `task_scope`, assignments) | create | low | session | ✅ |
 
 ---
 
