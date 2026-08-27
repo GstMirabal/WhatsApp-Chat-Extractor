@@ -1,0 +1,132 @@
+{
+  "permissions": {
+    "defaultMode": "auto",
+    "disableBypassPermissionsMode": "disable",
+    "deny": [
+      "Bash(git push --force:*)",
+      "Bash(git push -f:*)",
+      "Bash(git reset --hard origin:*)",
+      "Bash(rm -rf /:*)"
+    ],
+    "allow": [
+      "Bash(cd:*)",
+      "Bash(jq:*)",
+      "Bash(tee:*)",
+      "Bash(xargs:*)",
+      "Bash(touch:*)",
+      "Bash(chmod:*)",
+      "Bash(which:*)",
+      "Bash(basename:*)",
+      "Bash(dirname:*)",
+      "Bash(tr:*)",
+      "Bash(cut:*)"
+    ]
+  },
+  "autoMode": {
+    "hard_deny": [
+      "$defaults",
+      "Never force-push or rewrite published git history.",
+      "Never delete a repository or wipe the filesystem root (rm -rf /).",
+      "Never exfiltrate secrets, .env contents, or credential files to external destinations."
+    ],
+    "soft_deny": [
+      "$defaults",
+      "Do not run git clean that deletes untracked files without explicit user confirmation.",
+      "Do not run docker compose down -v (volume wipe) without explicit user confirmation.",
+      "Do not run a destructive git reset --hard on the working tree without explicit user confirmation."
+    ]
+  },
+  "sandbox": {
+    "enabled": true,
+    "autoAllowBashIfSandboxed": true,
+    "filesystem": {
+      "denyRead": [
+        "./.env",
+        "./.env.*"
+      ]
+    },
+    "credentials": {
+      "files": [
+        {
+          "path": "./.env",
+          "mode": "deny"
+        }
+      ]
+    }
+  },
+  "fileCheckpointingEnabled": true,
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ -f .agents/hooks/on_init.py ]; then python3 .agents/hooks/on_init.py; else echo '\u26a0\ufe0f [.agents] hooks unavailable \u2014 initialize the submodule: git submodule update --init .agents && .agents/scripts/install.sh'; fi"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ -f .agents/hooks/on_commit.py ]; then python3 .agents/hooks/on_commit.py 1>&2; code=$?; if [ \"$code\" -eq 0 ]; then printf '%s\\n' '{\"permission\":\"allow\"}'; else printf '%s\\n' '{\"permission\":\"deny\",\"agent_message\":\"Blocked by on_commit gate\"}'; exit 2; fi; else printf '%s\\n' '{\"permission\":\"allow\"}'; fi"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ -f .agents/hooks/state_mirror.py ]; then python3 .agents/hooks/state_mirror.py; fi"
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ -f .agents/scripts/persist_session_context.py ]; then python3 .agents/scripts/persist_session_context.py; fi"
+          }
+        ]
+      }
+    ],
+    "PostCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ -f docs/active_state.json ]; then echo '[.agents] PostCompact: re-read docs/active_state.json and the current sprint task_scope.md (anti_amnesia)'; fi"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ -f .agents/scripts/check_role_artifact.py ]; then python3 .agents/scripts/check_role_artifact.py --from-hook; fi"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ -f .agents/scripts/session_end_hook.py ]; then python3 .agents/scripts/session_end_hook.py; fi"
+          }
+        ]
+      }
+    ]
+  },
+  "plansDirectory": "docs/plans"
+}

@@ -1,0 +1,22 @@
+
+# .agents Claude/Cursor bridge + graphify output (regenerated locally, never commit)
+/CLAUDE.md
+/.claude/agents/
+/.claude/commands/
+/.claude/skills/
+/.claude/settings.local.json
+/.cursor/commands/
+/.cursor/rules/
+/.cursor/agents/
+/.cursor/mcp.json
+/graphify-out/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.Python
+.env
+.env.*
+!.env.example
+.agent_state/
+docs/active_state.json
