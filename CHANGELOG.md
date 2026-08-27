@@ -9,6 +9,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · Versioning: [SemVer](
 ## [Unreleased]
 
 ### Added
+
+## [0.3.0] - 2026-08-27
+
+### Added
 - Python package `src/whatsapp_chat_extractor/` with Playwright session, one-chat export, and `wa-extract` CLI (`login`, `export-one`). #003
 - Offline pytest for JSON writers and chat-search locator fallbacks (no live WhatsApp in CI). #003
 - `docs/architecture/EXTRACTOR_BLUEPRINT.md` and `docs/walkthroughs/EXTRACTOR_WALKTHROUGH.md`. #003
