@@ -1,6 +1,6 @@
 {
-  "last_update": "2026-08-27T14:04:00Z",
-  "sprint_id": "001",
+  "last_update": "2026-08-27T14:55:00Z",
+  "sprint_id": "002",
   "entries": [
     {
       "id": "KI-001-A",
@@ -10,6 +10,16 @@
     {
       "id": "KI-001-B",
       "summary": "Cursor PreToolUse hooks must emit {\"permission\":\"allow|deny\"} on stdout; wrap on_commit.py so its prose goes to stderr.",
+      "routing_class": "host"
+    },
+    {
+      "id": "KI-002-A",
+      "summary": "Do not seal an Accepted structure ADR or execute layout changes until the human has debated product shape in chat; a premature ADR must be reverted and the plan returned to DRAFT.",
+      "routing_class": "host"
+    },
+    {
+      "id": "KI-002-B",
+      "summary": "Casual OK is not Approval Gate while the human is still clarifying product intent; keep IMPLEMENTATION_PLAN in DRAFT and stay in chat until they ask to redact the project plan.",
       "routing_class": "host"
     }
   ]

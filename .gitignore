@@ -20,3 +20,6 @@ __pycache__/
 !.env.example
 .agent_state/
 docs/active_state.json
+
+# Customer chat exports (ADR-0001 / ADR-0002) — never commit
+/data/

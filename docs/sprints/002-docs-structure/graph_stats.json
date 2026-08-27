@@ -1,0 +1,9 @@
+{
+  "sprint_id": "002",
+  "generated_at": "2026-08-27T14:55:00Z",
+  "skipped": true,
+  "reason": "Host still below ~25 application sources; graphify deferred until P1 scaffold (ADR-0002).",
+  "nodes": 0,
+  "edges": 0,
+  "communities": 0
+}
