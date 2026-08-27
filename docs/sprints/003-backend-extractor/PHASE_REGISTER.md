@@ -7,4 +7,4 @@
 | 5 Approval Gate | DONE | Gustavo OK 2026-08-27 |
 | 6 Execution | DONE (code+docs) | Package + tests green; live QR attempt pending operator |
 | 7 Double-Gate | DONE | QA RECORD (testifying); Tester APPROVED |
-| 8 Close | PENDING | Walkthrough / CHANGELOG / `/agents:close` |
+| 8 Close | DONE | Pulse OK; ledger + walkthrough; upstream draft KI-003-A |

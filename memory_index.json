@@ -1,6 +1,6 @@
 {
-  "last_update": "2026-08-27T14:55:00Z",
-  "sprint_id": "002",
+  "last_update": "2026-08-27T15:36:00Z",
+  "sprint_id": "003",
   "entries": [
     {
       "id": "KI-001-A",
@@ -20,6 +20,11 @@
     {
       "id": "KI-002-B",
       "summary": "Casual OK is not Approval Gate while the human is still clarifying product intent; keep IMPLEMENTATION_PLAN in DRAFT and stay in chat until they ask to redact the project plan.",
+      "routing_class": "host"
+    },
+    {
+      "id": "KI-003-B",
+      "summary": "Under Cursor PreToolUse, stage files (and fix-regression tests) in one Bash call, then run git commit alone in a later call — the gate reads the index before the compound command executes.",
       "routing_class": "host"
     }
   ]

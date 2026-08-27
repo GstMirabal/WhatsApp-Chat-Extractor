@@ -1,0 +1,9 @@
+{
+  "sprint_id": "003",
+  "generated_at": "2026-08-27T15:35:00Z",
+  "skipped": true,
+  "reason": "graphify CLI unavailable in host close path (Makefile breaks on spaces in repo path; venv_skillopt graphify not installed). Package exists under src/; rebuild at next close or after install.",
+  "nodes": 0,
+  "edges": 0,
+  "communities": 0
+}

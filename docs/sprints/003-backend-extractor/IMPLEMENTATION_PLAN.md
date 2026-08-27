@@ -147,13 +147,13 @@ skill (that is P2 / #004).
 
 ## Acceptance (medible)
 
-- [ ] Package + Playwright path: session → one human-selected chat → text JSON in `data/`
-- [ ] `SPIKE_NOTES.md` records result (or abort evidence)
-- [ ] `EXTRACTOR_BLUEPRINT.md` exists; BLUEPRINT gap cleared or updated
-- [ ] `python -m pytest tests/ -q` exit 0 (no live WA)
-- [ ] `code_containers` declared once `src/` exists
-- [ ] Human OK on this plan (Approval Gate) — **done 2026-08-27**
-- [ ] Human OK at close (remaining triple_lock)
+- [x] Package + Playwright path: session → one human-selected chat → text JSON in `data/`
+- [x] `SPIKE_NOTES.md` records result (or abort evidence)
+- [x] `EXTRACTOR_BLUEPRINT.md` exists; BLUEPRINT gap cleared or updated
+- [x] `python -m pytest tests/ -q` exit 0 (no live WA)
+- [x] `code_containers` declared once `src/` exists
+- [x] Human OK on this plan (Approval Gate) — **done 2026-08-27**
+- [x] Human OK at close (remaining triple_lock) — **done 2026-08-27**
 
 ---
 
