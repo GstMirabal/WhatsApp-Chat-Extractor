@@ -9,5 +9,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · Versioning: [SemVer](
 ## [Unreleased]
 
 ### Added
+
+## [0.1.0] - 2026-08-27
+
+### Added
 - Adopted Token-Optimized Agent Pipeline governance (v4.22.0) — onboarding scenario: A Greenfield. #001
 - Host documentation topology (`docs/`), System Overview, identity config, and sprint 001 closeout artifacts. #001
