@@ -1,0 +1,15 @@
+# Ruff configuration for the host project.
+#
+# Kept out of `pyproject.toml` on purpose. The `.agents` submodule carries its
+# own lint governance and `agents.md §3 strict_rule` forbids this host from
+# altering it, so a repo-wide `ruff check .` must exclude it — and adding a
+# `[tool.ruff]` key to `pyproject.toml` trips the commit gate's dependency
+# detector, which reads any new `key = value` line in a manifest as a new
+# package (see docs/audits/UPSTREAM_FINDING_005_PYPROJECT_DEPENDENCY_GATE.md).
+#
+# `.ruff.toml` takes precedence over `[tool.ruff]` in `pyproject.toml`, so the
+# settings below are the complete configuration, not an overlay.
+
+line-length = 88
+target-version = "py311"
+exclude = [".agents", ".venv"]
