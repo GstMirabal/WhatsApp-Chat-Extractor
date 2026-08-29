@@ -1,4 +1,9 @@
-"""Open one WhatsApp Web chat and collect visible text messages."""
+"""Open one WhatsApp Web chat and read the message panel one pass at a time.
+
+Single-pass primitives only. The loop that walks a whole conversation lives in
+`history.harvest_history`, because the panel virtualizes its rows and a correct
+walk needs an accumulator, not a scroll count.
+"""
 
 from __future__ import annotations
 
@@ -7,7 +12,7 @@ import re
 import sys
 from typing import TYPE_CHECKING
 
-from whatsapp_chat_extractor.writers import MessageRecord
+from whatsapp_chat_extractor.history import HarvestedRow, fallback_message_id
 
 if TYPE_CHECKING:
     from playwright.sync_api import Locator, Page
@@ -54,6 +59,14 @@ MESSAGE_ROW_SELECTORS = (
 TITLE_SELECTORS = (
     '#main header span[dir="auto"]',
     '[data-testid="conversation-info-header"] span[dir="auto"]',
+)
+# Best-effort start-of-conversation markers. WA Web does not always render one,
+# so `history.decide_stop` treats a run of empty passes as the reliable signal
+# and uses these only to report a *proven* start (`stopped_reason`).
+CHAT_START_SELECTORS = (
+    '#main [data-icon="lock-refreshed"]',
+    '#main [data-testid="msg-system"] [data-icon="lock"]',
+    '#main div.message-system [data-icon="lock"]',
 )
 
 
@@ -173,12 +186,12 @@ def read_open_chat_title(page: Page) -> str:
     return ""
 
 
-def scroll_message_panel(page: Page, *, passes: int = 8) -> None:
-    """Scroll the message panel upward to load older visible history.
+def scroll_one_pass(page: Page, *, settle_ms: int = 400) -> None:
+    """Scroll the message panel one step upward and let older rows render.
 
     Args:
         page: Page with an open conversation.
-        passes: Number of PageUp-style scrolls (spike default, not full history).
+        settle_ms: Wait after the scroll so WA Web can hydrate older rows.
     """
     panel_sel = _first_selector(page, MESSAGE_PANEL_SELECTORS)
     if panel_sel is None:
@@ -187,45 +200,67 @@ def scroll_message_panel(page: Page, *, passes: int = 8) -> None:
     handle = page.query_selector(panel_sel)
     if handle is None:
         return
-    for _ in range(passes):
-        handle.evaluate("el => { el.scrollTop = 0; }")
-        page.wait_for_timeout(400)
+    handle.evaluate("el => { el.scrollTop = 0; }")
+    page.wait_for_timeout(settle_ms)
 
 
-def collect_visible_messages(page: Page) -> list[MessageRecord]:
-    """Collect text-only messages currently in the DOM (spike, not full history).
+def at_chat_start(page: Page) -> bool:
+    """Whether a start-of-conversation marker is present in the panel.
 
     Args:
         page: Page with an open conversation.
 
     Returns:
-        Ordered ``MessageRecord`` list; empty if selectors miss.
+        bool: True when a marker is found. False is not proof of more history —
+            WA Web omits the marker in many conversations.
+    """
+    return _first_selector(page, CHAT_START_SELECTORS) is not None
+
+
+def collect_visible_rows(page: Page) -> list[HarvestedRow]:
+    """Read the text rows currently in the DOM, each with a stable identity.
+
+    Args:
+        page: Page with an open conversation.
+
+    Returns:
+        list[HarvestedRow]: Rows in document order (oldest first); empty if
+            selectors miss.
     """
     row_sel = _first_selector(page, MESSAGE_ROW_SELECTORS)
     if row_sel is None:
         logger.warning("No message rows found")
         return []
 
-    rows = page.query_selector_all(row_sel)
-    records: list[MessageRecord] = []
-    order = 0
-    for row in rows:
+    rows: list[HarvestedRow] = []
+    for row in page.query_selector_all(row_sel):
         body = _row_body(row)
         if not body:
             continue
         sender = _row_sender(row)
         timestamp = _row_timestamp(row)
-        records.append(
+        rows.append(
             {
+                "message_id": _row_id(row) or fallback_message_id(
+                    sender, timestamp, body
+                ),
                 "sender": sender,
                 "timestamp": timestamp,
                 "body": body,
-                "order": order,
             }
         )
-        order += 1
-    logger.info("Collected %s visible text messages", len(records))
-    return records
+    return rows
+
+
+def _row_id(row: object) -> str:
+    """WhatsApp's own message id, read from the row or its nearest ancestor."""
+    own = row.get_attribute("data-id")  # type: ignore[attr-defined]
+    if own:
+        return own.strip()
+    nearest = row.evaluate(  # type: ignore[attr-defined]
+        "el => el.closest('[data-id]')?.getAttribute('data-id') || ''"
+    )
+    return (nearest or "").strip()
 
 
 def _row_body(row: object) -> str:
