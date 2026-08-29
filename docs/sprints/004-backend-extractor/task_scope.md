@@ -32,19 +32,30 @@
 
 | # | File | Operation | Risk | Assignee | Model | Effort | Status |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| W0 | `docs/sprints/004-backend-extractor/IMPLEMENTATION_PLAN.md` | create | low | `principal_agent` | session | high | ⏳ |
-| W1 | `src/whatsapp_chat_extractor/history.py` | create | medium | `implementer_agent` | session | high | ⏳ |
-| W2 | `src/whatsapp_chat_extractor/export_one.py` | modify | high | `implementer_agent` | session | high | ⏳ |
-| W3 | `src/whatsapp_chat_extractor/writers.py` | modify | low | `implementer_agent` | session | high | ⏳ |
-| W4 | `src/whatsapp_chat_extractor/__main__.py` | modify | low | `implementer_agent` | session | high | ⏳ |
-| W5 | `tests/test_history.py` | create | low | `implementer_agent` | session | high | ⏳ |
-| W6 | `tests/test_writers.py` | modify | low | `implementer_agent` | session | high | ⏳ |
-| W7 | `.claude/commands/wa-export.md` | create | low | `skill_architect` | session | high | ⏳ |
-| W8 | `docs/architecture/EXTRACTOR_BLUEPRINT.md` | modify | low | `doc_orchestrator` | session | high | ⏳ |
-| W9 | `CHANGELOG.md` | modify | low | `doc_orchestrator` | session | N/A | ⏳ |
+| W0 | `docs/sprints/004-backend-extractor/IMPLEMENTATION_PLAN.md` | create | low | `doc_orchestrator` | session | high | ✅ `b0747b1` |
+| W1 | `src/whatsapp_chat_extractor/history.py` | create | medium | `implementer_agent` | session | high | ✅ `5cf5a6a` |
+| W2 | `src/whatsapp_chat_extractor/export_one.py` | modify | high | `implementer_agent` | session | high | ✅ `dba1c08` |
+| W3 | `src/whatsapp_chat_extractor/writers.py` | modify | low | `implementer_agent` | session | high | ✅ `96eeef7` |
+| W4 | `src/whatsapp_chat_extractor/__main__.py` | modify | low | `implementer_agent` | session | high | ✅ `6a745b8` |
+| W5 | `tests/test_history.py` | create | low | `implementer_agent` | session | high | ✅ `b58735d` |
+| W6 | `tests/test_writers.py` | modify | low | `implementer_agent` | session | high | ✅ `1a9fc37` |
+| W7 | `.claude/commands/wa-export.md` | create | low | `skill_architect` | session | high | ✅ `71456f6` |
+| W8 | `docs/architecture/EXTRACTOR_BLUEPRINT.md` | modify | low | `doc_orchestrator` | session | high | ✅ `e1a644e` |
+| W9 | `CHANGELOG.md` | modify | low | `doc_orchestrator` | session | N/A | ✅ `ac0eae9` |
+| W10 | `.ruff.toml` (+ `pyproject.toml`) | create | low | `implementer_agent` | session | N/A | ✅ `6b8db5e` |
+| W11 | `docs/walkthroughs/EXTRACTOR_WALKTHROUGH.md` | modify | low | `doc_orchestrator` | session | high | ✅ `9f1667b` |
 
 Note: Writes performed by sequential Cursor session; assignees name the
-Write-capable profile for `check_task_scope.py`.
+Write-capable profile for `check_task_scope.py`. W0 was first attributed to
+`principal_agent`, which holds no `Write`/`Edit`; `check_task_scope.py` rejected
+it and the plan artifact is recorded against `doc_orchestrator`.
+
+### Units added during execution (not in the approved Work table)
+
+| # | Why it was not foreseen |
+| :--- | :--- |
+| W10 | The plan's own `ruff check .` reported on the `.agents` submodule, whose lint debt `strict_rule` forbids this host from fixing. Config moved to `.ruff.toml` because a `[tool.*]` key added to `pyproject.toml` trips the commit gate's dependency detector (`UPSTREAM_FINDING_005`). |
+| W11 | Declared in the plan's Documentary impact table but omitted from the Work table. |
 
 ---
 
