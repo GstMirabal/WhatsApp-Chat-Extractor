@@ -8,6 +8,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · Versioning: [SemVer](
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-08-30
+
+> Hotfix release (RA-03), outside the sprint cycle. Merged from `hotfix/H-001` as PR #6 under explicit human authorization **without CI verification — the third such occurrence**. The four checks reported red having produced no logs at all in 2-4 seconds, the same GitHub billing signature recorded for PR #5; the code was verified locally and again on the integrated `main` tip (88 passed, `ruff` clean). Record: `docs/hotfixes/H-001-backend.md`.
+
 ### Fixed
 - `open_chat_by_query` opened no chat and still reported success, so an export could be written for **whichever conversation was already on screen** and exit `0`. Since `chat_id` is a digest and the title is never stored, the output file carried no evidence of its origin — a corpus attributed to the wrong person. Every post-condition was satisfiable by the page state that already held: the panel wait was already satisfied, the result click matched the ordinary chat list, and the title was read but never compared. The opened conversation is now matched against the query and the run aborts on mismatch or on an unreadable title. Fail-closed is deliberate: an avoidable failed run is cheaper than a mislabelled corpus. HIGH, inherited from Sprint 003. #H001
 - `read_open_chat_title(page) or query` fabricated agreement between what was asked for and what was opened, which is why the defect above could not surface. The fallback is removed. #H001
