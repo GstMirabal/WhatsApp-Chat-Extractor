@@ -398,11 +398,14 @@ def collect_visible_rows(page: Page) -> list[HarvestedRow]:
         body = _row_body(row)
         if not body:
             continue
-        sender = _row_sender(row)
+        # Read the id once and hand it on: it is a DOM round trip per row, and
+        # the direction is derived from it rather than from a second query.
+        message_id = _row_id(row)
+        sender = _row_sender(row, message_id)
         timestamp = _row_timestamp(row)
         rows.append(
             {
-                "message_id": _row_id(row) or fallback_message_id(
+                "message_id": message_id or fallback_message_id(
                     sender, timestamp, body
                 ),
                 "sender": sender,
@@ -433,7 +436,7 @@ def _row_body(row: object) -> str:
     return (selectable.inner_text() or "").strip()
 
 
-def _row_sender(row: object) -> str:
+def _row_sender(row: object, message_id: str = "") -> str:
     """Which side of the conversation a row belongs to — never who wrote it.
 
     Returns a role, not a name. The operator's data-protection constraint is
@@ -449,6 +452,10 @@ def _row_sender(row: object) -> str:
         str: ``me``, ``contact``, or ``unknown`` when the row shows neither
             side. ``unknown`` is reported rather than guessed.
     """
+    role = sender_from_message_id(message_id or _row_id(row))
+    if role:
+        return role
+
     side = row.evaluate(  # type: ignore[attr-defined]
         "el => el.closest('.message-out') ? 'me'"
         " : (el.closest('.message-in') ? 'contact' : '')"
@@ -460,6 +467,29 @@ def _row_sender(row: object) -> str:
     ):
         return "me"
     return "unknown"
+
+
+def sender_from_message_id(message_id: str) -> str:
+    """Read the direction out of WhatsApp's own message id.
+
+    A `data-id` is `<fromMe>_<chat>_<message>`, so its first component already
+    states the direction. This is checked before the class-based fallback
+    because current WA Web builds no longer put `.message-in`/`.message-out` on
+    an ancestor of the captured rows: a 513-message live export came out with
+    every single sender set to `unknown`.
+
+    Args:
+        message_id: The row's `data-id`, or any other identity string.
+
+    Returns:
+        str: ``me``, ``contact``, or ``""`` when the id carries no direction —
+            the content-hash fallback ids never do.
+    """
+    if message_id.startswith("true_"):
+        return "me"
+    if message_id.startswith("false_"):
+        return "contact"
+    return ""
 
 
 def _row_timestamp(row: object) -> str:

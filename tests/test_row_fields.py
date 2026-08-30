@@ -19,6 +19,7 @@ from whatsapp_chat_extractor.export_one import (
     _row_sender,
     _row_timestamp,
     is_load_earlier_label,
+    sender_from_message_id,
 )
 
 
@@ -37,18 +38,30 @@ class FakeNode:
 
 
 class FakeRow:
-    """A message row: a JS side verdict plus a fixed selector-to-node map."""
+    """A message row.
+
+    `data_id` defaults to empty because that is the interesting case: current WA
+    Web builds put neither `.message-in` nor `.message-out` on an ancestor, so a
+    row with no id is exactly the row that came out as `unknown` in production.
+    """
 
     def __init__(
         self,
         *,
         side: str = "",
+        data_id: str = "",
         nodes: dict[str, FakeNode] | None = None,
     ) -> None:
         self._side = side
+        self._data_id = data_id
         self._nodes = nodes or {}
 
+    def get_attribute(self, name: str) -> str | None:
+        return self._data_id if name == "data-id" else None
+
     def evaluate(self, script: str) -> str:
+        if "data-id" in script:
+            return self._data_id
         return self._side
 
     def query_selector(self, selector: str) -> FakeNode | None:
@@ -58,6 +71,40 @@ class FakeRow:
 PRE_SELECTOR = "[data-pre-plain-text]"
 META_SELECTOR = '[data-testid="msg-meta"] span'
 CHECK_SELECTOR = '[data-testid="msg-dblcheck"], [data-testid="msg-check"]'
+
+
+def test_direction_comes_from_the_message_id() -> None:
+    """The signal that actually survives WA Web rewrites.
+
+    A 513-message live export had every sender set to `unknown`: the rows carry
+    no `.message-in`/`.message-out` ancestor any more. The `data-id` states the
+    direction in its first component and did so all along.
+    """
+    assert sender_from_message_id("true_34600111222@c.us_3EB0ABC") == "me"
+    assert sender_from_message_id("false_34600111222@c.us_3EB0ABC") == "contact"
+    assert sender_from_message_id("sha1:deadbeef") == ""
+    assert sender_from_message_id("") == ""
+
+
+def test_row_with_an_outgoing_id_is_attributed_to_me() -> None:
+    row = FakeRow(data_id="true_34600111222@c.us_3EB0ABC")
+    assert _row_sender(row) == "me"
+
+
+def test_row_with_an_incoming_id_is_attributed_to_contact() -> None:
+    row = FakeRow(data_id="false_34600111222@c.us_3EB0ABC")
+    assert _row_sender(row) == "contact"
+
+
+def test_the_id_wins_over_a_stale_class_ancestor() -> None:
+    row = FakeRow(side="contact", data_id="true_34600111222@c.us_3EB0ABC")
+    assert _row_sender(row) == "me"
+
+
+def test_a_precomputed_id_is_used_without_touching_the_dom() -> None:
+    """`collect_visible_rows` reads the id once and hands it on."""
+    row = FakeRow()
+    assert _row_sender(row, "true_34600111222@c.us_3EB0ABC") == "me"
 
 
 def test_outgoing_row_is_attributed_to_me() -> None:
