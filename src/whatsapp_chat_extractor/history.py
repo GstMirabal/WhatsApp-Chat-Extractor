@@ -26,6 +26,8 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_MAX_PASSES = 2000
 DEFAULT_STALL_THRESHOLD = 3
+# Pulling older history from the phone is a network round trip, not a render.
+DEFAULT_LOAD_WAIT_MS = 15_000
 
 STOP_CHAT_START = "chat_start"
 STOP_STALLED = "stalled"
@@ -170,10 +172,10 @@ def build_result(
 ) -> HarvestResult:
     """Assemble the harvest outcome from an accumulator and a stop reason.
 
-    ``complete`` is True for both definitive stops: the chat-start marker, and a
-    run of stalled passes at the top of the panel — WhatsApp Web does not always
-    render the marker. ``stopped_reason`` keeps the two distinguishable in the
-    exported file, so a consumer can tell a proven start from an inferred one.
+    ``complete`` is True only for the chat-start marker, the one stop that
+    proves the whole history was read. ``stopped_reason`` records which
+    condition ended the run, so an inferred top (`stalled`) stays legible in the
+    exported file rather than being flattened into a boolean.
 
     Args:
         accumulator: The populated accumulator.
@@ -196,6 +198,7 @@ def harvest_history(
     *,
     max_passes: int = DEFAULT_MAX_PASSES,
     stall_threshold: int = DEFAULT_STALL_THRESHOLD,
+    load_wait_ms: int = DEFAULT_LOAD_WAIT_MS,
 ) -> HarvestResult:
     """Collect a whole conversation by scrolling upward and merging each pass.
 
@@ -203,6 +206,7 @@ def harvest_history(
         page: Page with an open conversation.
         max_passes: Hard cap on scroll passes; guarantees termination.
         stall_threshold: Consecutive passes without new rows that end the run.
+        load_wait_ms: How long one pass waits for older messages to arrive.
 
     Returns:
         HarvestResult: Ordered messages plus completeness metadata.
@@ -234,7 +238,7 @@ def harvest_history(
             passes_used=passes_used,
             max_passes=max_passes,
         )
-        if reason is None and not scroll_one_pass(page):
+        if reason is None and not scroll_one_pass(page, max_wait_ms=load_wait_ms):
             # The scroll waited for older messages and none arrived. That is the
             # stall signal, not "the collect found nothing" — a pass can legibly
             # add zero rows while the panel is still loading beneath it.

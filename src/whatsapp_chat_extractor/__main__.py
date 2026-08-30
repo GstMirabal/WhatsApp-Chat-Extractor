@@ -9,6 +9,7 @@ from pathlib import Path
 
 from whatsapp_chat_extractor.export_one import open_chat_by_query
 from whatsapp_chat_extractor.history import (
+    DEFAULT_LOAD_WAIT_MS,
     DEFAULT_MAX_PASSES,
     DEFAULT_STALL_THRESHOLD,
     harvest_history,
@@ -98,6 +99,7 @@ def cmd_export_one(args: argparse.Namespace) -> int:
                 page,
                 max_passes=args.max_passes,
                 stall_threshold=args.stall_threshold,
+                load_wait_ms=args.load_wait_ms,
             )
             export = build_export(
                 chat_title=title,
@@ -167,6 +169,15 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Consecutive passes without new messages that end the harvest "
             f"(default: {DEFAULT_STALL_THRESHOLD})"
+        ),
+    )
+    export_one.add_argument(
+        "--load-wait-ms",
+        type=int,
+        default=DEFAULT_LOAD_WAIT_MS,
+        help=(
+            "How long one pass waits for older messages to arrive from the "
+            f"phone (default: {DEFAULT_LOAD_WAIT_MS})"
         ),
     )
     export_one.set_defaults(func=cmd_export_one)
