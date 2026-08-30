@@ -37,6 +37,7 @@ copied from `config/model_tiers.json` (`F-20260825-027`).
 | # | File | Operation | Risk | Assignee | Model | Effort | Status |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | W1 | `scripts/probe_chat_start.py` | create | medium | `implementer_agent` | `claude-opus-5` | `high` | ✅ |
+| W1b | `tests/test_probe_chat_start.py` | create | medium | `implementer_agent` | `claude-opus-5` | `high` | ✅ |
 | W2 | `docs/sprints/006-backend-extractor/DOM_PROBE_NOTES.md` | create | low | `doc_orchestrator` | `composer-2.5` | — | 🟡 |
 | W3 | `docs/decisions/ADR-0004-completeness-criterion.md` | create | high | `doc_orchestrator` | `claude-opus-5` | `max` | 🔒 |
 | W4 | `src/whatsapp_chat_extractor/history.py` | modify | high | `implementer_agent` | `claude-opus-5` | `max` | 🔒 |
@@ -44,6 +45,13 @@ copied from `config/model_tiers.json` (`F-20260825-027`).
 | W6 | `src/whatsapp_chat_extractor/writers.py` | modify | medium | `implementer_agent` | `claude-opus-5` | `high` | 🔒 |
 | W7 | `docs/architecture/EXTRACTOR_BLUEPRINT.md` | modify | low | `doc_orchestrator` | `composer-2.5` | — | 🔒 |
 | W8 | `README.md` | modify | low | `doc_orchestrator` | `composer-2.5` | — | 🔒 |
+
+**W1b was added during execution, not planned.** The Phase 4.3 table shipped W1
+with no test row, and `hooks/on_commit.py` refused the probe's `fix(` commit for
+exactly that reason (`rules/code_craft.md §6`: a fix stages the test that proves
+the bug). The hook was right and the plan was short a row. W1b is W1's test, not
+new scope: it is the same unit of work, and it is deliberately **not**
+`tests/test_completeness.py`, which is W5 and stays gate-locked.
 
 **Status legend.** ✅ done · 🟡 written, awaiting the operator's probe run ·
 🔒 **not authorized**: the Approval Gate of 2026-08-30 covered W1–W2 only, so

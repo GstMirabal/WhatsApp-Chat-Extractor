@@ -132,6 +132,37 @@ _OUTSIDE_PANE_JS = """
 (el) => !el.closest('#pane-side')
 """
 
+# A tally, not a sample. `top_chrome_signatures` walks the panel in document
+# order and spends its budget on whatever comes first — in a live panel that is
+# a stack of nested wrappers and bare `<span>`s, and the encryption notice can
+# fall outside the limit entirely. That failure is silent and it points the
+# wrong way: a marker that exists but was not dumped reads exactly like H2.
+# This inventory has no budget, so a marker-like node cannot hide from it.
+_CHROME_INVENTORY_JS = """
+(panel) => {
+  const nodes = Array.from(
+    panel.querySelectorAll('[data-icon], [data-testid], [role]')
+  );
+  const chrome = nodes.filter(
+    (el) => !el.closest('[data-id], .message-in, .message-out')
+  );
+  const tally = (name) => {
+    const out = {};
+    for (const el of chrome) {
+      const value = el.getAttribute(name);
+      if (value !== null) { out[value] = (out[value] || 0) + 1; }
+    }
+    return out;
+  };
+  return {
+    data_icon: tally('data-icon'),
+    data_testid: tally('data-testid'),
+    role: tally('role'),
+    chrome_nodes: chrome.length,
+  };
+}
+"""
+
 
 def _first_present(page: Page, selectors: tuple[str, ...]) -> str | None:
     """Return the first selector of ``selectors`` that matches on ``page``.
@@ -195,6 +226,33 @@ def top_chrome_signatures(page: Page, *, limit: int = TOP_NODE_LIMIT) -> list[di
     if panel is None:
         return []
     return list(panel.evaluate(_TOP_CHROME_JS, limit))
+
+
+def chrome_attribute_inventory(page: Page) -> dict[str, Any]:
+    """Tally every structural attribute value the panel's chrome carries.
+
+    `top_chrome_signatures` samples the first nodes in document order, so a
+    marker sitting below a deep stack of wrappers can fall outside its limit.
+    That miss is indistinguishable from a marker that does not exist, which is
+    the exact confusion this sprint has to resolve — so completeness is
+    measured here instead, with no limit to fall outside of.
+
+    Args:
+        page: Page with an open conversation, scrolled to its top.
+
+    Returns:
+        dict[str, Any]: Counts per distinct ``data-icon``, ``data-testid`` and
+            ``role`` value found outside message bubbles, plus how many chrome
+            nodes were examined. Empty when the panel cannot be located.
+    """
+    panel_selector = _first_present(page, MESSAGE_PANEL_SELECTORS)
+    if panel_selector is None:
+        logger.warning("No message panel found; chrome inventory skipped")
+        return {}
+    panel = page.query_selector(panel_selector)
+    if panel is None:
+        return {}
+    return dict(panel.evaluate(_CHROME_INVENTORY_JS))
 
 
 def kind_census(page: Page) -> dict[str, Any]:
@@ -325,6 +383,7 @@ def probe_one_chat(page: Page, query: str, *, max_passes: int) -> dict[str, Any]
         "scroll": scroll,
         "marker": marker_evidence(page),
         "top_chrome": top_chrome_signatures(page),
+        "chrome_inventory": chrome_attribute_inventory(page),
         "kinds": kind_census(page),
         "search_scope": search_scope_evidence(page),
     }

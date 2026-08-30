@@ -90,6 +90,19 @@ wrong" into "there is nothing to select".
 | :--- | :--- |
 | _(pending)_ | |
 
+**Chrome attribute inventory.** The table above is a *sample*: it walks the panel
+in document order and stops at `TOP_NODE_LIMIT` nodes. A pre-run verification
+against a real Chromium proved that sample can miss a marker buried under a deep
+stack of attribute-less wrappers — which is what a live WhatsApp panel is made
+of — and a marker that exists but was not sampled reads **exactly like H2**.
+
+This inventory has no limit to fall outside of, so it is the authority for
+"there is nothing to select". Where the two disagree, the inventory wins.
+
+| `chat_id` | `data-icon` values | `data-testid` values | `role` values | Chrome nodes |
+| :--- | :--- | :--- | :--- | :--- |
+| _(pending)_ | | | | |
+
 ### Verdict
 
 **Not established.** To be written here from the probe's `summary.verdict`,
@@ -129,7 +142,36 @@ live defect.
 
 ---
 
-## 6. What happens next
+## 6. Pre-run verification of the probe itself
+
+The probe was exercised before being pointed at any real chat, because a probe
+that is wrong produces evidence that is wrong and looks exactly the same.
+
+| Harness | What it covered | Result |
+| :--- | :--- | :--- |
+| Pure logic, fake page objects | `summarize` verdicts, `scroll_to_top` termination, marker counting, kind census, scope tally, degradation on an unopenable chat | 27/27 |
+| Real Chromium, synthetic WA-shaped DOM | The actual Playwright API and the probe's JavaScript, against a panel with an encryption notice, message bubbles, an unknown medium and a stray row outside `#pane-side` | 24/24 |
+
+Neither harness is in the repository: `tests/test_completeness.py` (W5) is
+gate-locked, so writing tests into `tests/` would have breached `task_scope`.
+They live in the session scratchpad.
+
+**One real defect was found and fixed this way.** `top_chrome_signatures` spends
+its node budget in document order, and a marker sitting under ~30 nested
+wrappers — ordinary for a live WA panel — fell outside the dump. The harness
+reproduces it: the sample misses the buried marker while
+`chrome_attribute_inventory` finds it. The fix is that inventory, added in the
+same commit as the test that proves it.
+
+The defect could never have produced a wrong `complete` value: `at_chat_start`
+uses descendant CSS selectors and finds a buried marker regardless. What it
+would have corrupted is **this document** — it would have shown an empty chrome
+dump for a chat that did have a marker, and the sprint would have concluded H2
+from missing evidence rather than from absent evidence.
+
+---
+
+## 7. What happens next
 
 W3–W8 are **not authorized**. The Approval Gate of 2026-08-30 covered W1–W2
 only. Once section 3 carries a verdict, the sprint returns to the human with
