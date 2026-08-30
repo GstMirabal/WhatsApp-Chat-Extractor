@@ -106,6 +106,9 @@ SEARCH_CLICK_SELECTORS = (
 )
 # How long a click gets to produce an open conversation before it is judged.
 OPEN_SETTLE_MS = 1_500
+# Sentinel strategy: the search ran and matched nothing. Distinct from a failure
+# to open, because it says the fragment is wrong rather than the probe.
+NO_SEARCH_MATCHES = "no-search-matches"
 
 # Structural attributes only. `data-pre-plain-text`, `title`, `alt` and
 # `aria-label` are all absent by design: each can carry a person's name.
@@ -501,6 +504,14 @@ def _try_open_strategies(page: Page, query: str) -> tuple[str | None, str, dict]
     _search_for(page, query)
     evidence = search_results_evidence(page)
 
+    if not any(evidence["counts"].values()):
+        # An empty results pane is a bad fragment, not a broken probe. Run 2
+        # spent two chats and three click attempts each discovering that no
+        # conversation had those names, and reported it as an open failure --
+        # which reads as a defect and sent the diagnosis in the wrong direction.
+        logger.warning("No chat matches this fragment; nothing to open")
+        return None, NO_SEARCH_MATCHES, evidence
+
     for selector in SEARCH_CLICK_SELECTORS:
         title = _click_and_verify(page, query, selector)
         if title:
@@ -585,6 +596,10 @@ def open_for_probe(page: Page, query: str) -> tuple[str | None, str, dict]:
         return None, str(exc)[:300], {"strategy": None}
 
     diagnosis = {"strategy": strategy or None, "search_results": evidence}
+    if strategy == NO_SEARCH_MATCHES:
+        diagnosis["strategy"] = None
+        diagnosis["no_search_matches"] = True
+        return None, "No chat matched this fragment; check the name and retry", diagnosis
     if title is None:
         return None, "No strategy opened a conversation matching the query", diagnosis
     return title, "", diagnosis
@@ -639,11 +654,18 @@ def summarize(chats: list[dict[str, Any]], *, min_chats: int) -> dict[str, Any]:
         verdict = "H1"
     elif len(probed) >= min_chats and len(exhausted) >= min_chats:
         verdict = "H2"
+    unmatched = [
+        c for c in chats if (c.get("opening") or {}).get("no_search_matches")
+    ]
     return {
         "chats_requested": len(chats),
         "chats_probed": len(probed),
         "chats_with_marker": len(with_marker),
         "chats_reaching_a_top": len(exhausted),
+        # Separated from failures on purpose: a fragment naming no conversation
+        # is the operator's to fix, and reporting it as an open failure sent the
+        # diagnosis of run 2 in the wrong direction entirely.
+        "fragments_matching_no_chat": len(unmatched),
         "minimum_required": min_chats,
         "verdict": verdict,
     }
@@ -750,6 +772,12 @@ def main(argv: list[str] | None = None) -> int:
         summary["verdict"], summary["chats_probed"],
         summary["chats_requested"], summary["chats_with_marker"],
     )
+    if summary["fragments_matching_no_chat"]:
+        logger.warning(
+            "%s fragment(s) matched no conversation at all. Those are names to "
+            "correct, not probe failures.",
+            summary["fragments_matching_no_chat"],
+        )
     if summary["chats_probed"] < args.min_chats:
         logger.warning(
             "Below the %s-chat minimum: the verdict is anecdote, not evidence.",

@@ -260,6 +260,45 @@ def test_typing_into_the_message_composer_is_refused(monkeypatch) -> None:
         probe._search_for(page, "ana")
 
 
+def test_a_fragment_matching_no_chat_is_not_reported_as_a_failure(monkeypatch) -> None:
+    """Run 2's chats 4-5: the names did not exist, and it read as a defect.
+
+    An empty results pane means the fragment is wrong, not that the probe broke.
+    Reporting both the same way sent the diagnosis in the wrong direction, so
+    the two are now distinguishable in the output.
+    """
+    page = KeyboardPage()
+    monkeypatch.setattr(probe, "_search_for", lambda p, q: None)
+    monkeypatch.setattr(
+        probe, "search_results_evidence",
+        lambda p: {"counts": dict.fromkeys(probe.SEARCH_CLICK_SELECTORS, 0)},
+    )
+    clicked: list[str] = []
+    monkeypatch.setattr(
+        probe, "_click_and_verify",
+        lambda p, q, sel: clicked.append(sel),
+    )
+
+    title, error, diagnosis = probe.open_for_probe(page, "nonexistent")
+
+    assert title is None
+    assert "No chat matched this fragment" in error
+    assert diagnosis["no_search_matches"] is True
+    assert clicked == [], "the probe clicked around an empty results pane"
+
+
+def test_unmatched_fragments_are_counted_apart_from_probed_chats() -> None:
+    """The summary separates bad names from chats that failed to open."""
+    chats = [
+        {"chat_id": None, "error": "no match",
+         "opening": {"no_search_matches": True}},
+        {"chat_id": None, "error": "could not open", "opening": {"strategy": None}},
+    ]
+    summary = probe.summarize(chats, min_chats=5)
+    assert summary["fragments_matching_no_chat"] == 1
+    assert summary["chats_probed"] == 0
+
+
 def test_no_enter_fallback_exists(monkeypatch) -> None:
     """A failed open must never fall through to a keypress.
 
@@ -269,7 +308,11 @@ def test_no_enter_fallback_exists(monkeypatch) -> None:
     """
     page = KeyboardPage()
     monkeypatch.setattr(probe, "_search_for", lambda p, q: None)
-    monkeypatch.setattr(probe, "search_results_evidence", lambda p: {"counts": {}})
+    # Results are present; every click simply fails to open a matching chat.
+    monkeypatch.setattr(
+        probe, "search_results_evidence",
+        lambda p: {"counts": dict.fromkeys(probe.SEARCH_CLICK_SELECTORS, 7)},
+    )
     monkeypatch.setattr(probe, "_click_and_verify", lambda p, q, sel: None)
 
     title, strategy, _ = probe._try_open_strategies(page, "ana")
@@ -341,7 +384,9 @@ def test_the_selector_that_opens_the_chat_is_recorded(monkeypatch) -> None:
                 '#pane-side div[role="row"]': 59},
     )
     monkeypatch.setattr(probe, "_search_for", lambda p, q: None)
-    monkeypatch.setattr(probe, "search_results_evidence", lambda p: {"counts": {}})
+    monkeypatch.setattr(
+        probe, "search_results_evidence", lambda p: {"counts": page.counts}
+    )
     monkeypatch.setattr(
         probe, "_verified_title", lambda p, q: "Someone" if page.opened else None
     )

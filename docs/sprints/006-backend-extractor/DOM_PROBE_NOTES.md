@@ -220,6 +220,19 @@ Neither harness is in the repository: `tests/test_completeness.py` (W5) is
 gate-locked, so writing tests into `tests/` would have breached `task_scope`.
 They live in the session scratchpad.
 
+**A correction, recorded rather than quietly fixed.** Reviewing run 2, this
+document's author read "all three selectors matched zero nodes" for chats 4–5 as
+evidence that the typed query had reached a conversation's message composer, and
+raised it as a possible sent message. The operator supplied the actual cause:
+**no chat existed with those two names.** The search worked and correctly
+returned nothing. Focus never left the search box and nothing was sent.
+
+That was an inference recorded with the confidence of a measurement — `KI-004-A`
+committed by the agent citing it. It is kept here because the sprint's whole
+premise is that this failure mode is easy and invisible. The probe now reports
+"no chat matched this fragment" separately from "could not open", so the same
+misreading cannot be made from the output again.
+
 **A third defect is in the exporter, and is NOT fixed here.** The operator
 reported that the first search opens nothing until the chat is clicked by hand.
 `_open_first_result` (`export_one.py:177`) clicks `.first` of the earliest
