@@ -13,6 +13,28 @@ GET /repos/GstMirabal/WhastApp-Chat-Extractor/branches/main/protection
 This is a plan limitation, not a token scope problem — the operator's token
 carries `repo` and `workflow`.
 
+**Second blocker, found when the CI landed**: Actions jobs cannot start on this
+repository either. All four checks failed in 2 seconds with
+
+```
+The job was not started because recent account payments have failed
+or your spending limit needs to be increased.
+```
+
+Actions consumes billed minutes on private repositories; on public ones they are
+free. Making the repository public therefore clears both blockers at once.
+
+## Deviation on record — v0.4.0 merged without CI
+
+`ci_gate.py` exited `2` and Sprint 004 was merged anyway, on 2026-08-30, under
+explicit authorization from the repository owner. The only verification behind
+`v0.4.0` is local: `ruff check .` exit `0`, 62 passing tests, and a live export
+run, all executed on the operator's Mac. No independent infrastructure has run
+this code.
+
+Written here rather than left in a chat transcript: a release that skipped its
+gate should be legible to whoever reads this repository next.
+
 ---
 
 ## What already works on the private repository
