@@ -3,7 +3,7 @@
 **Status**: `RATIFIED`
 **Sprint of origin**: #003
 **Last Audit Sprint**: #004
-**Last Audit Date**: 2026-08-29
+**Last Audit Date**: 2026-08-30
 **Last Audit Commit SHA**: `b090ed3`
 
 ---
@@ -59,6 +59,31 @@ No personal identifier is written to disk.
 | `title` | Removed in v3. The title is hashed in `build_export` and dropped |
 | `sender` | A role — `me`, `contact`, `unknown` — never a name |
 | `timestamp` | The bracketed part of `data-pre-plain-text`; the name after it is discarded in the same expression |
+
+### Direction contract
+
+Derived from three signals in order, because no single one covers every row.
+Established by probing the live DOM (Sprint 004) after three separate
+assumption-driven attempts each shipped a wrong answer:
+
+| # | Signal | Covers | Misses |
+| :--- | :--- | :--- | :--- |
+| 1 | `tail-out` / `tail-in` (`data-testid`, `data-icon`) | First message of any run | Consecutive messages — WA draws no tail |
+| 2 | `aria-label` of the form `Name:` | Media rows (photo, voice note) | Plain consecutive text |
+| 3 | Name in `data-pre-plain-text` | Consecutive text messages | Rows with no attribute at all → `unknown` |
+
+Each label is compared with the chat title and discarded. In a one-to-one chat
+the title is the contact, so a label equal to it is `contact` and any other
+non-empty label (`Tú:`, `You:`, an own display name) is `me`.
+
+**Measured facts about the live DOM**, recorded so the next change starts from
+evidence rather than from these same three wrong guesses:
+
+| Assumption that failed | What the probe measured |
+| :--- | :--- |
+| `data-id` is `true_`/`false_` prefixed | Bare hex, e.g. `3AE791A711C2B982F858` |
+| `.message-in` / `.message-out` exist | Match **zero** rows |
+| `data-pre-plain-text` sits on the row | Sits on a descendant |
 
 This is **pseudonymization, not anonymization**, and the blueprint says so
 rather than implying more: the digest is unsalted, so a holder of the contact
@@ -121,6 +146,8 @@ truncated corpus without parsing the file.
 | Truncation is always declared | `complete` / `stopped_reason` in every export; exit `3` |
 | No name on disk | `tests/test_writers.py` asserts the name is absent from payload and filename |
 | Sender is a role, never a person | `tests/test_row_fields.py` |
+| The harvester never clicks inside a message | Candidates are panel chrome; any node under `[data-id]`/`.message-in`/`.message-out` is rejected |
+| Older history is loaded without the operator | `_click_load_earlier` matches the control by text across button and `[role=button]` |
 | Harvest always terminates | `--max-passes` hard cap, covered by `tests/test_history.py` |
 | Submodule purity | `git -C .agents status --porcelain` empty at close |
 
@@ -142,4 +169,6 @@ truncated corpus without parsing the file.
 | Stalled pass | A pass that revealed no message id not already held |
 | Row virtualization | WA Web removing off-screen message rows from the DOM |
 | Panel signature | Row count + scroll height, compared to detect real loading |
+| Bubble tail | `tail-in`/`tail-out` marker WA draws on the first message of a run |
+| Speaker label | `Name:` text read only to compare with the chat title, never stored |
 | Pseudonymous id | `chat_` + digest of the title; stable, name-free, unsalted |

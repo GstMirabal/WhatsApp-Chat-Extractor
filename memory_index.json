@@ -1,6 +1,6 @@
 {
-  "last_update": "2026-08-27T15:36:00Z",
-  "sprint_id": "003",
+  "last_update": "2026-08-30T07:55:00Z",
+  "sprint_id": "004",
   "entries": [
     {
       "id": "KI-001-A",
@@ -25,6 +25,31 @@
     {
       "id": "KI-003-B",
       "summary": "Under Cursor PreToolUse, stage files (and fix-regression tests) in one Bash call, then run git commit alone in a later call — the gate reads the index before the compound command executes.",
+      "routing_class": "host"
+    },
+    {
+      "id": "KI-004-A",
+      "summary": "Never theorize about a third-party DOM: write a probe that dumps the real attribute chain first, because three successive selector hypotheses for WhatsApp message direction were each wrong and each shipped.",
+      "routing_class": "host"
+    },
+    {
+      "id": "KI-004-B",
+      "summary": "Verify an export by field integrity, not by message count: 217 messages looked like success while 214 of them carried a clock in sender and body text in timestamp.",
+      "routing_class": "host"
+    },
+    {
+      "id": "KI-004-C",
+      "summary": "A harvest that stops without positive proof of the chat start must report complete:false; treating a stall as completion produced a truncated corpus labelled complete.",
+      "routing_class": "host"
+    },
+    {
+      "id": "KI-004-D",
+      "summary": "Never build a click target from broad selectors such as a or [tabindex] inside content: scope to panel chrome and reject any node inside a message bubble, or the harvester clicks links in the operator's live session.",
+      "routing_class": "host"
+    },
+    {
+      "id": "KI-004-E",
+      "summary": "Playwright needs the real filesystem: under the agent sandbox Chromium fails to create its ProcessSingleton socket, so live browser runs must be issued outside it.",
       "routing_class": "host"
     }
   ]
