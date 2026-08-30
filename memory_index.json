@@ -1,6 +1,6 @@
 {
-  "last_update": "2026-08-30T07:55:00Z",
-  "sprint_id": "004",
+  "last_update": "2026-08-30T09:20:00Z",
+  "sprint_id": "005",
   "entries": [
     {
       "id": "KI-001-A",
@@ -50,6 +50,26 @@
     {
       "id": "KI-004-E",
       "summary": "Playwright needs the real filesystem: under the agent sandbox Chromium fails to create its ProcessSingleton socket, so live browser runs must be issued outside it.",
+      "routing_class": "host"
+    },
+    {
+      "id": "KI-005-C",
+      "summary": "Phases that leave no artifact are invisible until a gate reads for them: Sprint 005 skipped Phase 3 and 4.1-4.3, and close Phase 2.6 was the only detector - jurisdictional_lock and no_interference were disabled while appearing enforced.",
+      "routing_class": "host"
+    },
+    {
+      "id": "KI-005-D",
+      "summary": "Verify a plan's stated rationale against its own acceptance criteria before executing it: Sprint 005's W5 claimed adding kind to the fallback hash would separate two voice notes that share kind, sender, minute and empty body, which it cannot.",
+      "routing_class": "host"
+    },
+    {
+      "id": "KI-005-E",
+      "summary": "Read probe output for what it contains rather than scanning it for the expected signal: the kind probe answered its question and also revealed emoji-only messages drawn as img alt, a loss larger than the media it was written for.",
+      "routing_class": "host"
+    },
+    {
+      "id": "KI-005-F",
+      "summary": "open_chat_by_query reports success without opening the requested chat - it clicks an unfiltered chat-list item and waits on a panel selector already satisfied when a conversation is open, so an export can be written for the wrong chat and exit 0.",
       "routing_class": "host"
     }
   ]
