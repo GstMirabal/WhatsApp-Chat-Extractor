@@ -9,7 +9,7 @@
 | Sprint | Milestone | Outcome |
 | :--- | :--- | :--- |
 | #003 | P1 spike | Playwright package + CLI; live export of one chat (84 text messages) to gitignored `data/` |
-| #004 | P2 happy path | Full-history harvest, export schema v2 with a completeness contract, `/wa-export` command — **offline gates green, live run pending** |
+| #004 | P2 happy path | Full-history harvest with automatic load-older clicking, schema v3 (pseudonymous, completeness-declaring), `/wa-export` — **verified live: 513 messages in 12 passes; 135 contact / 119 me / 0 unknown** |
 
 ## 2. Current state
 
@@ -20,17 +20,23 @@ rules (no live WhatsApp in CI). Blueprint:
 `docs/architecture/EXTRACTOR_BLUEPRINT.md`. Spike evidence:
 `docs/sprints/003-backend-extractor/SPIKE_NOTES.md`.
 
-`export-one` now walks the whole conversation instead of reading the DOM once
-after a fixed number of scrolls, and every export declares whether it is
-complete. **The #004 harvest has not yet been run against live WhatsApp Web**:
-the selectors it depends on (`data-id` for message identity, the start-of-chat
-marker) are verified only against synthetic passes until the operator runs it.
+`export-one` walks the whole conversation instead of reading the DOM once after
+a fixed number of scrolls, clicks the "load older messages" control by itself,
+and declares in the file whether the result is complete. Verified against live
+WhatsApp Web on 2026-08-30.
+
+**Not yet observed: a run that reaches the start of a chat.** Every live run so
+far was deliberately capped (6-12 passes) to iterate quickly, so all of them
+ended `complete: false` / `max_passes`. An uncapped run is what would first
+produce `stopped_reason: chat_start`, and with it the only proof the
+start-of-chat markers match a real conversation's beginning.
 
 ## 3. Known limitations / tech debt
 
 | Item | Marked as | Tracked where |
 | :--- | :--- | :--- |
-| Harvest unverified against live WhatsApp Web | open risk | Sprint 004 abort criterion |
+| No uncapped run yet: `chat_start` / `complete: true` never observed | open risk | Sprint 004 Phase Register |
+| Direction depends on WA Web markup (tail, aria-label, `data-pre-plain-text`) | `:tech-debt:` | Blueprint §3 direction contract |
 | All-chats dump not implemented (one chat per invocation) | deferred | ADR-0002 P3 / Sprint 005+ |
 | Retry after a session drop mid-harvest | `:tech-debt:` | ADR-0002 P3 / Sprint 005+ |
 | WhatsApp Web selectors churn | `:tech-debt:` | `SPIKE_NOTES.md` + `export_one.py` constants |
@@ -48,6 +54,9 @@ wa-extract export-one --query "PARTIAL_CHAT_NAME"   # exit 3 = truncated
 .venv/bin/python -m pytest tests/ -q
 ```
 
+Live runs must be issued **outside the agent sandbox**: Chromium cannot create
+its `ProcessSingleton` socket under it and aborts before opening a page.
+
 From an agent session, `/wa-export PARTIAL_CHAT_NAME` runs the same export and
 reports the path, `message_count` and `complete`.
 
@@ -62,4 +71,4 @@ print(d['message_count'], d['complete'], d['stopped_reason'])" data/<file>.json
 oldest message in the file. Re-run with a higher cap.
 
 ---
-*Updated during Sprint #004 execution; live verification pending (RA-05).*
+*Updated at Sprint Closeout #004 (RA-05).*
