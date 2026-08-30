@@ -2,7 +2,7 @@
 
 **Canonical path**: `docs/sprints/005-backend-extractor/IMPLEMENTATION_PLAN.md`
 **Branch**: `ai-sprint/005` · **Base**: `main` at `ac806f562853819e071b151a5b14343470d11ae2` (v0.4.0)
-**Status**: `DRAFT` → pendiente de Approval Gate (Fase 5)
+**Status**: `APPROVED` (Fase 5, 2026-08-30)
 
 > Español permitido en este documento (`agents.md §1 user_chat`). Fase del
 > programa: P2.5 del roadmap reestructurado 2026-08-30.
@@ -200,10 +200,11 @@ evidencia. Lo que **no** se hará es inventar selectores: `KI-004-A`.
 
 | Field | Value |
 | :--- | :--- |
-| **Approved by** | *(pendiente — Fase 5, sesión futura)* |
-| **Date** | *(pendiente)* |
-| **Plan commit at approval** | *(este fichero, commiteado antes de aprobar)* |
-| **Remaining locks** | Active Sprint · veredictos QA + Tester · OK humano al cierre |
+| **Approved by** | GstMirabal — autorización atendida en sesión `20260830T082619Z-12789` |
+| **Date** | 2026-08-30 |
+| **Plan commit at approval** | `c090646` — este fichero ya estaba commiteado antes de la aprobación (`§2 triple_lock`) |
+| **Scope approved** | W2–W12 tal como están escritos, sin enmiendas |
+| **Remaining locks** | Active Sprint ✅ (`ai-sprint/005`) · veredictos QA + Tester ⏳ · OK humano al cierre ⏳ |
 
 *La Fase 5 es una única autorización humana atendida. NO puede envolverse en un
 `/loop` desatendido.*
