@@ -109,6 +109,14 @@ OPEN_SETTLE_MS = 1_500
 # Sentinel strategy: the search ran and matched nothing. Distinct from a failure
 # to open, because it says the fragment is wrong rather than the probe.
 NO_SEARCH_MATCHES = "no-search-matches"
+# Rows of the chat list itself. `--from-list` walks these instead of searching:
+# the probe needs *some* five conversations, not five particular ones, and the
+# product's direction is exporting every chat rather than named ones.
+#
+# It also removes searching from the probe entirely, and with it both exporter
+# defects found in runs 1-2 (a click that opens nothing, an Enter that types
+# where it cannot aim) plus every wrong-fragment dead end.
+CHAT_LIST_SELECTOR = '[data-testid="cell-frame-container"]'
 
 # Structural attributes only. `data-pre-plain-text`, `title`, `alt` and
 # `aria-label` are all absent by design: each can carry a person's name.
@@ -605,6 +613,92 @@ def open_for_probe(page: Page, query: str) -> tuple[str | None, str, dict]:
     return title, "", diagnosis
 
 
+def open_nth_from_list(page: Page, index: int) -> tuple[str | None, str, dict]:
+    """Open the chat sitting at ``index`` in the chat list.
+
+    No searching and no typing: the list is already on screen, and the probe
+    needs *some* conversations rather than particular ones. This is also the
+    shape the product is heading for — exporting every chat — so measuring
+    through it exercises the path that will matter.
+
+    Args:
+        page: WhatsApp Web page.
+        index: Zero-based position in the chat list.
+
+    Returns:
+        tuple[str | None, str, dict]: Verified title (or None), the reason it
+            failed (empty when it did not), and a diagnosis.
+    """
+    from playwright.sync_api import Error as PlaywrightError
+
+    from whatsapp_chat_extractor.export_one import read_open_chat_title
+
+    _reload_to_chat_list(page)
+    rows = page.query_selector_all(CHAT_LIST_SELECTOR)
+    diagnosis: dict[str, Any] = {
+        "strategy": "chat-list-index", "index": index, "list_size": len(rows),
+    }
+    if index >= len(rows):
+        return None, f"Chat list holds only {len(rows)} rows", diagnosis
+
+    try:
+        rows[index].click(timeout=5_000)
+    except PlaywrightError as exc:
+        logger.debug("Chat list click miss at %s: %s", index, exc)
+        return None, f"Row {index} did not accept a click", diagnosis
+
+    page.wait_for_timeout(OPEN_SETTLE_MS)
+    title = read_open_chat_title(page)
+    if not title:
+        # Same refusal as H-001: an unreadable title means the conversation
+        # cannot be attributed, and unattributable evidence is not evidence.
+        return None, "Opened a conversation whose title could not be read", diagnosis
+    return title, "", diagnosis
+
+
+def probe_chat_at(page: Page, index: int, *, max_passes: int) -> dict[str, Any]:
+    """Probe the chat at ``index`` in the chat list.
+
+    Args:
+        page: WhatsApp Web page.
+        index: Zero-based position in the chat list.
+        max_passes: Hard cap on scroll passes.
+
+    Returns:
+        dict[str, Any]: The same shape `probe_one_chat` returns.
+    """
+    title, error, opening = open_nth_from_list(page, index)
+    if title is None:
+        return {"chat_id": None, "error": error, "opening": opening}
+    return _measure_open_chat(page, title, opening, max_passes=max_passes)
+
+
+def _measure_open_chat(
+    page: Page, title: str, opening: dict, *, max_passes: int
+) -> dict[str, Any]:
+    """Record every measurement for the conversation currently open.
+
+    Args:
+        page: Page with a verified conversation open.
+        title: Verified chat title; converted to a digest and never stored.
+        opening: How the chat was opened, for the record.
+        max_passes: Hard cap on scroll passes.
+
+    Returns:
+        dict[str, Any]: The chat's pseudonymous id and its measurements.
+    """
+    return {
+        "chat_id": pseudonymous_chat_id(title),
+        "opening": opening,
+        "scroll": scroll_to_top(page, max_passes=max_passes),
+        "marker": marker_evidence(page),
+        "top_chrome": top_chrome_signatures(page),
+        "chrome_inventory": chrome_attribute_inventory(page),
+        "kinds": kind_census(page),
+        "search_scope": search_scope_evidence(page),
+    }
+
+
 def probe_one_chat(page: Page, query: str, *, max_passes: int) -> dict[str, Any]:
     """Open one chat, scroll it to the top and record the structural evidence.
 
@@ -621,18 +715,7 @@ def probe_one_chat(page: Page, query: str, *, max_passes: int) -> dict[str, Any]
     title, error, opening = open_for_probe(page, query)
     if title is None:
         return {"chat_id": None, "error": error, "opening": opening}
-
-    scroll = scroll_to_top(page, max_passes=max_passes)
-    return {
-        "chat_id": pseudonymous_chat_id(title),
-        "opening": opening,
-        "scroll": scroll,
-        "marker": marker_evidence(page),
-        "top_chrome": top_chrome_signatures(page),
-        "chrome_inventory": chrome_attribute_inventory(page),
-        "kinds": kind_census(page),
-        "search_scope": search_scope_evidence(page),
-    }
+    return _measure_open_chat(page, title, opening, max_passes=max_passes)
 
 
 def summarize(chats: list[dict[str, Any]], *, min_chats: int) -> dict[str, Any]:
@@ -646,9 +729,14 @@ def summarize(chats: list[dict[str, Any]], *, min_chats: int) -> dict[str, Any]:
         dict[str, Any]: Counts and a ``verdict`` of ``H1``, ``H2`` or
             ``inconclusive``.
     """
+    # Read defensively: this runs last, and a KeyError here would discard the
+    # whole run's evidence over one malformed entry.
     probed = [c for c in chats if c.get("error") is None]
-    with_marker = [c for c in probed if c["marker"]["marker_found"]]
-    exhausted = [c for c in probed if c["scroll"]["stopped_reason"] != STOP_MAX_PASSES]
+    with_marker = [c for c in probed if (c.get("marker") or {}).get("marker_found")]
+    exhausted = [
+        c for c in probed
+        if (c.get("scroll") or {}).get("stopped_reason") != STOP_MAX_PASSES
+    ]
     verdict = "inconclusive"
     if len(probed) >= min_chats and with_marker:
         verdict = "H1"
@@ -679,6 +767,11 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "-q", "--query", action="append", default=[], metavar="FRAGMENT",
         help="Chat fragment to probe; repeat once per chat (at least 5).",
+    )
+    parser.add_argument(
+        "--from-list", type=int, default=0, metavar="N",
+        help="Probe the first N chats of the chat list instead of searching. "
+             "No typing, no fragments that match nothing.",
     )
     parser.add_argument(
         "--min-chats", type=int, default=DEFAULT_MIN_CHATS,
@@ -718,6 +811,39 @@ def _write_report(report: dict[str, Any], out_dir: Path) -> Path:
     return path
 
 
+def _probe_chat_list(page: Page, args: argparse.Namespace) -> list[dict[str, Any]]:
+    """Probe the first ``args.from_list`` chats of the chat list.
+
+    WhatsApp orders the list by recency and reorders it when a message arrives,
+    so two indices can land on one conversation mid-run. Every chat is checked
+    against the digests already seen and a repeat is recorded as such rather
+    than counted twice — five probes of four chats is not five chats.
+
+    Args:
+        page: Ready WhatsApp Web page.
+        args: Parsed command line.
+
+    Returns:
+        list[dict[str, Any]]: One entry per index probed.
+    """
+    chats: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for index in range(args.from_list):
+        logger.info("Probing chat list row %s of %s", index + 1, args.from_list)
+        chat = probe_chat_at(page, index, max_passes=args.max_passes)
+        digest = chat.get("chat_id")
+        if digest and digest in seen:
+            chat = {
+                "chat_id": None,
+                "error": "Chat list reordered: this row repeats an earlier chat",
+                "opening": chat.get("opening"),
+            }
+        elif digest:
+            seen.add(digest)
+        chats.append(chat)
+    return chats
+
+
 def _run_probes(args: argparse.Namespace) -> dict[str, Any]:
     """Drive the browser through every requested chat and build the report.
 
@@ -735,6 +861,8 @@ def _run_probes(args: argparse.Namespace) -> dict[str, Any]:
         try:
             page = open_whatsapp(context)
             wait_until_ready(page)
+            if args.from_list:
+                chats = _probe_chat_list(page, args)
             for query in args.query:
                 logger.info("Probing chat %s of %s", len(chats) + 1, len(args.query))
                 chats.append(probe_one_chat(page, query, max_passes=args.max_passes))
@@ -759,8 +887,11 @@ def main(argv: list[str] | None = None) -> int:
             measurement, not a failure.
     """
     args = _build_parser().parse_args(argv)
-    if not args.query:
-        logger.error("No chats requested. Pass -q FRAGMENT at least once.")
+    if not args.query and not args.from_list:
+        logger.error(
+            "No chats requested. Use --from-list N to walk the chat list, or "
+            "-q FRAGMENT to name chats individually."
+        )
         return 2
 
     report = _run_probes(args)
@@ -772,6 +903,8 @@ def main(argv: list[str] | None = None) -> int:
         summary["verdict"], summary["chats_probed"],
         summary["chats_requested"], summary["chats_with_marker"],
     )
+    if args.from_list:
+        logger.info("Walked the chat list; no searching was involved.")
     if summary["fragments_matching_no_chat"]:
         logger.warning(
             "%s fragment(s) matched no conversation at all. Those are names to "

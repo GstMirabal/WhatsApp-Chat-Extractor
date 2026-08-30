@@ -16,6 +16,8 @@ existing at all.
 
 from __future__ import annotations
 
+import argparse
+import functools
 import sys
 from pathlib import Path
 
@@ -409,6 +411,97 @@ def test_a_click_that_opens_the_wrong_chat_is_rejected(monkeypatch) -> None:
 def test_no_chats_requested_is_refused() -> None:
     """The probe will not report a verdict over zero chats."""
     assert probe.main([]) == 2
+
+
+# ------------------------------------------- walking the chat list, no search
+
+
+class ListPage(KeyboardPage):
+    """A chat list of ``rows`` rows that opens whatever row is clicked."""
+
+    def __init__(self, rows: int) -> None:
+        super().__init__({})
+        self.rows = [FakeNode() for _ in range(rows)]
+        self.clicked: list[int] = []
+        for position, node in enumerate(self.rows):
+            node.click = functools.partial(self._record_click, position)
+
+    def _record_click(self, position: int, timeout: int = 0) -> None:
+        self.clicked.append(position)
+
+    def query_selector_all(self, selector: str) -> list[FakeNode]:
+        return self.rows if selector == probe.CHAT_LIST_SELECTOR else []
+
+
+def test_walking_the_list_needs_no_search(monkeypatch) -> None:
+    """The direction the product is heading: every chat, not named ones.
+
+    Searching is what produced every dead end of runs 1-2 — a click that opens
+    nothing, an Enter that types where it cannot aim, fragments naming no chat.
+    Walking the list removes all of it, because the rows are already on screen.
+    """
+    page = ListPage(rows=8)
+    monkeypatch.setattr(probe, "_reload_to_chat_list", lambda p: None)
+    monkeypatch.setattr(
+        probe.sys.modules["whatsapp_chat_extractor.export_one"],
+        "read_open_chat_title", lambda p: "Someone",
+    )
+
+    title, error, diagnosis = probe.open_nth_from_list(page, 2)
+
+    assert (title, error) == ("Someone", "")
+    assert page.clicked == [2]
+    assert diagnosis == {"strategy": "chat-list-index", "index": 2, "list_size": 8}
+    assert page.keys == [], "walking the list must not type anything"
+
+
+def test_an_index_past_the_end_is_reported_not_raised(monkeypatch) -> None:
+    """Asking for more chats than exist is a bounded, legible outcome."""
+    page = ListPage(rows=3)
+    monkeypatch.setattr(probe, "_reload_to_chat_list", lambda p: None)
+
+    title, error, diagnosis = probe.open_nth_from_list(page, 5)
+
+    assert title is None
+    assert "only 3 rows" in error
+    assert diagnosis["list_size"] == 3
+
+
+def test_an_unreadable_title_is_refused(monkeypatch) -> None:
+    """H-001's principle survives the switch: unattributable is not evidence."""
+    page = ListPage(rows=3)
+    monkeypatch.setattr(probe, "_reload_to_chat_list", lambda p: None)
+    monkeypatch.setattr(
+        probe.sys.modules["whatsapp_chat_extractor.export_one"],
+        "read_open_chat_title", lambda p: "",
+    )
+
+    title, error, _ = probe.open_nth_from_list(page, 0)
+
+    assert title is None
+    assert "title could not be read" in error
+
+
+def test_a_reordered_list_does_not_count_one_chat_twice(monkeypatch) -> None:
+    """WhatsApp reorders by recency, so two indices can hit one conversation.
+
+    Five probes of four chats is not five chats, and the minimum that gates the
+    verdict has to mean what it says.
+    """
+    digests = iter(["a", "b", "b", "c"])
+    monkeypatch.setattr(
+        probe, "probe_chat_at",
+        lambda page, index, max_passes: {
+            "chat_id": next(digests), "opening": {"index": index}
+        },
+    )
+    args = argparse.Namespace(from_list=4, max_passes=1)
+
+    chats = probe._probe_chat_list(page=None, args=args)
+
+    assert [c["chat_id"] for c in chats] == ["a", "b", None, "c"]
+    assert "reordered" in chats[2]["error"]
+    assert probe.summarize(chats, min_chats=5)["chats_probed"] == 3
 
 
 # ------------------------------------------------- the regression, in a browser
