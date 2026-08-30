@@ -3,15 +3,16 @@
 **Probe**: `scripts/probe_chat_start.py` · **Question**: does WhatsApp Web draw a
 start-of-conversation marker, and in how many chats?
 
-**Status**: ⏳ **NOT YET RUN.** Every evidence table below is empty on purpose.
-The probe drives the operator's real logged-in session against real
-conversations, so it cannot run unattended and no session has executed it yet.
+**Status**: 🟡 **RUN ONCE, INCONCLUSIVE.** Run 1 (`2026-08-30T21:21:45Z`,
+`data/probes/chat_start_probe_20260830T212145Z.json`) requested 5 chats and
+probed **1**. The other four died on a probe defect, now fixed. The verdict
+below stays `inconclusive` and W3 stays gate-locked until a run probes five.
 
-> An empty table here is the honest state. Filling it from the Sprint 005 spike,
-> from WhatsApp's documented structure, or from a reading of the exporter's own
+> The tables carry only what run 1 measured. Filling the rest from the Sprint
+> 005 spike, from WhatsApp's documented structure, or from the exporter's own
 > selectors would reproduce `KI-004-A` exactly: three successive theories about
-> message direction were reasoned rather than measured, all three were wrong, and
-> all three shipped.
+> message direction were reasoned rather than measured, all three were wrong,
+> and all three shipped.
 
 ---
 
@@ -69,18 +70,24 @@ writes (`ADR-0003`).
 
 One row per probed chat. `chat_id` is the pseudonymous digest, never a name.
 
-| `chat_id` | Chat length | Stopped reason | Passes | Marker found | Matched selector |
+| `chat_id` | Rows seen | Stopped reason | Passes | Marker found | Matched selector |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| _(pending)_ | | | | | |
+| `chat_1fc92bb` | 54 | `stalled` | 5 | **No** | — |
+| _(4 more needed)_ | | | | | |
+
+**Run 1 probed one chat of five.** Chats 2–5 all failed identically with
+`Chat search box not found`, a defect in the probe rather than a finding about
+WhatsApp: `export_one` opens one chat per process, so a second search on one
+page had never been exercised. Fixed (§6).
 
 **Per-selector match counts.** A selector that fires on the *wrong* node is a
 different defect from one that never fires, and only this table separates them.
 
-| Selector | Chats where it matched | Notes |
+| Selector | Matches in run 1 (1 chat) | Notes |
 | :--- | :--- | :--- |
-| `#main [data-icon="lock-refreshed"]` | _(pending)_ | |
-| `#main [data-testid="msg-system"] [data-icon="lock"]` | _(pending)_ | |
-| `#main div.message-system [data-icon="lock"]` | _(pending)_ | |
+| `#main [data-icon="lock-refreshed"]` | 0 | |
+| `#main [data-testid="msg-system"] [data-icon="lock"]` | 0 | |
+| `#main div.message-system [data-icon="lock"]` | 0 | |
 
 **Top-of-panel chrome.** For a chat where no selector matched, this is what
 WhatsApp drew at the top *instead* — the evidence that turns "our selector is
@@ -101,12 +108,37 @@ This inventory has no limit to fall outside of, so it is the authority for
 
 | `chat_id` | `data-icon` values | `data-testid` values | `role` values | Chrome nodes |
 | :--- | :--- | :--- | :--- | :--- |
-| _(pending)_ | | | | |
+| `chat_1fc92bb` | **`{}` — none** | **`{}` — none** | `{"row": 54}` | 54 |
+
+**This is the strongest single result of run 1.** Across the entire message
+panel's chrome, WhatsApp drew **not one** `data-icon` and **not one**
+`data-testid`. The 54 chrome nodes are all `role="row"` wrappers — the message
+rows themselves, whose inner `[data-id]` ancestor keeps their contents out of
+the chrome set.
+
+So the failure is not a wrong selector for a marker that exists. In this chat
+there is no attribute-bearing chrome node **at all** for a start marker to be.
+That is evidence for H2 from one chat; four more are needed before it counts.
+
+The sampled dump (previous table) confirms why the inventory was necessary: all
+twelve sampled nodes are obfuscated-class wrappers
+(`x1liijdw xu342n7 xelbjmh…`) carrying no `data-icon` or `data-testid`
+whatsoever. Had the pre-run fix (§6) not landed, this table would not exist and
+the sample alone would have been read as a marker that fell outside the budget.
 
 ### Verdict
 
-**Not established.** To be written here from the probe's `summary.verdict`,
-together with the reasoning, once the probe has run.
+**`inconclusive` — 1 chat of the 5 required.** One chat with no marker is one
+data point, and the plan set five deliberately.
+
+The direction of the evidence is worth stating without granting it authority:
+that chat had **no attribute-bearing chrome node at all**, which is a stronger
+form of absence than "our selector missed". If four more chats repeat it, H2 is
+established. One caveat travels with it — the chat stopped on `stalled`, not on
+a proven start, and `history.py:39` records a `stalled` run that once produced a
+`complete: true` export of 217 messages from a much longer conversation. A stall
+is not proof of having reached the beginning, so even five stalled chats answer
+"no marker was drawn where we looked", not "the conversation had no start".
 
 ---
 
@@ -120,7 +152,23 @@ missing today.
 
 | `chat_id` | Rows seen | Kind counts | Unknown signatures |
 | :--- | :--- | :--- | :--- |
-| _(pending)_ | | | |
+| `chat_1fc92bb` | 54 | `text: 51`, `unknown: 2`, `image: 1` | 2 captured |
+
+Both unknown rows carry the identical signature: `div[data-testid="msg-container"]`,
+obfuscated classes, `child_count: 3`, and — the notable part —
+**`has_data_id: false`**. Sprint 005's ratio holds (2 of 54 here, 6 of 301 there).
+
+Two rows are still too few to distinguish a video from a document from a
+sticker, so this stays Sprint 007's, exactly as `## Out of scope` says. What run
+1 adds is the signature itself, which did not exist before.
+
+> **Unplanned finding, outside this sprint.** `has_data_id: false` means these
+> rows have no WhatsApp id of their own and fall through to
+> `fallback_message_id`, whose key cannot separate two same-kind rows from one
+> speaker in one minute — the collapse `history.fallback_message_id` documents.
+> `_row_id` recovers via a `[data-id]` ancestor, which the chrome inventory
+> confirms exists (it is what excludes bubble contents from the chrome set), so
+> nothing is broken. Recorded because it was measured, not because it is due.
 
 ---
 
@@ -135,10 +183,21 @@ live defect.
 
 | Selector | Total matches | Matches outside `#pane-side` |
 | :--- | :--- | :--- |
-| `#pane-side div[role="listitem"]` | _(pending)_ | |
-| `#pane-side div[role="row"]` | _(pending)_ | |
-| `[data-testid="cell-frame-container"]` | _(pending)_ | |
-| `#side div[role="listitem"]` | _(pending)_ | |
+| `#pane-side div[role="listitem"]` | **0** | 0 |
+| `#pane-side div[role="row"]` | 59 | **0** |
+| `[data-testid="cell-frame-container"]` | 36 | **0** |
+| `#side div[role="listitem"]` | **0** | 0 |
+
+**Zero leakage on every candidate.** Not one selector matched a node outside
+`#pane-side`, which is the answer `search_selector_scope` was waiting for and
+the reason it was deferred rather than fixed: the risk it was opened against is
+not present in this build.
+
+Two candidates are **dead**: both `role="listitem"` selectors match nothing at
+all. `_open_first_result` tries `#pane-side div[role="listitem"]` first, so
+every search silently falls through it to `#pane-side div[role="row"]`. Working
+as written, but the first-choice selector is inert — Sprint 007 material, and a
+finding run 1 produced for free.
 
 ---
 
@@ -156,7 +215,15 @@ Neither harness is in the repository: `tests/test_completeness.py` (W5) is
 gate-locked, so writing tests into `tests/` would have breached `task_scope`.
 They live in the session scratchpad.
 
-**One real defect was found and fixed this way.** `top_chrome_signatures` spends
+**A second defect was found by run 1 itself**, which no harness had reached:
+`export_one` opens one chat per process, so a *second* search on one page was
+never exercised. The box kept the previous query, stopped matching on its
+placeholder, and chats 2–5 all failed with `Chat search box not found`.
+`open_for_probe` now dismisses search state before each open and reloads the
+chat list as a fallback; four tests pin it, and all four fail with the fix
+reverted.
+
+**The first defect was found before any chat was touched.** `top_chrome_signatures` spends
 its node budget in document order, and a marker sitting under ~30 nested
 wrappers — ordinary for a live WA panel — fell outside the dump. The harness
 reproduces it: the sample misses the buried marker while
@@ -174,5 +241,16 @@ from missing evidence rather than from absent evidence.
 ## 7. What happens next
 
 W3–W8 are **not authorized**. The Approval Gate of 2026-08-30 covered W1–W2
-only. Once section 3 carries a verdict, the sprint returns to the human with
-(H1) or (H2) on the table, and the gate reopens for `ADR-0004`.
+only, and section 3's verdict is still `inconclusive`, so nothing about that
+changes yet.
+
+**Run 2 is the next action**: the same five chats, with the search-state fix in
+place. One of them must be deliberately short.
+
+```
+.venv/bin/python scripts/probe_chat_start.py -q <f1> -q <f2> -q <f3> -q <f4> -q <short>
+```
+
+Exit `0` means the five-chat minimum was met and the verdict is evidence. Only
+then does the sprint return to the human with (H1) or (H2), and only then does
+the gate reopen for `ADR-0004`.

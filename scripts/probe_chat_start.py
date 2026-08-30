@@ -62,6 +62,7 @@ from whatsapp_chat_extractor.history import (
 )
 from whatsapp_chat_extractor.session import (
     DEFAULT_PROFILE_DIR,
+    WA_WEB_URL,
     launch_context,
     open_whatsapp,
     wait_until_ready,
@@ -356,6 +357,63 @@ def scroll_to_top(
         logger.info("Pass %s (stall %s/%s)", passes_used, stall_count, stall_threshold)
 
 
+def _dismiss_search(page: Page) -> None:
+    """Clear leftover search state so the next query starts from the chat list.
+
+    The exporter opens one chat per process, so nothing before this probe ever
+    needed a *second* search on one page. The first live run found the cost:
+    chat 1 succeeded and chats 2-5 all failed with "Chat search box not found",
+    because the box still held the previous query and no longer matched on its
+    placeholder.
+
+    Args:
+        page: WhatsApp Web page in any state.
+    """
+    for _ in range(2):
+        page.keyboard.press("Escape")
+        page.wait_for_timeout(300)
+
+
+def _reload_to_chat_list(page: Page) -> None:
+    """Reload WhatsApp Web and block until the chat list is usable again.
+
+    The heavier recovery, used only when dismissing the search was not enough.
+
+    Args:
+        page: WhatsApp Web page.
+    """
+    logger.info("Reloading WhatsApp Web to recover the chat list")
+    page.goto(WA_WEB_URL, wait_until="domcontentloaded")
+    wait_until_ready(page)
+
+
+def open_for_probe(page: Page, query: str) -> tuple[str | None, str]:
+    """Open ``query``'s chat, recovering once from stale search state.
+
+    Args:
+        page: Ready WhatsApp Web page.
+        query: Chat fragment typed by the operator.
+
+    Returns:
+        tuple[str | None, str]: The verified chat title and an empty string, or
+            ``None`` and the reason the chat could not be opened.
+    """
+    _dismiss_search(page)
+    try:
+        return open_chat_by_query(page, query), ""
+    except RuntimeError as exc:
+        logger.warning("Opening failed, attempting recovery: %s", exc)
+
+    try:
+        _reload_to_chat_list(page)
+        return open_chat_by_query(page, query), ""
+    except RuntimeError as exc:
+        # The message can name the query, which the operator typed; it never
+        # carries a title, and the query is not stored in the output.
+        logger.error("Chat could not be opened and verified: %s", exc)
+        return None, str(exc)[:300]
+
+
 def probe_one_chat(page: Page, query: str, *, max_passes: int) -> dict[str, Any]:
     """Open one chat, scroll it to the top and record the structural evidence.
 
@@ -369,13 +427,9 @@ def probe_one_chat(page: Page, query: str, *, max_passes: int) -> dict[str, Any]
             On failure, ``error`` carries the reason and the rest is absent, so
             one unopenable chat does not void the whole probe.
     """
-    try:
-        title = open_chat_by_query(page, query)
-    except RuntimeError as exc:
-        # The message can name the query, which the operator typed; it never
-        # carries a title, and the query is not stored in the output.
-        logger.error("Chat could not be opened and verified: %s", exc)
-        return {"chat_id": None, "error": str(exc)[:300]}
+    title, error = open_for_probe(page, query)
+    if title is None:
+        return {"chat_id": None, "error": error}
 
     scroll = scroll_to_top(page, max_passes=max_passes)
     return {

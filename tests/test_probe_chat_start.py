@@ -187,9 +187,93 @@ def test_unopenable_chat_is_recorded_and_survived(monkeypatch) -> None:
         raise RuntimeError("wrong chat")
 
     monkeypatch.setattr(probe, "open_chat_by_query", refuse)
-    result = probe.probe_one_chat(FakePage({}), "x", max_passes=1)
+    monkeypatch.setattr(probe, "_reload_to_chat_list", lambda page: None)
+    result = probe.probe_one_chat(KeyboardPage(), "x", max_passes=1)
     assert result["chat_id"] is None
     assert "wrong chat" in result["error"]
+
+
+# ------------------------------------------------- opening a *second* chat
+
+
+class KeyboardPage(FakePage):
+    """A page that records the Escape presses and reloads it received."""
+
+    def __init__(self, mapping: dict | None = None) -> None:
+        super().__init__(mapping or {})
+        self.keys: list[str] = []
+        self.waits = 0
+
+    @property
+    def keyboard(self) -> KeyboardPage:
+        return self
+
+    def press(self, key: str) -> None:
+        self.keys.append(key)
+
+    def wait_for_timeout(self, ms: int) -> None:
+        self.waits += 1
+
+
+def test_search_state_is_cleared_before_every_open(monkeypatch) -> None:
+    """The live run's failure: chat 1 opened, chats 2-5 could not.
+
+    `export_one` opens one chat per process, so a *second* search on one page
+    was never exercised until this probe. The box still held the previous query
+    and stopped matching on its placeholder, so four of five chats died with
+    "Chat search box not found" and the probe returned no verdict.
+    """
+    page = KeyboardPage()
+    monkeypatch.setattr(probe, "open_chat_by_query", lambda p, q: "Someone")
+
+    title, error = probe.open_for_probe(page, "second chat")
+
+    assert (title, error) == ("Someone", "")
+    assert page.keys == ["Escape", "Escape"], "search state was not dismissed"
+
+
+def test_a_stale_search_box_is_retried_after_a_reload(monkeypatch) -> None:
+    """Dismissing is best-effort; a reload is the fallback, and it is used."""
+    page = KeyboardPage()
+    attempts = {"n": 0}
+    reloaded = {"n": 0}
+
+    def flaky(p: object, q: str) -> str:
+        attempts["n"] += 1
+        if attempts["n"] == 1:
+            raise RuntimeError("Chat search box not found")
+        return "Someone"
+
+    monkeypatch.setattr(probe, "open_chat_by_query", flaky)
+    monkeypatch.setattr(
+        probe, "_reload_to_chat_list",
+        lambda p: reloaded.__setitem__("n", reloaded["n"] + 1),
+    )
+
+    title, error = probe.open_for_probe(page, "second chat")
+
+    assert (title, error) == ("Someone", "")
+    assert reloaded["n"] == 1, "the probe gave up without reloading"
+
+
+def test_one_dead_chat_does_not_end_the_run(monkeypatch) -> None:
+    """A chat that cannot be opened after a reload is recorded, not raised.
+
+    Four chats failing must still leave the fifth probeable, which is what
+    kept the first live run from being a total loss.
+    """
+    page = KeyboardPage()
+
+    def always_refuse(p: object, q: str) -> str:
+        raise RuntimeError("Chat search box not found")
+
+    monkeypatch.setattr(probe, "open_chat_by_query", always_refuse)
+    monkeypatch.setattr(probe, "_reload_to_chat_list", lambda p: None)
+
+    title, error = probe.open_for_probe(page, "x")
+
+    assert title is None
+    assert "search box not found" in error
 
 
 def test_no_chats_requested_is_refused() -> None:
