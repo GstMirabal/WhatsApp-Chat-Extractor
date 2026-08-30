@@ -31,7 +31,16 @@ STOP_CHAT_START = "chat_start"
 STOP_STALLED = "stalled"
 STOP_MAX_PASSES = "max_passes"
 
-COMPLETE_REASONS = (STOP_CHAT_START, STOP_STALLED)
+# Only a start-of-conversation marker proves the whole history was read.
+#
+# `STOP_STALLED` was in this tuple until the first live run, where it produced a
+# `complete: true` export of 217 messages from a conversation the operator knew
+# to be far longer: the panel had simply not finished loading within the fixed
+# 400 ms wait, three passes in a row. The scroll now waits on evidence of
+# loading rather than on a clock, which makes a stall much stronger evidence —
+# but it remains an inference, and this file is a training corpus. An inference
+# is not allowed to be recorded as proof.
+COMPLETE_REASONS = (STOP_CHAT_START,)
 
 
 class HarvestedRow(TypedDict):
@@ -212,9 +221,11 @@ def harvest_history(
     while reason is None:
         added = accumulator.add_pass(collect_visible_rows(page))
         passes_used += 1
-        stall_count = 0 if added else stall_count + 1
+        if added:
+            stall_count = 0
         logger.info(
-            "Pass %s: +%s new, %s total", passes_used, added, len(accumulator)
+            "Pass %s: +%s new, %s total (stall %s/%s)",
+            passes_used, added, len(accumulator), stall_count, stall_threshold,
         )
         reason = decide_stop(
             at_start=at_chat_start(page),
@@ -223,8 +234,11 @@ def harvest_history(
             passes_used=passes_used,
             max_passes=max_passes,
         )
-        if reason is None:
-            scroll_one_pass(page)
+        if reason is None and not scroll_one_pass(page):
+            # The scroll waited for older messages and none arrived. That is the
+            # stall signal, not "the collect found nothing" — a pass can legibly
+            # add zero rows while the panel is still loading beneath it.
+            stall_count += 1
 
     logger.info("Harvest stopped (%s) after %s passes", reason, passes_used)
     return build_result(accumulator, stopped_reason=reason, passes_used=passes_used)

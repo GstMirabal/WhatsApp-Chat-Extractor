@@ -125,12 +125,17 @@ def test_reaching_the_start_reports_complete() -> None:
     assert result["passes_used"] == 4
 
 
-def test_stalling_reports_complete_but_names_the_weaker_reason() -> None:
-    """WA Web omits the start marker, so a stall is the practical top signal."""
+def test_stalling_does_not_count_as_a_complete_history() -> None:
+    """The first live run stalled after 1.2s and reported a whole chat exported.
+
+    217 messages came out of a conversation the operator knew to be longer,
+    marked `complete: true`, because the panel had not finished loading inside
+    the fixed wait. Only the start marker proves completeness now.
+    """
     result = build_result(
         MessageAccumulator(), stopped_reason=STOP_STALLED, passes_used=9
     )
-    assert result["complete"] is True
+    assert result["complete"] is False
     assert result["stopped_reason"] == STOP_STALLED
 
 
