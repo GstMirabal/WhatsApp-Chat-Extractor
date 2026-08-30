@@ -5,7 +5,8 @@
 
 This is the **Documentation Entry Point**. `agents.md §0 (Entry Point)` requires every session to read this file before anything else. It is intentionally short — for the full component inventory, see `.agents/docs/architecture/topology_map.md`.
 
-**Decisions:** [ADR-0001](decisions/ADR-0001-product-scope-whatsapp-web.md) (product) · [ADR-0002](decisions/ADR-0002-delivery-program-and-layout.md) (delivery + layout)  
+**Decisions:** [ADR-0001](decisions/ADR-0001-product-scope-whatsapp-web.md) (product) · [ADR-0002](decisions/ADR-0002-delivery-program-and-layout.md) (delivery + layout) · [ADR-0003](decisions/ADR-0003-media-placeholders-in-export.md) (media placeholders)  
+**Released:** `v0.4.0` — full-history export, pseudonymous JSON. **Next:** Sprint 005 (P2.5), plan in `DRAFT`; resume from [RESUME_NOTES.md](sprints/005-backend-extractor/RESUME_NOTES.md)  
 **Blueprint:** [EXTRACTOR_BLUEPRINT.md](architecture/EXTRACTOR_BLUEPRINT.md)  
 **Program roadmap:** [docs/roadmaps/docs/extractor/002-delivery-program.md](roadmaps/docs/extractor/002-delivery-program.md)
 
@@ -84,6 +85,9 @@ Run `/agents:start`. It will:
 | `docs/architecture/EXTRACTOR_BLUEPRINT.md` | Extractor reference | Present (#003) |
 | `docs/decisions/ADR-0001-*.md` | Product scope | Present (#002) |
 | `docs/decisions/ADR-0002-*.md` | Delivery + layout | Present (#002) |
+| `docs/decisions/ADR-0003-*.md` | Media placeholders (supersedes ADR-0001 coverage) | Present (#005) |
+| `.github/workflows/ci.yml` | ruff, pytest, no-committed-chats guard | Present (#004), not executing — billing |
+| `docs/PLATFORM_HARDENING.md` | Controls pending a public repository | Present (#004) |
 | `docs/` / `.agents/` | Docs + framework | Present |
 
 Framework map: `.agents/docs/architecture/topology_map.md`.
