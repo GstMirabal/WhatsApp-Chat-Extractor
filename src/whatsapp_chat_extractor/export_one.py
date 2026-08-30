@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 import re
 import sys
+import unicodedata
 from typing import TYPE_CHECKING
 
 from whatsapp_chat_extractor.history import (
@@ -191,8 +192,48 @@ def _open_first_result(page: Page, timeout_ms: int) -> None:
     page.wait_for_selector(", ".join(MESSAGE_PANEL_SELECTORS), timeout=timeout_ms)
 
 
+def _normalize_title(text: str) -> str:
+    """Casefold, strip accents and collapse whitespace for title comparison.
+
+    Args:
+        text: Raw title or query fragment.
+
+    Returns:
+        str: Comparable form; empty when ``text`` holds no comparable characters.
+    """
+    decomposed = unicodedata.normalize("NFKD", text)
+    stripped = "".join(ch for ch in decomposed if not unicodedata.combining(ch))
+    return " ".join(stripped.casefold().split())
+
+
+def _title_matches_query(title: str, query: str) -> bool:
+    """Whether ``query`` is a fragment of the opened conversation ``title``.
+
+    The operator types a fragment, not the full name, so this is containment
+    rather than equality — accent- and case-insensitive.
+
+    Args:
+        title: Title read from the open conversation header.
+        query: Fragment typed by the human.
+
+    Returns:
+        bool: True when the open conversation can be attributed to ``query``.
+    """
+    norm_title = _normalize_title(title)
+    norm_query = _normalize_title(query)
+    if not norm_title or not norm_query:
+        return False
+    return norm_query in norm_title
+
+
 def open_chat_by_query(page: Page, query: str, *, timeout_ms: int = 30_000) -> str:
     """Search the chat list and open the first match for ``query``.
+
+    The opened conversation is verified against ``query`` before returning.
+    Verification fails closed: an unreadable or mismatched title raises instead
+    of returning, because a silently wrong chat yields a corpus whose origin
+    cannot be recovered from the output file — ``chat_id`` is a digest and the
+    title is never stored (hotfix H-001).
 
     Args:
         page: Ready WhatsApp Web page.
@@ -200,11 +241,13 @@ def open_chat_by_query(page: Page, query: str, *, timeout_ms: int = 30_000) -> s
         timeout_ms: Wait for search results / conversation panel.
 
     Returns:
-        Resolved chat title from the conversation header when available.
+        Resolved chat title from the conversation header.
 
     Raises:
-        RuntimeError: If search UI or results cannot be used.
+        RuntimeError: If the search UI cannot be used, or if the conversation
+            left open cannot be proven to match ``query``.
     """
+    before = read_open_chat_title(page)
     try:
         _type_query(page, query)
         _open_first_result(page, timeout_ms)
@@ -216,10 +259,24 @@ def open_chat_by_query(page: Page, query: str, *, timeout_ms: int = 30_000) -> s
             f"Could not open chat for query={query!r}; see SPIKE_NOTES.md"
         ) from exc
 
-    title = read_open_chat_title(page) or query
-    # The title is a real person's name. It is returned so the caller can derive
-    # a pseudonymous id from it, and is deliberately kept out of the log.
-    logger.info("Opened chat for query=%r", query)
+    # Titles are real people's names: returned so the caller can derive a
+    # pseudonymous id, and deliberately kept out of every log and error message.
+    title = read_open_chat_title(page)
+    if not title:
+        raise RuntimeError(
+            f"Opened a conversation for query={query!r} but could not read its "
+            "title, so the chat identity is unverifiable. Refusing to export an "
+            "unattributable corpus; update TITLE_SELECTORS in export_one.py."
+        )
+    if not _title_matches_query(title, query):
+        moved = "changed" if title != before else "never changed"
+        raise RuntimeError(
+            f"Search for query={query!r} left open a conversation whose title "
+            f"does not contain it (the open chat {moved}). This is the silent "
+            "wrong-chat failure guarded by hotfix H-001; open the intended chat "
+            "or refine the query."
+        )
+    logger.info("Opened and verified chat for query=%r", query)
     return title
 
 

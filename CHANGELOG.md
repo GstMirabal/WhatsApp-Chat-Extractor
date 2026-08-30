@@ -8,6 +8,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · Versioning: [SemVer](
 
 ## [Unreleased]
 
+### Fixed
+- `open_chat_by_query` opened no chat and still reported success, so an export could be written for **whichever conversation was already on screen** and exit `0`. Since `chat_id` is a digest and the title is never stored, the output file carried no evidence of its origin — a corpus attributed to the wrong person. Every post-condition was satisfiable by the page state that already held: the panel wait was already satisfied, the result click matched the ordinary chat list, and the title was read but never compared. The opened conversation is now matched against the query and the run aborts on mismatch or on an unreadable title. Fail-closed is deliberate: an avoidable failed run is cheaper than a mislabelled corpus. HIGH, inherited from Sprint 003. #H001
+- `read_open_chat_title(page) or query` fabricated agreement between what was asked for and what was opened, which is why the defect above could not surface. The fallback is removed. #H001
+
+### Added
+- `_normalize_title` / `_title_matches_query` in `export_one.py` — accent- and case-insensitive containment, because the operator types a fragment rather than the full name. #H001
+- `tests/test_open_chat_verification.py` — 10 tests pinning the silent wrong-chat failure, proved to fail against the defective source before the fix landed. The suite goes from 78 to 88. #H001
+- `docs/hotfixes/H-001-backend.md` — hotfix record, written before the first substantive commit (RA-03). #H001
+
 ## [0.5.0] - 2026-08-30
 
 > The first three `Added` entries and the last two `Changed` entries were reconstructed on 2026-08-30 by `/agents:reconcile` from the commit range `ac806f5..c090646` and its diffs, after `detect_drift.py` returned verdict `U`. No product code changed in that range; it was documentation and planning only. Everything else is Sprint 005 execution.
