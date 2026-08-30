@@ -1,10 +1,10 @@
 {
-  "last_update": "2026-08-30T09:20:00Z",
-  "sprint_id": "005",
+  "last_update": "2026-08-30T16:16:06Z",
+  "sprint_id": "H001",
   "entries": [
     {
       "id": "KI-001-A",
-      "summary": "On a host, run session claim from the host root after docs/active_state.json exists; session_start --boot resolves repo_root to .agents and must not be treated as the host Zero Coordinate.",
+      "summary": "On a host, run session claim from the host root (python3 .agents/scripts/session_state.py claim); session_start.py --boot can never claim the host anchor because repo_root() is the parent of scripts/ resolved via __file__ and every subprocess runs with cwd=repo_root, while ACTIVE_STATE is relative to CWD - a scripts/ symlink does not fix it.",
       "routing_class": "host"
     },
     {
@@ -24,7 +24,7 @@
     },
     {
       "id": "KI-003-B",
-      "summary": "Under Cursor PreToolUse, stage files (and fix-regression tests) in one Bash call, then run git commit alone in a later call — the gate reads the index before the compound command executes.",
+      "summary": "Under Cursor PreToolUse, stage files (and fix-regression tests) in one Bash call, then run git commit alone in a later call \u2014 the gate reads the index before the compound command executes.",
       "routing_class": "host"
     },
     {
@@ -70,6 +70,26 @@
     {
       "id": "KI-005-F",
       "summary": "open_chat_by_query reports success without opening the requested chat - it clicks an unfiltered chat-list item and waits on a panel selector already satisfied when a conversation is open, so an export can be written for the wrong chat and exit 0.",
+      "routing_class": "host"
+    },
+    {
+      "id": "KI-H001-A",
+      "summary": "A post-condition check MUST distinguish the state it intends to cause from the state that already held: a wait on an already-open panel, a click on an always-present list and a title read but never compared all passed while the search opened nothing.",
+      "routing_class": "nucleus"
+    },
+    {
+      "id": "KI-H001-B",
+      "summary": "Prove a regression test fails against the defective source before accepting the fix; stash the fix and run it - a test that passes against the broken code pins nothing.",
+      "routing_class": "nucleus"
+    },
+    {
+      "id": "KI-H001-C",
+      "summary": "Derive the next hotfix id from docs/hotfixes/H-*.md, never from prose in active_state.json: the anchor said H-004 while the directory did not exist and RA-03 made it H-001.",
+      "routing_class": "host"
+    },
+    {
+      "id": "KI-H001-D",
+      "summary": "Fail closed when chat identity is unverifiable: chat_id is a digest and the title is never stored, so an export of the wrong chat is undetectable from the output file.",
       "routing_class": "host"
     }
   ]
