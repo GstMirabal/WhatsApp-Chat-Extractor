@@ -6,9 +6,9 @@
 | 1 Planning | DONE | Chat negotiation 2026-08-29; `IMPLEMENTATION_PLAN.md` written directly at the canonical path (`RA-18`) |
 | 2–4 Roadmap / assignments | DONE (sequential) | `task_scope.md`; `check_task_scope.py --current-sprint` passes |
 | 5 Approval Gate | DONE | Human OK 2026-08-29; plan committed at `b0747b1` before the first work unit |
-| 6 Execution | DONE (code + docs) | 12 atomic commits, `b0747b1`…`9f1667b`; **live WhatsApp Web run pending operator** |
-| 7 Double-Gate | DONE (offline scope) | QA APPROVED (charter); Tester APPROVED (charter) — see below |
-| 8 Close | PENDING | Blocked on live verification; see Residual risk |
+| 6 Execution | DONE | 27 atomic commits, `b0747b1`…`2ac7ec2`, on `ai-sprint/004` |
+| 7 Double-Gate | DONE | QA APPROVED (charter); Tester APPROVED (charter) |
+| 8 Close | DONE | Blueprint, walkthrough, roadmap, ledger, `memory_index.json` updated; `data/` purged |
 
 ---
 
@@ -16,30 +16,41 @@
 
 | Gate | Verdict | Class | Evidence |
 | :--- | :--- | :--- | :--- |
-| QA (structural) | `APPROVED` | charter | `ruff check .` exit `0`; `python3 -m py_compile` over `src/` + `tests/` exit `0`; `submodule_purity.py` clean; `check_task_scope.py --current-sprint` passes |
-| Tester (logic) | `APPROVED` | charter | `pytest -q` — 22 passed, 0 failed. 13 new cases in `tests/test_history.py`, 3 updated + 3 new in `tests/test_writers.py` |
+| QA (structural) | `APPROVED` | charter | `ruff check .` exit `0`; `py_compile` over `src/` + `tests/` exit `0`; `submodule_purity.py` clean; `check_task_scope.py --current-sprint` passes |
+| Tester (logic) | `APPROVED` | charter | `pytest -q` — 62 passed, 0 failed |
+| Live verification | `APPROVED` | testifying | 2026-08-30 against real WhatsApp Web: 513 messages in 12 passes; final run 254 messages, 135 `contact` / 119 `me`, **0 `unknown`**, 0 duplicates, 254/254 real timestamps, no name in payload or filename |
 
-QA raised one finding during the pass, remediated before the verdict: `task_scope.md`
-assigned `create` units to `principal_agent` and `devops_agent`, neither of which
-declares `Write`/`Edit`. Reassigned to `doc_orchestrator` and `implementer_agent`.
+## What running it found that no offline gate could
 
-## Residual risk — why Phase 8 is not closed
+The sprint's own tests were green while five defects were live. Each was
+reproduced against the shipped implementation before being fixed.
 
-The offline gates are green, and they do not prove the sprint's own exit
-criterion. Every check above runs against synthetic pass sequences; none opens a
-browser.
+| Defect | How it presented |
+| :--- | :--- |
+| Load-older control never clicked | Operator had to press it by hand once per batch; the matcher required a `<button>` and WA renders `div[role="button"]` |
+| Harvester clicked links inside the chat | Candidate set included `#main a` / `#main [tabindex]`, and `haz clic aquí` matched ordinary message text |
+| A stall recorded as a complete history | 217 messages of a longer conversation written as `complete: true` |
+| `sender` held a clock, `timestamp` held message body | 214 of 217 messages; inherited from #003 and never tested |
+| Every sender `unknown` | 513 of 513; `.message-in`/`.message-out` match zero rows, `data-id` is bare hex |
+
+The lesson is recorded as `KI-004-A`: probe a third-party DOM before theorizing
+about it. Three successive selector hypotheses were each wrong and each shipped.
+
+## Residual risk carried into P3
 
 | Unverified | Consequence if wrong |
 | :--- | :--- |
-| `data-id` present on message rows | Falls back to the content hash; the abort criterion applies if that collides |
-| `CHAT_START_SELECTORS` match a real start marker | `stopped_reason` reports `stalled` instead of `chat_start`; `complete` is unaffected |
-| A stalled run really means the top of history | A conversation could be reported complete while older messages remain |
-| `message_count` exceeds the 84 of the P1 spike | The sprint's stated exit criterion is unmet |
+| A run that reaches a chat start | Every live run was capped at 6–12 passes, so `stopped_reason: chat_start` and `complete: true` have **never been produced**. `CHAT_START_SELECTORS` remains unproven against a real beginning-of-conversation |
+| Behaviour over thousands of passes | The longest run was 12 passes / 513 messages; the chat still had history above it |
+| Session drop mid-harvest | No retry. Partial output is honest (`complete: false`) but the run is lost |
 
-The operator runs, on the Mac that holds the WhatsApp session:
+An uncapped `wa-extract export-one --query "…"` is what closes the first row.
 
-```bash
-.venv/bin/wa-extract export-one --query "PARTIAL_CHAT_NAME"
-```
+## Framework findings routed upstream (`§4 feedback_upstream`)
 
-and reads exit code, `message_count`, `complete` and `stopped_reason`.
+| # | Defect |
+| :--- | :--- |
+| `UPSTREAM_FINDING_004` | `session_start.py --boot` claims the session lock on the nucleus anchor in submodule mode |
+| `UPSTREAM_FINDING_005` | The commit gate reads any added `key = value` in `pyproject.toml` as a new dependency |
+
+Neither was patched in place: `agents.md §3 strict_rule`. `git -C .agents status --porcelain` is empty.

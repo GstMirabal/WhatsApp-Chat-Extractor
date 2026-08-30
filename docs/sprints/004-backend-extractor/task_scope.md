@@ -44,6 +44,10 @@
 | W9 | `CHANGELOG.md` | modify | low | `doc_orchestrator` | session | N/A | ✅ `ac0eae9` |
 | W10 | `.ruff.toml` (+ `pyproject.toml`) | create | low | `implementer_agent` | session | N/A | ✅ `6b8db5e` |
 | W11 | `docs/walkthroughs/EXTRACTOR_WALKTHROUGH.md` | modify | low | `doc_orchestrator` | session | high | ✅ `9f1667b` |
+| W12 | `src/whatsapp_chat_extractor/export_one.py` | fix (live) | high | `implementer_agent` | session | high | ✅ `4eeaf87` |
+| W13 | `src/whatsapp_chat_extractor/history.py` | fix (live) | medium | `implementer_agent` | session | high | ✅ `1a29a10` |
+| W14 | `tests/test_row_fields.py` | create | low | `implementer_agent` | session | high | ✅ `4eeaf87` |
+| W15 | `memory_index.json` | modify | low | `governance_learner` | session | N/A | ✅ `3688ced` |
 
 Note: Writes performed by sequential Cursor session; assignees name the
 Write-capable profile for `check_task_scope.py`. W0 was first attributed to
@@ -56,6 +60,8 @@ it and the plan artifact is recorded against `doc_orchestrator`.
 | :--- | :--- |
 | W10 | The plan's own `ruff check .` reported on the `.agents` submodule, whose lint debt `strict_rule` forbids this host from fixing. Config moved to `.ruff.toml` because a `[tool.*]` key added to `pyproject.toml` trips the commit gate's dependency detector (`UPSTREAM_FINDING_005`). |
 | W11 | Declared in the plan's Documentary impact table but omitted from the Work table. |
+| W12-W14 | **Found only by running the code.** Five defects that no offline gate could see: the load-older control was never clicked (operator pressed it by hand); the matcher then clicked links inside the conversation; a stall was recorded as a complete history; `sender` carried a clock and `timestamp` carried message body; and all 513 senders resolved to `unknown`. Each was reproduced against the shipped implementation before being fixed. |
+| W15 | `agents.md §4 zero_tolerance` — the sprint's lessons distilled before closure. |
 
 ---
 
