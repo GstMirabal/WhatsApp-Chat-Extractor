@@ -75,7 +75,8 @@ even when the click lands on the wrong list item, the run aborts instead of
 exporting. The remaining cost is a false negative (an avoidable failed run), not
 a false positive (a mislabelled corpus).
 
-Branch/commit: `hotfix/H-001` → record `1bbb8f4`, fix `{{COMMIT}}`.
+Branch/commit: `hotfix/H-001` → record `1bbb8f4`, fix `122d421`. Not yet merged;
+merging is `deployment_workflow.md`'s jurisdiction (`RA-12`), never this record's.
 
 ## 4. Verification
 
