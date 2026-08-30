@@ -52,6 +52,7 @@ class HarvestedRow(TypedDict):
     sender: str
     timestamp: str
     body: str
+    kind: str
 
 
 class HarvestResult(TypedDict):
@@ -63,19 +64,33 @@ class HarvestResult(TypedDict):
     passes_used: int
 
 
-def fallback_message_id(sender: str, timestamp: str, body: str) -> str:
+def fallback_message_id(
+    sender: str, timestamp: str, body: str, kind: str = "text"
+) -> str:
     """Stable identity for a row whose ``data-id`` attribute is absent.
+
+    ``kind`` joins the key because media rows have an empty ``body``, so a
+    captionless photo and a voice note from one speaker in the same minute would
+    otherwise hash identically and the accumulator would drop the second as a
+    duplicate.
+
+    It does **not** separate two rows of the *same* kind in that minute — both
+    voice notes still collapse. Nothing in the row's text can separate them, so
+    the fix is upstream: ``export_one._row_id`` falls back to the
+    ``conv-msg-<HEX>`` wrapper the W2 probe found on every row, and a row that
+    reaches this function has no identity of its own left to use.
 
     Args:
         sender: Sender label as rendered.
         timestamp: Timestamp text as rendered.
-        body: Message text.
+        body: Message text; empty for a media message with no caption.
+        kind: Medium the row carries, as ``export_one._row_kind`` reports it.
 
     Returns:
         str: Hex digest prefixed with ``sha1:`` so a fallback identity is
             distinguishable from a real WhatsApp ``data-id`` in the output.
     """
-    raw = f"{sender}\x1f{timestamp}\x1f{body}".encode()
+    raw = f"{sender}\x1f{timestamp}\x1f{body}\x1f{kind}".encode()
     return f"sha1:{hashlib.sha1(raw).hexdigest()}"
 
 
@@ -126,6 +141,9 @@ class MessageAccumulator:
                         "sender": row["sender"],
                         "timestamp": row["timestamp"],
                         "body": row["body"],
+                        # `text` for a row harvested before `kind` existed, so a
+                        # replayed v3 fixture consolidates without a KeyError.
+                        "kind": row.get("kind", "text"),
                         "order": len(records),
                     }
                 )

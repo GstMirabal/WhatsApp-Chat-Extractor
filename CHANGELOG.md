@@ -8,14 +8,27 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · Versioning: [SemVer](
 
 ## [Unreleased]
 
-> Entries below were reconstructed on 2026-08-30 by `/agents:reconcile` from the commit range `ac806f5..c090646` and its diffs, after `detect_drift.py` returned verdict `U`. No product code changed in that range; it is documentation and planning only.
+> The first three `Added` entries and the last two `Changed` entries were reconstructed on 2026-08-30 by `/agents:reconcile` from the commit range `ac806f5..c090646` and its diffs, after `detect_drift.py` returned verdict `U`. No product code changed in that range; it was documentation and planning only. Everything else is Sprint 005 execution.
 
 ### Added
 - `docs/decisions/ADR-0003-media-placeholders-in-export.md` — media messages become placeholder records carrying a `kind` instead of being skipped. Supersedes the *Coverage* row of ADR-0001 §2. No media byte is stored. #005
-- `docs/sprints/005-backend-extractor/IMPLEMENTATION_PLAN.md` — Sprint 005 plan, status `DRAFT`, not approved. #005
+- `docs/sprints/005-backend-extractor/IMPLEMENTATION_PLAN.md` — Sprint 005 plan, approved at the Phase 5 gate on 2026-08-30. #005
 - `docs/sprints/005-backend-extractor/RESUME_NOTES.md` — session-close state that cannot be recovered by reading the code. #005
+- Export schema v4: every message carries a mandatory `kind` of `text`, `image`, `voice` or `unknown`, and a message with no text is recorded instead of discarded (ADR-0003). Under v3 a photo or a voice note left no trace, so the conversation read as question → next question and taught an adjacency that never happened. No media file is downloaded or referenced. #005
+- `export_one._row_kind` and `export_one._row_emoji_body`, plus the `VOICE_SELECTOR` / `IMAGE_SELECTOR` / `EMOJI_IMG_SELECTOR` constants. Every selector was observed on a live row by the W2 DOM probe of 2026-08-30, never inferred (`KI-004-A`). #005
+- `.cursor/commands/wa-export.md` — the Cursor entry point ADR-0001 declares. Sprint 004 shipped only the Claude Code command. It is a host-authored file rather than a symlink, because `install.sh` overwrites the framework's own files under `.cursor/commands/`. #005
+- `README.md` — the file `pyproject.toml:9` has declared since Sprint 003 with nothing behind it, so a package build failed. Covers requirements, `login` → `export-one`, how to read `complete`, the schema, and the four privacy constraints. #005
+- `LICENSE` — proprietary terms backing the `Proprietary` string in `pyproject.toml:11`, which named a licence that did not exist. It also states that the licence governs the software only and confers no right over any conversation the software exports. #005
+- 16 tests covering `kind` classification, emoji-body recovery, schema v4 and media survival through the accumulator; the suite goes from 62 to 78. #005
+
+### Fixed
+- Emoji-only messages were dropped entirely. WhatsApp draws each emoji as `<img alt="…">` inside a `div[data-testid="selectable-text"]`, which the `span.selectable-text` matcher never saw, so `inner_text()` returned nothing and the row read as bodiless. The first live v4 export recovered 23 such messages out of 301 — a larger loss than the media ADR-0003 was written for. #005
+- `message_count` counted text messages while presenting itself as a message count, because rows with no text were discarded before being counted. #005
+- Two captionless media messages from one speaker in the same minute hashed to one identity and the second was dropped as a duplicate. `_row_id` now falls back to the `conv-msg-<HEX>` wrapper before the hashed key, and `kind` joins that key. The hash alone still cannot separate two rows of the *same* kind, which is asserted in a test rather than left as an assumption. #005
+- `.gitignore` excluded `/.cursor/commands/` wholesale, which would have made the host-authored Cursor command untrackable — the same defect fixed for `/.claude/commands/` in Sprint 004, and the reason git never consults a negation inside an excluded directory. #005
 
 ### Changed
+- `docs/architecture/EXTRACTOR_BLUEPRINT.md` — schema v4, the kind contract with its four DOM signals, the revised identity ladder, and the stated timestamp limitation. #005
 - `docs/roadmaps/docs/extractor/002-delivery-program.md` — the single `P3 harden` row becomes four sprints: P2.5 (005, corpus fidelity + operator surface), P3a (006, one chat proven complete), P3b (007, all chats), P4 (008, platform hardening, `GATED`). Sprint 005 exists because Sprint 004's scope review found four declared items never built: the Cursor entry point ADR-0001 names, the `README.md` and `LICENSE` that `pyproject.toml` declares, and platform hardening. #005
 - `docs/0_SYSTEM_OVERVIEW.md` — records ADR-0003, the released `v0.4.0` state and the Sprint 005 resume pointer; the artifact table adds ADR-0003, `.github/workflows/ci.yml` and `docs/PLATFORM_HARDENING.md`. #005
 

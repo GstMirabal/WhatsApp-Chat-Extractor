@@ -69,17 +69,17 @@ observados en la sonda de Sprint 004 son un punto de partida, no una conclusión
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | W0 | `docs/decisions/ADR-0003-media-placeholders-in-export.md` | create | low | `doc_orchestrator` | ✅ |
 | W1 | `docs/roadmaps/docs/extractor/002-delivery-program.md` | modify | low | `orchestrator` | ✅ |
-| W2 | (scratchpad) sonda de `kind` contra el DOM en vivo | run | medium | `implementer_agent` | ⏳ |
-| W3 | `src/whatsapp_chat_extractor/export_one.py` | modify | high | `implementer_agent` | ⏳ |
-| W4 | `src/whatsapp_chat_extractor/writers.py` | modify | medium | `implementer_agent` | ⏳ |
-| W5 | `src/whatsapp_chat_extractor/history.py` | modify | low | `implementer_agent` | ⏳ |
-| W6 | `tests/test_row_fields.py` | modify | low | `implementer_agent` | ⏳ |
-| W7 | `tests/test_writers.py` | modify | low | `implementer_agent` | ⏳ |
-| W8 | `.cursor/commands/wa-export.md` | create | low | `skill_architect` | ⏳ |
-| W9 | `README.md` | create | low | `doc_orchestrator` | ⏳ |
-| W10 | `LICENSE` | create | low | `doc_orchestrator` | ⏳ |
-| W11 | `docs/architecture/EXTRACTOR_BLUEPRINT.md` | modify | low | `doc_orchestrator` | ⏳ |
-| W12 | `CHANGELOG.md` | modify | low | `doc_orchestrator` | ⏳ |
+| W2 | (scratchpad) sonda de `kind` contra el DOM en vivo | run | medium | `implementer_agent` | ✅ |
+| W3 | `src/whatsapp_chat_extractor/export_one.py` | modify | high | `implementer_agent` | ✅ |
+| W4 | `src/whatsapp_chat_extractor/writers.py` | modify | medium | `implementer_agent` | ✅ |
+| W5 | `src/whatsapp_chat_extractor/history.py` | modify | low | `implementer_agent` | ✅ |
+| W6 | `tests/test_row_fields.py` | modify | low | `implementer_agent` | ✅ |
+| W7 | `tests/test_writers.py` | modify | low | `implementer_agent` | ✅ |
+| W8 | `.cursor/commands/wa-export.md` | create | low | `skill_architect` | ✅ |
+| W9 | `README.md` | create | low | `doc_orchestrator` | ✅ |
+| W10 | `LICENSE` | create | low | `doc_orchestrator` | ✅ |
+| W11 | `docs/architecture/EXTRACTOR_BLUEPRINT.md` | modify | low | `doc_orchestrator` | ✅ |
+| W12 | `CHANGELOG.md` | modify | low | `doc_orchestrator` | ✅ |
 
 ### Detalle
 
@@ -208,3 +208,55 @@ evidencia. Lo que **no** se hará es inventar selectores: `KI-004-A`.
 
 *La Fase 5 es una única autorización humana atendida. NO puede envolverse en un
 `/loop` desatendido.*
+
+---
+
+## Execution record — 2026-08-30
+
+### Lo que midió W2
+
+Sonda ejecutada dos veces contra un chat real, fuera del sandbox. Ventana de 36
+filas, 7 sin texto seleccionable.
+
+| Señal observada | Filas | Conclusión |
+| :--- | :--- | :--- |
+| `data-testid` + `data-icon` = `ptt-status` | 4 | `kind: voice` |
+| `data-testid=image-thumb` + `media-url-provider` | 1 | `kind: image` |
+| `img[data-testid=selectable-text]`, `alt_len=2`, no ASCII | 2 | **No previsto — ver abajo** |
+
+`has_img` resultó `True` en las 7 filas, incluidas las notas de voz, así que se
+descartó como discriminador y se sustituyó por `alt_len` / `alt_nonascii`.
+
+### Desviaciones respecto al plan aprobado
+
+Tres, todas dentro del alcance W2–W12 y ninguna contradice ADR-0003.
+
+| # | Qué decía el plan | Qué se hizo, y por qué |
+| :--- | :--- | :--- |
+| 1 | Toda fila sin cuerpo es media, y la no reconocida es `unknown` | Dos de las 7 filas sin cuerpo **no eran media**: eran mensajes de solo emojis, que WhatsApp dibuja como `<img alt>` dentro de un `div[data-testid="selectable-text"]`. Emitirlas como `unknown` habría sido falso. `_row_emoji_body` recupera los caracteres de `alt` y salen como `kind: text` con su cuerpo real |
+| 2 | W5: `fallback_message_id` incorpora `kind` para que dos notas de voz consecutivas no colisionen | **La premisa era incorrecta**: dos notas de voz comparten `kind`, emisor, minuto y cuerpo vacío, así que seguirían colisionando. `kind` sí separa una foto de una nota de voz. La separación real se resolvió aguas arriba, en `_row_id`, con el envoltorio `conv-msg-<HEX>` que la sonda encontró en las 7 filas. El límite residual del hash se asertó en un test en vez de darse por resuelto |
+| 3 | W8 crea `.cursor/commands/wa-export.md` | Hizo falta además corregir `.gitignore`: excluía `/.cursor/commands/` entero, y git no consulta una negación dentro de un directorio excluido, así que el fichero habría quedado sin trackear. Es el mismo defecto que el Sprint 004 arregló para `/.claude/commands/` |
+
+### Verificación ejecutada
+
+| Comando | Resultado |
+| :--- | :--- |
+| `ruff check .` | exit `0` |
+| `.venv/bin/python -m pytest -q` | 78 pasan (62 antes del sprint) |
+| `wa-extract export-one --max-passes 12` | exit `3`, 301 mensajes, `complete: false`, `stopped_reason: max_passes` |
+| Recuento por `kind` | `text: 276`, `voice: 10`, `image: 9`, `unknown: 6` |
+| Fugas en el fichero | Sin `blob:`, sin `data:image`, sin `https://`, sin el nombre del contacto |
+| `pip wheel . --no-deps --no-build-isolation` | exit `0` — fallaba antes por `README.md` ausente |
+| `git -C .agents status --porcelain` | vacío |
+
+El build necesitó `--no-build-isolation` y una instalación previa de
+`setuptools` en `.venv`: el aislamiento de build exige red y el entorno del
+agente no alcanza PyPI.
+
+### Hallazgos abiertos, no resueltos en este sprint
+
+| # | Hallazgo | Por qué no se toca aquí |
+| :--- | :--- | :--- |
+| 1 | 6 de 301 filas salen como `kind: unknown` — un medio que la sonda no vio (vídeo, documento, sticker o GIF) | El plan acepta explícitamente `unknown` para medios no reconocidos. Identificarlos exige otra sonda contra filas dispersas por el historial; candidato a Sprint 006 |
+| 2 | Las 25 filas de media/`unknown` llevan `timestamp` de `H:MM` **sin fecha**, frente a `H:MM, D/M/YYYY` en las 273 de texto | La fecha solo vive en `data-pre-plain-text`, que las filas sin cuerpo no tienen. **No se sintetiza**: una fecha fabricada sería indistinguible de una medida, que es justo el fallo contra el que se escribió ADR-0003. Queda declarado en el blueprint y en el README, y `order` conserva la secuencia |
+| 3 | `.cursor/commands/wa-export.md` es un fichero extra dentro del directorio que `commands_stale()` compara | Sin efecto práctico: en modo submódulo esa función ya devuelve `True` siempre (`UPSTREAM_FINDING_006`). Anotado allí |

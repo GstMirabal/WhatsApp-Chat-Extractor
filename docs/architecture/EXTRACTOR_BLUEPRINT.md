@@ -41,12 +41,46 @@ an invalid one.
 | `wa-extract login` | CLI | `src/whatsapp_chat_extractor/__main__.py` |
 | `wa-extract export-one` | CLI | `src/whatsapp_chat_extractor/__main__.py` |
 | `ChatExport` JSON | file schema | `writers.ChatExport` / this blueprint §3 |
-| `/wa-export <chat>` | slash command | `.claude/commands/wa-export.md` |
+| `/wa-export <chat>` | slash command | `.claude/commands/wa-export.md`, `.cursor/commands/wa-export.md` |
 
-Data model (schema v3, #004):
+Data model (schema v4, #005):
 - **ChatExport**: `schema_version`, `chat_id`, `exported_at`, `message_count`,
   `complete`, `stopped_reason`, `messages[]`
-- **MessageRecord**: `sender`, `timestamp`, `body`, `order` (text only)
+- **MessageRecord**: `sender`, `timestamp`, `body`, `kind`, `order` — every
+  message, whatever medium it carried
+
+### Kind contract (ADR-0003, #005)
+
+`kind` is mandatory on every record. An optional field would leave a reader
+unable to tell an absent `kind` from a message written before the field existed.
+
+| `kind` | Signal in the DOM | `body` |
+| :--- | :--- | :--- |
+| `voice` | `[data-testid="ptt-status"]` or `[data-icon="ptt-status"]` | Empty |
+| `image` | `[data-testid="image-thumb"]` | Its caption, or empty |
+| `text` | Neither of the above, and a body was extracted | The text |
+| `unknown` | Neither of the above, and no body | Empty |
+
+Both media signals were observed on live rows by the Sprint 005 W2 probe, never
+inferred (`KI-004-A`). Media is tested before text, because a captioned photo is
+a photo: the caption belongs in `body` while `kind` names what it captions.
+
+`message_count` counts messages of every kind. Under v3 it counted text while
+naming itself a message count, because a row with no text was discarded before
+it could be counted.
+
+**Emoji-only messages are `text`, not media.** WhatsApp draws an emoji as
+`<img alt="…">` inside a `div[data-testid="selectable-text"]`, which the
+`span.selectable-text` matcher never saw, so these rows read as bodiless and
+were dropped. `_row_emoji_body` recovers the characters from `alt`. The first
+live v4 export recovered 23 such messages in 301 — a larger loss than the media
+this ADR was written for.
+
+**Stated limitation.** A row with no text carries no `data-pre-plain-text`, so
+media rows have a `timestamp` of `H:MM` while text rows have `H:MM, D/M/YYYY`.
+The date is not synthesized: a fabricated date would be indistinguishable from a
+measured one, which is the failure ADR-0003 exists to prevent. `order` carries
+the sequence.
 
 ### Identity contract
 
@@ -58,7 +92,7 @@ No personal identifier is written to disk.
 | filename | `<chat_id>_<stamp>.json` — a directory listing shows no name |
 | `title` | Removed in v3. The title is hashed in `build_export` and dropped |
 | `sender` | A role — `me`, `contact`, `unknown` — never a name |
-| `timestamp` | The bracketed part of `data-pre-plain-text`; the name after it is discarded in the same expression |
+| `timestamp` | The bracketed part of `data-pre-plain-text`; the name after it is discarded in the same expression. A row without that attribute falls back to the meta clock, which carries no date |
 
 ### Direction contract
 
@@ -124,9 +158,12 @@ truncated corpus without parsing the file.
    polling the panel's signature (row count + scroll height) until it changes or
    `max_wait_ms` elapses. Waiting on a fixed timeout ended the first live
    harvest after 1.2 seconds; the wait is on evidence of loading now.
-5. Message identity is WhatsApp's `data-id` when the row carries one, otherwise
-   a SHA-1 of `sender|timestamp|body`. Without a stable identity, deduplication
-   across passes cannot be proven correct.
+5. Message identity is WhatsApp's `data-id` when the row carries one, then the
+   `conv-msg-<HEX>` wrapper test id, and only then a SHA-1 of
+   `sender|timestamp|body|kind`. Without a stable identity, deduplication across
+   passes cannot be proven correct — and the hash alone cannot separate two
+   captionless voice notes sent by one speaker inside the same minute, which is
+   why the wrapper id is consulted first (#005).
 6. Pytest exercises `writers`, the pure half of `history`, and row-field
    extraction with stub rows — no live WhatsApp.
 

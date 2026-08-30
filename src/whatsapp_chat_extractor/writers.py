@@ -12,26 +12,38 @@ from typing import Any, TypedDict
 logger = logging.getLogger(__name__)
 
 DEFAULT_DATA_DIR = Path("data")
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 CHAT_ID_LENGTH = 12
 
 
 class MessageRecord(TypedDict):
-    """One text message in export order."""
+    """One message in export order, whatever medium it carried.
+
+    `kind` is mandatory rather than optional: a field present only on media
+    messages would make a v3 file and a v4 file indistinguishable for text, and
+    a reader could not tell an absent `kind` from a message predating the field.
+    """
 
     sender: str
     timestamp: str
     body: str
+    kind: str
     order: int
 
 
 class ChatExport(TypedDict):
-    """Text export for one chat (ADR-0001), schema v3.
+    """Export for one chat (ADR-0001, ADR-0003), schema v4.
 
     The consumer of this file is an agent learning from the conversation, so the
     payload states whether it holds the whole history. A truncated dump that is
     indistinguishable from a complete one is worse than an honest partial: v1
     had no way to say which it was.
+
+    v4 adds `kind` to every message and stops dropping messages that carry no
+    text (ADR-0003). Under v3 a photo or a voice note left no record at all, so
+    `message_count` counted text messages while presenting itself as a message
+    count, and the conversation read as question → next question. No media
+    content is downloaded or referenced; only the fact that a medium was sent.
 
     v3 removes `title` and replaces the name-derived `chat_id` with a
     pseudonymous digest. v2 wrote the contact's full name into the payload *and*
@@ -86,7 +98,8 @@ def build_export(
 
     Args:
         chat_title: Chat title from WhatsApp Web. Hashed, never written.
-        messages: Ordered text messages.
+        messages: Ordered messages of every kind, so `message_count` counts the
+            conversation rather than the text subset of it.
         complete: Whether the harvest reached the beginning of the chat.
         stopped_reason: Which stop condition ended the harvest, so a proven
             start stays distinguishable from an inferred one.
