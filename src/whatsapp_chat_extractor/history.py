@@ -196,6 +196,7 @@ def build_result(
 def harvest_history(
     page: Page,
     *,
+    chat_title: str = "",
     max_passes: int = DEFAULT_MAX_PASSES,
     stall_threshold: int = DEFAULT_STALL_THRESHOLD,
     load_wait_ms: int = DEFAULT_LOAD_WAIT_MS,
@@ -204,6 +205,8 @@ def harvest_history(
 
     Args:
         page: Page with an open conversation.
+        chat_title: Forwarded to row collection for direction detection only;
+            it is compared against speaker labels and never stored.
         max_passes: Hard cap on scroll passes; guarantees termination.
         stall_threshold: Consecutive passes without new rows that end the run.
         load_wait_ms: How long one pass waits for older messages to arrive.
@@ -223,7 +226,9 @@ def harvest_history(
     reason: str | None = None
 
     while reason is None:
-        added = accumulator.add_pass(collect_visible_rows(page))
+        added = accumulator.add_pass(
+            collect_visible_rows(page, chat_title=chat_title)
+        )
         passes_used += 1
         if added:
             stall_count = 0

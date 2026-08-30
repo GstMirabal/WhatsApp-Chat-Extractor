@@ -91,6 +91,13 @@ LOAD_EARLIER_PATTERN = re.compile(
 LOAD_EARLIER_MAX_LABEL = 120
 # Best-effort start-of-conversation markers. WA Web does not always render one,
 # so `history.decide_stop` uses these only to report a *proven* start.
+# Direction signals, in the order the live DOM proved reliable (Sprint 004
+# probe). WhatsApp draws the bubble "tail" only on the first message of a run,
+# so consecutive messages from one speaker carry no tail and need the label.
+TAIL_OUT_SELECTOR = '[data-testid="tail-out"], [data-icon="tail-out"]'
+TAIL_IN_SELECTOR = '[data-testid="tail-in"], [data-icon="tail-in"]'
+SPEAKER_LABEL_PATTERN = re.compile(r"^(?P<name>.+):$")
+PRE_PLAIN_NAME_PATTERN = re.compile(r"\]\s*(?P<name>.*?):\s*$")
 CHAT_START_SELECTORS = (
     '#main [data-icon="lock-refreshed"]',
     '#main [data-testid="msg-system"] [data-icon="lock"]',
@@ -378,11 +385,12 @@ def at_chat_start(page: Page) -> bool:
     return _first_selector(page, CHAT_START_SELECTORS) is not None
 
 
-def collect_visible_rows(page: Page) -> list[HarvestedRow]:
+def collect_visible_rows(page: Page, *, chat_title: str = "") -> list[HarvestedRow]:
     """Read the text rows currently in the DOM, each with a stable identity.
 
     Args:
         page: Page with an open conversation.
+        chat_title: Passed through for direction detection only; never stored.
 
     Returns:
         list[HarvestedRow]: Rows in document order (oldest first); empty if
@@ -401,7 +409,7 @@ def collect_visible_rows(page: Page) -> list[HarvestedRow]:
         # Read the id once and hand it on: it is a DOM round trip per row, and
         # the direction is derived from it rather than from a second query.
         message_id = _row_id(row)
-        sender = _row_sender(row, message_id)
+        sender = _row_sender(row, message_id, chat_title)
         timestamp = _row_timestamp(row)
         rows.append(
             {
@@ -436,32 +444,42 @@ def _row_body(row: object) -> str:
     return (selectable.inner_text() or "").strip()
 
 
-def _row_sender(row: object, message_id: str = "") -> str:
+def _row_sender(row: object, message_id: str = "", chat_title: str = "") -> str:
     """Which side of the conversation a row belongs to — never who wrote it.
 
     Returns a role, not a name. The operator's data-protection constraint is
-    that no personal identifier reaches the exported file, and an agent learning
-    from the conversation needs the turns separated, not the people named.
+    that no personal identifier reaches the exported file; the speaker label is
+    read here, compared against the chat title, and discarded.
 
-    The earlier implementation read `data-pre-plain-text` off the row itself,
-    where WhatsApp does not put it, and fell through to a `span[dir="auto"]`
-    fallback that matched the clock — which is why 214 of 217 messages in the
-    first full export carried a time of day as their sender.
+    Three signals in order, each covering what the previous one misses — every
+    earlier single-signal attempt failed against the live DOM, most recently
+    producing a 513-message export with every sender `unknown`:
+
+    1. The bubble tail (`tail-in`/`tail-out`), definitive when present.
+    2. An `aria-label` of the form `Name:`, which media rows carry when the
+       tail is absent.
+    3. The name in `data-pre-plain-text`, which covers consecutive text
+       messages in a run, where WhatsApp draws neither tail nor label.
+
+    Args:
+        row: The message container element.
+        message_id: Unused for direction; kept so callers can pass the id they
+            already read without a second DOM round trip.
+        chat_title: The contact's title, used only as the comparison target.
 
     Returns:
-        str: ``me``, ``contact``, or ``unknown`` when the row shows neither
-            side. ``unknown`` is reported rather than guessed.
+        str: ``me``, ``contact``, or ``unknown`` when no signal resolves.
     """
-    role = sender_from_message_id(message_id or _row_id(row))
-    if role:
-        return role
+    if row.query_selector(TAIL_OUT_SELECTOR):  # type: ignore[attr-defined]
+        return "me"
+    if row.query_selector(TAIL_IN_SELECTOR):  # type: ignore[attr-defined]
+        return "contact"
 
-    side = row.evaluate(  # type: ignore[attr-defined]
-        "el => el.closest('.message-out') ? 'me'"
-        " : (el.closest('.message-in') ? 'contact' : '')"
-    )
-    if side:
-        return str(side)
+    for label in (_row_speaker_label(row), _row_pre_plain_name(row)):
+        role = sender_from_speaker_label(label, chat_title)
+        if role:
+            return role
+
     if row.query_selector(  # type: ignore[attr-defined]
         '[data-testid="msg-dblcheck"], [data-testid="msg-check"]'
     ):
@@ -469,27 +487,43 @@ def _row_sender(row: object, message_id: str = "") -> str:
     return "unknown"
 
 
-def sender_from_message_id(message_id: str) -> str:
-    """Read the direction out of WhatsApp's own message id.
+def sender_from_speaker_label(label: str, chat_title: str) -> str:
+    """Turn a speaker label into a role by comparing it with the chat title.
 
-    A `data-id` is `<fromMe>_<chat>_<message>`, so its first component already
-    states the direction. This is checked before the class-based fallback
-    because current WA Web builds no longer put `.message-in`/`.message-out` on
-    an ancestor of the captured rows: a 513-message live export came out with
-    every single sender set to `unknown`.
+    The label itself is never returned. In a one-to-one chat the title is the
+    contact, so a label equal to it is the contact and any other non-empty
+    label — `Tú:`, `You:`, an own display name — is the operator.
 
     Args:
-        message_id: The row's `data-id`, or any other identity string.
+        label: Speaker label with any trailing colon already stripped.
+        chat_title: The open chat's title.
 
     Returns:
-        str: ``me``, ``contact``, or ``""`` when the id carries no direction —
-            the content-hash fallback ids never do.
+        str: ``contact``, ``me``, or ``""`` when the label is empty or no title
+            is available to compare against.
     """
-    if message_id.startswith("true_"):
-        return "me"
-    if message_id.startswith("false_"):
-        return "contact"
+    name = (label or "").strip()
+    title = (chat_title or "").strip()
+    if not name or not title:
+        return ""
+    return "contact" if name.casefold() == title.casefold() else "me"
+
+
+def _row_speaker_label(row: object) -> str:
+    """First `aria-label` shaped like `Name:`, or empty."""
+    for node in row.query_selector_all("[aria-label]"):  # type: ignore[attr-defined]
+        match = SPEAKER_LABEL_PATTERN.match((node.get_attribute("aria-label") or "").strip())
+        if match:
+            return match.group("name").strip()
     return ""
+
+
+def _row_pre_plain_name(row: object) -> str:
+    """Sender name held in `data-pre-plain-text`, or empty."""
+    node = row.query_selector("[data-pre-plain-text]")  # type: ignore[attr-defined]
+    raw = node.get_attribute("data-pre-plain-text") if node else None
+    match = PRE_PLAIN_NAME_PATTERN.search(raw or "")
+    return match.group("name").strip() if match else ""
 
 
 def _row_timestamp(row: object) -> str:

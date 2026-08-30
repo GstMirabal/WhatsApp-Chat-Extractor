@@ -19,7 +19,7 @@ from whatsapp_chat_extractor.export_one import (
     _row_sender,
     _row_timestamp,
     is_load_earlier_label,
-    sender_from_message_id,
+    sender_from_speaker_label,
 )
 
 
@@ -50,11 +50,18 @@ class FakeRow:
         *,
         side: str = "",
         data_id: str = "",
+        aria_labels: tuple[str, ...] = (),
         nodes: dict[str, FakeNode] | None = None,
     ) -> None:
         self._side = side
         self._data_id = data_id
+        self._aria = aria_labels
         self._nodes = nodes or {}
+
+    def query_selector_all(self, selector: str) -> list[FakeNode]:
+        if selector == "[aria-label]":
+            return [FakeNode(attributes={"aria-label": v}) for v in self._aria]
+        return []
 
     def get_attribute(self, name: str) -> str | None:
         return self._data_id if name == "data-id" else None
@@ -73,51 +80,74 @@ META_SELECTOR = '[data-testid="msg-meta"] span'
 CHECK_SELECTOR = '[data-testid="msg-dblcheck"], [data-testid="msg-check"]'
 
 
-def test_direction_comes_from_the_message_id() -> None:
-    """The signal that actually survives WA Web rewrites.
+TITLE = "Ana Pérez García"
+TAIL_OUT = '[data-testid="tail-out"], [data-icon="tail-out"]'
+TAIL_IN = '[data-testid="tail-in"], [data-icon="tail-in"]'
 
-    A 513-message live export had every sender set to `unknown`: the rows carry
-    no `.message-in`/`.message-out` ancestor any more. The `data-id` states the
-    direction in its first component and did so all along.
+
+def test_bubble_tail_out_is_me() -> None:
+    row = FakeRow(nodes={TAIL_OUT: FakeNode()})
+    assert _row_sender(row, chat_title=TITLE) == "me"
+
+
+def test_bubble_tail_in_is_contact() -> None:
+    row = FakeRow(nodes={TAIL_IN: FakeNode()})
+    assert _row_sender(row, chat_title=TITLE) == "contact"
+
+
+def test_media_row_without_a_tail_falls_back_to_the_aria_label() -> None:
+    """A photo or voice note carries the label but no tail."""
+    row = FakeRow(aria_labels=(f"{TITLE}:", "Abrir foto"))
+    assert _row_sender(row, chat_title=TITLE) == "contact"
+    own = FakeRow(aria_labels=("Tú:", "Reproducir mensaje de voz"))
+    assert _row_sender(own, chat_title=TITLE) == "me"
+
+
+def test_consecutive_message_without_tail_or_aria_uses_pre_plain_text() -> None:
+    """WhatsApp draws the tail only on the first message of a run.
+
+    Rows 9-11 of the live probe had neither tail nor aria-label, and every one
+    of them came out `unknown` before this fallback existed.
     """
-    assert sender_from_message_id("true_34600111222@c.us_3EB0ABC") == "me"
-    assert sender_from_message_id("false_34600111222@c.us_3EB0ABC") == "contact"
-    assert sender_from_message_id("sha1:deadbeef") == ""
-    assert sender_from_message_id("") == ""
+    row = FakeRow(
+        nodes={
+            PRE_SELECTOR: FakeNode(
+                attributes={"data-pre-plain-text": f"[11:23, 27/8/2026] {TITLE}: "}
+            )
+        }
+    )
+    assert _row_sender(row, chat_title=TITLE) == "contact"
 
 
-def test_row_with_an_outgoing_id_is_attributed_to_me() -> None:
-    row = FakeRow(data_id="true_34600111222@c.us_3EB0ABC")
-    assert _row_sender(row) == "me"
-
-
-def test_row_with_an_incoming_id_is_attributed_to_contact() -> None:
-    row = FakeRow(data_id="false_34600111222@c.us_3EB0ABC")
-    assert _row_sender(row) == "contact"
-
-
-def test_the_id_wins_over_a_stale_class_ancestor() -> None:
-    row = FakeRow(side="contact", data_id="true_34600111222@c.us_3EB0ABC")
-    assert _row_sender(row) == "me"
-
-
-def test_a_precomputed_id_is_used_without_touching_the_dom() -> None:
-    """`collect_visible_rows` reads the id once and hands it on."""
-    row = FakeRow()
-    assert _row_sender(row, "true_34600111222@c.us_3EB0ABC") == "me"
-
-
-def test_outgoing_row_is_attributed_to_me() -> None:
-    assert _row_sender(FakeRow(side="me")) == "me"
-
-
-def test_incoming_row_is_attributed_to_contact() -> None:
-    assert _row_sender(FakeRow(side="contact")) == "contact"
+def test_a_row_with_no_signal_at_all_is_unknown() -> None:
+    assert _row_sender(FakeRow(), chat_title=TITLE) == "unknown"
 
 
 def test_sender_falls_back_to_delivery_checks_for_outgoing() -> None:
-    row = FakeRow(side="", nodes={CHECK_SELECTOR: FakeNode()})
-    assert _row_sender(row) == "me"
+    row = FakeRow(nodes={CHECK_SELECTOR: FakeNode()})
+    assert _row_sender(row, chat_title=TITLE) == "me"
+
+
+def test_speaker_label_matching_the_title_is_the_contact() -> None:
+    assert sender_from_speaker_label(TITLE, TITLE) == "contact"
+    assert sender_from_speaker_label(TITLE.upper(), TITLE) == "contact"
+
+
+def test_any_other_speaker_label_is_the_operator() -> None:
+    assert sender_from_speaker_label("Tú", TITLE) == "me"
+    assert sender_from_speaker_label("You", TITLE) == "me"
+
+
+def test_speaker_label_yields_nothing_without_both_sides() -> None:
+    assert sender_from_speaker_label("", TITLE) == ""
+    assert sender_from_speaker_label(TITLE, "") == ""
+
+
+def test_the_speaker_name_is_never_returned() -> None:
+    """The label is read to compare, then discarded — the constraint asserted."""
+    row = FakeRow(aria_labels=(f"{TITLE}:",))
+    assert _row_sender(row, chat_title=TITLE) in {"me", "contact", "unknown"}
+    assert "Ana" not in _row_sender(row, chat_title=TITLE)
 
 
 def test_unattributable_row_reports_unknown_rather_than_guessing() -> None:
@@ -125,31 +155,31 @@ def test_unattributable_row_reports_unknown_rather_than_guessing() -> None:
 
 
 def test_sender_is_never_a_clock() -> None:
-    """The exact production defect: a time of day recorded as the sender."""
+    """The original production defect: a time of day recorded as the sender."""
     row = FakeRow(
-        side="contact",
         nodes={
             PRE_SELECTOR: FakeNode(
-                attributes={"data-pre-plain-text": "[11:23, 27/8/2026] Ana Pérez: "}
+                attributes={"data-pre-plain-text": f"[11:23, 27/8/2026] {TITLE}: "}
             )
         },
     )
-    assert _row_sender(row) not in {"11:23", "27/8/2026"}
-    assert _row_sender(row) == "contact"
+    role = _row_sender(row, chat_title=TITLE)
+    assert role not in {"11:23", "27/8/2026"}
+    assert role == "contact"
 
 
 def test_sender_is_never_a_personal_name() -> None:
     """Even when the DOM offers the name, the role is what gets recorded."""
     row = FakeRow(
-        side="contact",
         nodes={
             PRE_SELECTOR: FakeNode(
-                attributes={"data-pre-plain-text": "[11:23, 27/8/2026] Ana Pérez: "}
+                attributes={"data-pre-plain-text": f"[11:23, 27/8/2026] {TITLE}: "}
             )
         },
     )
-    assert "Ana" not in _row_sender(row)
-    assert "Pérez" not in _row_sender(row)
+    role = _row_sender(row, chat_title=TITLE)
+    assert "Ana" not in role
+    assert "Pérez" not in role
 
 
 def test_timestamp_comes_from_the_descendant_attribute() -> None:

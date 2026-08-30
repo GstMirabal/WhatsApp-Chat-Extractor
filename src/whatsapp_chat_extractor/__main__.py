@@ -97,6 +97,7 @@ def cmd_export_one(args: argparse.Namespace) -> int:
             title = open_chat_by_query(page, args.query, timeout_ms=60_000)
             harvest = harvest_history(
                 page,
+                chat_title=title,
                 max_passes=args.max_passes,
                 stall_threshold=args.stall_threshold,
                 load_wait_ms=args.load_wait_ms,
