@@ -12,7 +12,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · Versioning: [SemVer](
 - Full-history harvest: `history.harvest_history` reads the message panel on every scroll pass and merges by message id, replacing the single DOM read that lost the recent end of the conversation to WhatsApp Web row virtualization. #004
 - Export schema v3 with `schema_version`, `message_count`, `complete` and `stopped_reason`, so a corpus states whether it holds the whole chat. #004
 - Pseudonymous chat identity: `chat_id` is a digest of the chat title, the title is not stored, and the filename carries the digest — no contact name reaches disk. #004
-- `tests/test_row_fields.py` — sender/timestamp extraction against stub rows, the coverage whose absence let the #003 defect ship. #004
+- `tests/test_row_fields.py` — sender/timestamp extraction and load-control matching against stub rows, the coverage whose absence let the #003 defect ship. #004
+- Automatic clicking of the "load older messages" control, identified by text across `button` and `[role=button]`; the operator previously had to press it once per batch. #004
+- Message direction resolved from three DOM signals in order — bubble tail, `aria-label`, `data-pre-plain-text` — each covering what the previous misses. #004
 - `/wa-export <chat>` slash command over `wa-extract export-one`. #004
 - `tests/test_history.py` — merge, ordering and termination rules against synthetic pass sequences (no live WhatsApp). #004
 
@@ -27,6 +29,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · Versioning: [SemVer](
 - `sender` carried the clock instead of the speaker (214 of 217 messages in the first live export) because `data-pre-plain-text` was read off the row rather than its descendant; `timestamp` carried message body for the same reason. Both inherited from #003. #004
 - A stalled harvest was recorded as `complete: true`, producing a 217-message export of a longer conversation marked complete. Only a start-of-chat marker proves completeness now. #004
 - The scroll waited a fixed 400 ms, ending the first live harvest after 1.2 seconds; it now clicks any load-earlier control and polls the panel signature until it changes. #004
+- The load-control matcher was scoped to `#main a` and `#main [tabindex]` with a bare `haz clic aquí` alternative, so it clicked links inside the conversation during a live run. Candidates are panel chrome only, nodes inside message bubbles are rejected outright, and every pattern alternative requires the noun `mensajes`/`messages`. #004
+- Every sender in a 513-message live export was `unknown`: current WhatsApp Web builds carry no `.message-in`/`.message-out`, and `data-id` is bare hex rather than `true_`/`false_` prefixed. Direction now comes from probed signals. #004
 
 ## [0.3.0] - 2026-08-27
 
