@@ -260,3 +260,44 @@ agente no alcanza PyPI.
 | 1 | 6 de 301 filas salen como `kind: unknown` — un medio que la sonda no vio (vídeo, documento, sticker o GIF) | El plan acepta explícitamente `unknown` para medios no reconocidos. Identificarlos exige otra sonda contra filas dispersas por el historial; candidato a Sprint 006 |
 | 2 | Las 25 filas de media/`unknown` llevan `timestamp` de `H:MM` **sin fecha**, frente a `H:MM, D/M/YYYY` en las 273 de texto | La fecha solo vive en `data-pre-plain-text`, que las filas sin cuerpo no tienen. **No se sintetiza**: una fecha fabricada sería indistinguible de una medida, que es justo el fallo contra el que se escribió ADR-0003. Queda declarado en el blueprint y en el README, y `order` conserva la secuencia |
 | 3 | `.cursor/commands/wa-export.md` es un fichero extra dentro del directorio que `commands_stale()` compara | Sin efecto práctico: en modo submódulo esa función ya devuelve `True` siempre (`UPSTREAM_FINDING_006`). Anotado allí |
+| 4 | **`open_chat_by_query` no abre el chat y aun así reporta éxito** | Defecto **HIGH** heredado de `#003`, no introducido por este sprint. Detalle abajo. Excede W2–W12; requiere decisión de ruta (hotfix `RA-03` o Sprint 006) |
+
+### Hallazgo 4 — la búsqueda no entra en el chat (HIGH)
+
+Reportado por el operador el 2026-08-30: al lanzar el export, la búsqueda se
+escribe pero **no entra en la conversación**; hay que clicarla a mano.
+
+Tres fallos independientes, todos en `src/whatsapp_chat_extractor/export_one.py`:
+
+| Línea | Qué hace | Por qué no detecta el fallo |
+| :--- | :--- | :--- |
+| `180-189` `_open_first_result` | Clica `#pane-side div[role="listitem"]` y hace `return` | Ese selector casa con la lista de chats normal, que existe haya o no resultados de búsqueda. Clica el primer elemento y retorna **sin verificar que se abriera una conversación** |
+| `211` `open_chat_by_query` | Espera `MESSAGE_PANEL_SELECTORS` | Si ya hay una conversación abierta, el selector **ya está satisfecho** antes de buscar, así que la espera pasa al instante y el fallo es indetectable |
+| `219-222` | `read_open_chat_title(page) or query`, y loguea `Opened chat for query=%r` | Lee el título de lo que haya abierto y **nunca lo compara con `query`** |
+
+**Evidencia medida en esta sesión.** La sonda W2 lanzada con `--query "test"`
+—una cadena que no nombra ningún chat— devolvió éxito y midió una ventana de 36
+filas con 7 sin cuerpo, **idéntica** a la que devolvió después
+`--query "<nombre real>"`. No es que `"test"` coincidiera: la función no abrió
+nada y midió la conversación que ya estaba en pantalla. Una segunda ejecución de
+`"test"`, con ninguna conversación abierta, sí falló con `RuntimeError`, que es
+el comportamiento coherente con este diagnóstico.
+
+**Impacto.** El cuelgue es el síntoma benigno, porque el operador lo ve. El grave
+es el silencioso: si nadie clica, el export se escribe **sobre el chat
+equivocado y sale con éxito**. Como `chat_id` es un digest y el título no se
+almacena (contrato de identidad, `#004`), desde el fichero **no hay forma de
+saber de qué conversación es**. Un corpus atribuido al cliente equivocado es
+peor que un corpus ausente.
+
+**Corrección propuesta**, a decidir por el humano, no aplicada aquí:
+
+1. Restringir `SEARCH_RESULT_SELECTORS` al panel de resultados de búsqueda, no a
+   `#pane-side` entero, sondeando el DOM primero (`KI-004-A`).
+2. Antes de buscar, cerrar cualquier conversación abierta, o capturar el
+   `chat_id` del panel actual para exigir que **cambie** tras la búsqueda. Una
+   espera sobre un selector ya satisfecho no es una espera.
+3. Comparar `read_open_chat_title()` con `query` y abortar cuando no encajen. El
+   título ya se lee; hoy solo no se comprueba.
+4. Test de regresión: un stub cuyo panel ya está abierto y cuya búsqueda no
+   cambia nada debe hacer fallar `open_chat_by_query`, no pasar.
