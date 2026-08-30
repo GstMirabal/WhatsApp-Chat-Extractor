@@ -100,8 +100,7 @@ def cmd_export_one(args: argparse.Namespace) -> int:
                 stall_threshold=args.stall_threshold,
             )
             export = build_export(
-                chat_id=args.chat_id or title,
-                title=title,
+                chat_title=title,
                 messages=harvest["messages"],
                 complete=harvest["complete"],
                 stopped_reason=harvest["stopped_reason"],
@@ -148,16 +147,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Chat title / contact fragment (human-chosen)",
     )
     export_one.add_argument(
-        "--chat-id",
-        default="",
-        help="Optional stable id; defaults to resolved title",
-    )
-    export_one.add_argument(
         "--data-dir",
         type=Path,
         default=DEFAULT_DATA_DIR,
         help="Output directory (default: data/)",
     )
+    # No --chat-id: the export is pseudonymous, and a caller-supplied id is a
+    # way to put a real name back into the filename and the payload.
     export_one.add_argument(
         "--max-passes",
         type=int,
