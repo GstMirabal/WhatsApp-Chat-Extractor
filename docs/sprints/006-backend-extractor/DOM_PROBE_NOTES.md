@@ -131,19 +131,60 @@ twelve sampled nodes are obfuscated-class wrappers
 whatsoever. Had the pre-run fix (§6) not landed, this table would not exist and
 the sample alone would have been read as a marker that fell outside the budget.
 
+### Run 3 — the required five, walked from the chat list
+
+`chat_start_probe_20260830T221517Z.json`, `--from-list 5`. No searching, five
+distinct digests, so no reordering collapsed two rows into one chat.
+
+| `chat_id` | Rows | Stopped | Passes | Marker | `data-icon` | `data-testid` |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| `chat_41d97` | 71 | `stalled` | 175 | No | `{}` | **`loading-spinner: 1`** |
+| `chat_35f90` | 45 | `stalled` | 274 | No | `{}` | `group-chat-profile-picture: 69` |
+| `chat_731b1` | 57 | `stalled` | 26 | No | `{}` | `group-chat-profile-picture: 45` |
+| `chat_7f915` | 80 | `stalled` | 22 | No | `{}` | `{}` |
+| `chat_4a98b` | 58 | `stalled` | 5 | No | `{}` | `{}` |
+
+Aggregate: 311 rows — `text: 260`, `unknown: 30`, `voice: 16`, `image: 5`.
+Search-selector leakage outside `#pane-side`: **0**, across all five.
+
 ### Verdict
 
-**`inconclusive` — 1 chat of the 5 required.** One chat with no marker is one
-data point, and the plan set five deliberately.
+**The probe reports `H2`. This document does not adopt it as proven, and the
+reason is in the table above.**
 
-The direction of the evidence is worth stating without granting it authority:
-that chat had **no attribute-bearing chrome node at all**, which is a stronger
-form of absence than "our selector missed". If four more chats repeat it, H2 is
-established. One caveat travels with it — the chat stopped on `stalled`, not on
-a proven start, and `history.py:39` records a `stalled` run that once produced a
-`complete: true` export of 217 messages from a much longer conversation. A stall
-is not proof of having reached the beginning, so even five stalled chats answer
-"no marker was drawn where we looked", not "the conversation had no start".
+`data-icon` is empty in all five, which is a strong form of absence: not "our
+selector missed" but "no icon-bearing chrome node exists in the panel". The two
+`data-testid` values that do appear are a profile picture and a spinner —
+neither is a start-of-conversation marker.
+
+But **no chat stopped on `chat_start`; all five stopped on `stalled`**, and the
+probe's own verdict rule treats `stalled` as "reached a top". That is an
+inference, and it is the specific inference `history.py:39` records having been
+wrong before: a stalled run once reported 217 messages as a complete export of a
+far longer conversation.
+
+Two things make the caveat concrete rather than theoretical here:
+
+1. **`chat_41d97` stopped with a `loading-spinner` in the panel chrome.** That
+   panel was still fetching when the probe judged it stalled. Whatever that run
+   measured, it was not the beginning of the conversation.
+2. WhatsApp draws the encryption notice **at** the start of a conversation. Not
+   seeing it without having arrived there is not evidence that it is absent.
+
+So what run 3 establishes is narrower than `H2` as stated, and worth stating
+exactly: **across five conversations the harvest never reached a provable start,
+and no start marker appeared anywhere it did reach.** Whether the marker exists
+at the true beginning is still unmeasured.
+
+That distinction does not weaken the case for acting — it sharpens it. Under
+either reading, `complete: true` is unreachable in practice: either the marker
+does not exist, or the harvest cannot get to it. `COMPLETE_REASONS` therefore
+cannot separate a complete history from a truncated one today, which is what
+`ADR-0004` exists to decide.
+
+**A stall threshold that fires while a spinner is on screen is its own defect**,
+and it belongs to the harvester rather than to this probe. Recorded here,
+proposed for the ADR's scope, not fixed under a W1–W2 gate.
 
 ---
 
