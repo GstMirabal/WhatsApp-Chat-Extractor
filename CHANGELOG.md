@@ -10,18 +10,23 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · Versioning: [SemVer](
 
 ### Added
 - Full-history harvest: `history.harvest_history` reads the message panel on every scroll pass and merges by message id, replacing the single DOM read that lost the recent end of the conversation to WhatsApp Web row virtualization. #004
-- Export schema v2 with `schema_version`, `message_count`, `complete` and `stopped_reason`, so a corpus states whether it holds the whole chat. #004
+- Export schema v3 with `schema_version`, `message_count`, `complete` and `stopped_reason`, so a corpus states whether it holds the whole chat. #004
+- Pseudonymous chat identity: `chat_id` is a digest of the chat title, the title is not stored, and the filename carries the digest — no contact name reaches disk. #004
+- `tests/test_row_fields.py` — sender/timestamp extraction against stub rows, the coverage whose absence let the #003 defect ship. #004
 - `/wa-export <chat>` slash command over `wa-extract export-one`. #004
 - `tests/test_history.py` — merge, ordering and termination rules against synthetic pass sequences (no live WhatsApp). #004
 
 ### Changed
-- `wa-extract export-one` replaces `--scroll-passes` with `--max-passes` and `--stall-threshold`, and exits `3` when the harvest stops truncated. #004
+- `wa-extract export-one` replaces `--scroll-passes` with `--max-passes` and `--stall-threshold`, drops `--chat-id`, and exits `3` when the harvest stops without proving it reached the start. #004
 - `export_one` reduced to single-pass primitives (`scroll_one_pass`, `collect_visible_rows`, `at_chat_start`); the iteration moved to `history`. #004
 - Ruff configuration moved from `pyproject.toml` to `.ruff.toml` and scoped to the host tree, excluding the `.agents` submodule. #004
 - Full chat history brought forward from P3 to P2: a dump truncated by a scroll count does not serve its stated consumer. #004
 
 ### Fixed
 - `.gitignore` excluded `/.claude/commands/` wholesale, which made host-authored commands untrackable; it now excludes the directory's contents and re-includes `wa-export.md`. #004
+- `sender` carried the clock instead of the speaker (214 of 217 messages in the first live export) because `data-pre-plain-text` was read off the row rather than its descendant; `timestamp` carried message body for the same reason. Both inherited from #003. #004
+- A stalled harvest was recorded as `complete: true`, producing a 217-message export of a longer conversation marked complete. Only a start-of-chat marker proves completeness now. #004
+- The scroll waited a fixed 400 ms, ending the first live harvest after 1.2 seconds; it now clicks any load-earlier control and polls the panel signature until it changes. #004
 
 ## [0.3.0] - 2026-08-27
 
