@@ -11,7 +11,12 @@
 /.claude/commands/*
 !/.claude/commands/wa-export.md
 /.claude/settings.local.json
-/.cursor/commands/
+# Same shape as `.claude/commands/` above, and for the same reason: the Cursor
+# entry point ADR-0001 declares is this project's own source, not bridge output,
+# so the directory's *contents* are excluded and the host-authored file is
+# re-included. Excluding the directory itself would make the negation dead.
+/.cursor/commands/*
+!/.cursor/commands/wa-export.md
 /.cursor/rules/
 /.cursor/agents/
 /.cursor/mcp.json

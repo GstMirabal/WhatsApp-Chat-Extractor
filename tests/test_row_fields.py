@@ -16,6 +16,11 @@ from __future__ import annotations
 import pytest
 
 from whatsapp_chat_extractor.export_one import (
+    EMOJI_IMG_SELECTOR,
+    IMAGE_SELECTOR,
+    VOICE_SELECTOR,
+    _row_emoji_body,
+    _row_kind,
     _row_sender,
     _row_timestamp,
     is_load_earlier_label,
@@ -52,15 +57,19 @@ class FakeRow:
         data_id: str = "",
         aria_labels: tuple[str, ...] = (),
         nodes: dict[str, FakeNode] | None = None,
+        images: tuple[str, ...] = (),
     ) -> None:
         self._side = side
         self._data_id = data_id
         self._aria = aria_labels
         self._nodes = nodes or {}
+        self._images = images
 
     def query_selector_all(self, selector: str) -> list[FakeNode]:
         if selector == "[aria-label]":
             return [FakeNode(attributes={"aria-label": v}) for v in self._aria]
+        if selector == EMOJI_IMG_SELECTOR:
+            return [FakeNode(attributes={"alt": v}) for v in self._images]
         return []
 
     def get_attribute(self, name: str) -> str | None:
@@ -272,3 +281,65 @@ def test_a_long_message_quoting_the_control_is_not_the_loader() -> None:
     )
     assert len(quoted) > 120
     assert not is_load_earlier_label(quoted)
+
+
+# --- `kind` classification (ADR-0003, Sprint 005 W2 probe) -------------------
+#
+# Every selector asserted here was observed on a live row by the W2 probe of
+# 2026-08-30: 4 voice notes carrying `ptt-status`, 1 photo carrying
+# `image-thumb`, and 2 rows whose only content was emoji drawn as `<img alt>`.
+# The stubs replay those shapes; they do not invent new ones.
+
+
+def test_a_voice_note_is_kind_voice() -> None:
+    row = FakeRow(nodes={VOICE_SELECTOR: FakeNode()})
+    assert _row_kind(row, "") == "voice"
+
+
+def test_a_photo_is_kind_image() -> None:
+    row = FakeRow(nodes={IMAGE_SELECTOR: FakeNode()})
+    assert _row_kind(row, "") == "image"
+
+
+def test_a_text_message_is_kind_text() -> None:
+    assert _row_kind(FakeRow(), "buenos días") == "text"
+
+
+def test_an_unrecognised_media_row_is_unknown_and_not_dropped() -> None:
+    """A medium the probe never saw still leaves a record.
+
+    `unknown` preserves the turn structure. Guessing which medium it was would
+    repeat `KI-004-A`, where three reasoned theories about message direction
+    were deployed and all three were wrong.
+    """
+    assert _row_kind(FakeRow(), "") == "unknown"
+
+
+def test_a_photo_caption_stays_in_the_body_and_the_kind_is_image() -> None:
+    """Media is tested before text because a captioned photo is still a photo."""
+    row = FakeRow(nodes={IMAGE_SELECTOR: FakeNode()})
+    assert _row_kind(row, "mira qué vista") == "image"
+
+
+def test_an_emoji_only_message_recovers_its_text_from_the_alt_attribute() -> None:
+    """These rows were dropped as bodiless, and they are not media at all.
+
+    WhatsApp draws each emoji as `<img alt="…">` inside a
+    `div[data-testid="selectable-text"]`, which the `span.selectable-text`
+    matcher never saw, so `inner_text()` returned nothing. The probe measured
+    two such rows, of one and two emoji.
+    """
+    row = FakeRow(images=("😀", "👍"))
+    body = _row_emoji_body(row)
+    assert body == "😀👍"
+    assert _row_kind(row, body) == "text"
+
+
+def test_a_row_with_no_emoji_images_yields_an_empty_body() -> None:
+    assert _row_emoji_body(FakeRow()) == ""
+
+
+def test_a_voice_note_stays_voice_even_if_it_carries_emoji_images() -> None:
+    """Ordering matters: the medium wins over whatever text was recovered."""
+    row = FakeRow(nodes={VOICE_SELECTOR: FakeNode()}, images=("😀",))
+    assert _row_kind(row, _row_emoji_body(row)) == "voice"

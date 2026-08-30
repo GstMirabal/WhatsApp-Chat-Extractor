@@ -1,0 +1,31 @@
+Proprietary License
+
+Copyright (c) 2026 Gustavo Mirabal. All rights reserved.
+
+This software and its accompanying documentation (the "Software") are the
+confidential and proprietary property of the copyright holder. This file is the
+license `pyproject.toml` declares as `Proprietary`.
+
+No permission is granted to any person to use, copy, modify, merge, publish,
+distribute, sublicense, or sell copies of the Software, in whole or in part,
+except under a separate written agreement signed by the copyright holder.
+Publication of this repository, whether public or private, grants no such
+permission and creates no licence by implication or estoppel.
+
+Permitted without a separate agreement:
+
+  1. Use by the copyright holder.
+  2. Use by a person the copyright holder has given written authorization,
+     limited to the scope that authorization states.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE COPYRIGHT
+HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+Note on the data this Software processes: exported conversations are personal
+data belonging to their participants, not to the copyright holder. This licence
+governs the Software only. It confers no right over any conversation the
+Software exports, and it is not a lawful basis for processing that data.

@@ -19,12 +19,15 @@ from whatsapp_chat_extractor.history import (
 )
 
 
-def row(message_id: str, body: str, sender: str = "contact") -> HarvestedRow:
+def row(
+    message_id: str, body: str, sender: str = "contact", kind: str = "text"
+) -> HarvestedRow:
     return {
         "message_id": message_id,
         "sender": sender,
         "timestamp": "[12:00, 27/8/2026]",
         "body": body,
+        "kind": kind,
     }
 
 
@@ -146,3 +149,48 @@ def test_hitting_the_pass_cap_reports_incomplete() -> None:
     )
     assert result["complete"] is False
     assert result["stopped_reason"] == STOP_MAX_PASSES
+
+
+# --- media rows survive the accumulator (ADR-0003) --------------------------
+
+
+def test_two_media_rows_with_distinct_ids_are_both_kept() -> None:
+    """Two voice notes in one minute have empty bodies and identical metadata.
+
+    Only their DOM identity separates them, which is why `export_one._row_id`
+    falls back to the `conv-msg-<HEX>` wrapper before the hashed key is reached.
+    """
+    accumulator = MessageAccumulator()
+    added = accumulator.add_pass([
+        row("conv-msg-3AFF87", "", kind="voice"),
+        row("conv-msg-3AEE63", "", kind="voice"),
+    ])
+    assert added == 2
+    assert [m["kind"] for m in accumulator.consolidate()] == ["voice", "voice"]
+
+
+def test_kind_survives_consolidation() -> None:
+    accumulator = MessageAccumulator()
+    accumulator.add_pass([row("b", "", kind="image"), row("c", "vale")])
+    accumulator.add_pass([row("a", "", kind="voice"), row("b", "", kind="image")])
+    consolidated = accumulator.consolidate()
+    assert [m["kind"] for m in consolidated] == ["voice", "image", "text"]
+    assert [m["order"] for m in consolidated] == [0, 1, 2]
+
+
+def test_the_fallback_key_separates_a_photo_from_a_voice_note() -> None:
+    """Same speaker, same minute, both captionless: only `kind` differs."""
+    photo = fallback_message_id("me", "[12:00, 27/8/2026]", "", "image")
+    voice = fallback_message_id("me", "[12:00, 27/8/2026]", "", "voice")
+    assert photo != voice
+
+
+def test_the_fallback_key_still_collides_for_two_rows_of_one_kind() -> None:
+    """Asserted so the limit is recorded rather than assumed to be solved.
+
+    Nothing in a captionless voice note's text distinguishes it from the next
+    one; the separation has to come from the DOM identity, not from this hash.
+    """
+    first = fallback_message_id("me", "[12:00, 27/8/2026]", "", "voice")
+    second = fallback_message_id("me", "[12:00, 27/8/2026]", "", "voice")
+    assert first == second

@@ -18,8 +18,8 @@ REAL_NAME = "Ana Pérez García"
 
 def test_build_export_sets_fields() -> None:
     messages: list[MessageRecord] = [
-        {"sender": "me", "timestamp": "10:00, 27/8/2026", "body": "hola", "order": 0},
-        {"sender": "contact", "timestamp": "10:01, 27/8/2026", "body": "hi", "order": 1},
+        {"sender": "me", "timestamp": "10:00, 27/8/2026", "body": "hola", "kind": "text", "order": 0},
+        {"sender": "contact", "timestamp": "10:01, 27/8/2026", "body": "hi", "kind": "text", "order": 1},
     ]
     export = build_export(
         chat_title="Cliente Demo",
@@ -37,7 +37,7 @@ def test_build_export_declares_schema_and_completeness() -> None:
     export = build_export(
         chat_title="Cliente Demo",
         messages=[
-            {"sender": "me", "timestamp": "10:00, 27/8/2026", "body": "hola", "order": 0},
+            {"sender": "me", "timestamp": "10:00, 27/8/2026", "body": "hola", "kind": "text", "order": 0},
         ],
         complete=False,
         stopped_reason="max_passes",
@@ -96,7 +96,7 @@ def test_write_chat_export_creates_json(tmp_path: Path) -> None:
     export = build_export(
         chat_title="Cliente Demo",
         messages=[
-            {"sender": "me", "timestamp": "10:00, 27/8/2026", "body": "hola", "order": 0},
+            {"sender": "me", "timestamp": "10:00, 27/8/2026", "body": "hola", "kind": "text", "order": 0},
         ],
         complete=True,
         stopped_reason="chat_start",
@@ -124,3 +124,73 @@ def test_written_json_carries_the_completeness_fields(tmp_path: Path) -> None:
     assert payload["complete"] is False
     assert payload["stopped_reason"] == "max_passes"
     assert payload["message_count"] == 0
+
+
+# --- schema v4: every message states its medium (ADR-0003) ------------------
+
+
+def test_the_schema_version_is_four() -> None:
+    """v3 files carry no `kind`, so the version is what tells a reader apart."""
+    assert SCHEMA_VERSION == 4
+
+
+def test_a_media_message_is_exported_with_an_empty_body_and_its_kind() -> None:
+    """Under v3 this message produced no record at all.
+
+    The conversation then read question → next question, teaching an adjacency
+    that never happened. No media content is stored — only that one was sent.
+    """
+    messages: list[MessageRecord] = [
+        {"sender": "contact", "timestamp": "10:00, 27/8/2026", "body": "¿lo tienes?",
+         "kind": "text", "order": 0},
+        {"sender": "me", "timestamp": "10:01, 27/8/2026", "body": "",
+         "kind": "voice", "order": 1},
+        {"sender": "contact", "timestamp": "10:02, 27/8/2026", "body": "vale",
+         "kind": "text", "order": 2},
+    ]
+    export = build_export(
+        chat_title="Cliente Demo",
+        messages=messages,
+        complete=True,
+        stopped_reason="chat_start",
+    )
+    assert export["message_count"] == 3
+    assert [m["kind"] for m in export["messages"]] == ["text", "voice", "text"]
+    assert export["messages"][1]["body"] == ""
+
+
+def test_message_count_counts_every_medium_not_only_text() -> None:
+    """`message_count` named itself a message count while counting text only."""
+    messages: list[MessageRecord] = [
+        {"sender": "me", "timestamp": "10:00, 27/8/2026", "body": "",
+         "kind": "image", "order": 0},
+        {"sender": "me", "timestamp": "10:01, 27/8/2026", "body": "",
+         "kind": "voice", "order": 1},
+    ]
+    export = build_export(
+        chat_title="Cliente Demo",
+        messages=messages,
+        complete=False,
+        stopped_reason="max_passes",
+    )
+    assert export["message_count"] == 2
+
+
+def test_no_media_url_or_binary_reaches_the_written_file(tmp_path: Path) -> None:
+    """ADR-0003 §2: the medium is named, its content is never stored."""
+    messages: list[MessageRecord] = [
+        {"sender": "me", "timestamp": "10:00, 27/8/2026", "body": "",
+         "kind": "image", "order": 0},
+    ]
+    export = build_export(
+        chat_title=REAL_NAME,
+        messages=messages,
+        complete=True,
+        stopped_reason="chat_start",
+    )
+    path = write_chat_export(export, data_dir=tmp_path)
+    raw = path.read_text(encoding="utf-8")
+    assert "blob:" not in raw
+    assert "data:image" not in raw
+    assert "https://" not in raw
+    assert REAL_NAME not in raw

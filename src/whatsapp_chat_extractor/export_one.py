@@ -104,6 +104,18 @@ CHAT_START_SELECTORS = (
     '#main div.message-system [data-icon="lock"]',
 )
 
+# Media signals, each observed on a live row by the Sprint 005 W2 probe
+# (2026-08-30, 36-row window: 4 voice notes, 1 photo). Nothing here is inferred
+# from WhatsApp's structure — `KI-004-A`: three successive theories about
+# message direction were reasoned rather than measured, and all three were wrong.
+VOICE_SELECTOR = '[data-testid="ptt-status"], [data-icon="ptt-status"]'
+IMAGE_SELECTOR = '[data-testid="image-thumb"]'
+# An emoji is drawn as `<img alt="…">`, and the node containing it is a
+# `div[data-testid="selectable-text"]` — never the `span.selectable-text` that
+# `_row_body` matches. A message of only emoji therefore read as bodiless and
+# was dropped. The probe measured two such rows, carrying one and two emoji.
+EMOJI_IMG_SELECTOR = 'img[data-testid="selectable-text"][alt]'
+
 
 def _first_selector(page: Page, selectors: tuple[str, ...]) -> str | None:
     for selector in selectors:
@@ -386,7 +398,12 @@ def at_chat_start(page: Page) -> bool:
 
 
 def collect_visible_rows(page: Page, *, chat_title: str = "") -> list[HarvestedRow]:
-    """Read the text rows currently in the DOM, each with a stable identity.
+    """Read the message rows currently in the DOM, each with a stable identity.
+
+    Every row is emitted, including one with no text. Skipping the bodiless ones
+    is what ADR-0003 corrects: a photo or a voice note left no trace at all, so
+    the exported conversation showed question → next question and taught an
+    adjacency that never happened.
 
     Args:
         page: Page with an open conversation.
@@ -403,9 +420,8 @@ def collect_visible_rows(page: Page, *, chat_title: str = "") -> list[HarvestedR
 
     rows: list[HarvestedRow] = []
     for row in page.query_selector_all(row_sel):
-        body = _row_body(row)
-        if not body:
-            continue
+        body = _row_body(row) or _row_emoji_body(row)
+        kind = _row_kind(row, body)
         # Read the id once and hand it on: it is a DOM round trip per row, and
         # the direction is derived from it rather than from a second query.
         message_id = _row_id(row)
@@ -414,25 +430,40 @@ def collect_visible_rows(page: Page, *, chat_title: str = "") -> list[HarvestedR
         rows.append(
             {
                 "message_id": message_id or fallback_message_id(
-                    sender, timestamp, body
+                    sender, timestamp, body, kind
                 ),
                 "sender": sender,
                 "timestamp": timestamp,
                 "body": body,
+                "kind": kind,
             }
         )
     return rows
 
 
 def _row_id(row: object) -> str:
-    """WhatsApp's own message id, read from the row or its nearest ancestor."""
+    """WhatsApp's own message id, read from the row or its nearest ancestor.
+
+    Falls back to the `conv-msg-<HEX>` test id on the wrapping element, which
+    the Sprint 005 W2 probe found on every row (7 rows, 7 distinct values) and
+    which is derived from the same message identity, so it is stable across
+    scroll passes. Without it a captionless media row reaches
+    `fallback_message_id`, whose key cannot separate two voice notes sent by one
+    speaker inside the same minute.
+    """
     own = row.get_attribute("data-id")  # type: ignore[attr-defined]
     if own:
         return own.strip()
     nearest = row.evaluate(  # type: ignore[attr-defined]
         "el => el.closest('[data-id]')?.getAttribute('data-id') || ''"
     )
-    return (nearest or "").strip()
+    if nearest and nearest.strip():
+        return nearest.strip()
+    wrapper = row.evaluate(  # type: ignore[attr-defined]
+        "el => el.closest('[data-testid^=\"conv-msg-\"]')"
+        "?.getAttribute('data-testid') || ''"
+    )
+    return (wrapper or "").strip()
 
 
 def _row_body(row: object) -> str:
@@ -442,6 +473,44 @@ def _row_body(row: object) -> str:
     if selectable is None:
         return ""
     return (selectable.inner_text() or "").strip()
+
+
+def _row_emoji_body(row: object) -> str:
+    """Text of a message whose characters are drawn as emoji images.
+
+    Args:
+        row: Element handle for one message row.
+
+    Returns:
+        str: The emoji in document order, or `""` when the row carries none.
+    """
+    images = row.query_selector_all(EMOJI_IMG_SELECTOR)  # type: ignore[attr-defined]
+    return "".join((image.get_attribute("alt") or "") for image in images)
+
+
+def _row_kind(row: object, body: str) -> str:
+    """Which medium a row carries, so a media message is recorded, not dropped.
+
+    Media is tested before text because a photo with a caption is a photo: it
+    carries both a thumbnail and a body, and the caption belongs in `body` while
+    `kind` names what it captions.
+
+    Only signals the W2 probe observed on live rows are tested. A bodiless row
+    matching none of them is `unknown` rather than a guess (`KI-004-A`), which
+    still preserves the turn structure that dropping it destroyed.
+
+    Args:
+        row: Element handle for one message row.
+        body: Text already extracted for the row, emoji included.
+
+    Returns:
+        str: One of `voice`, `image`, `text`, `unknown`.
+    """
+    if row.query_selector(VOICE_SELECTOR) is not None:  # type: ignore[attr-defined]
+        return "voice"
+    if row.query_selector(IMAGE_SELECTOR) is not None:  # type: ignore[attr-defined]
+        return "image"
+    return "text" if body else "unknown"
 
 
 def _row_sender(row: object, message_id: str = "", chat_title: str = "") -> str:

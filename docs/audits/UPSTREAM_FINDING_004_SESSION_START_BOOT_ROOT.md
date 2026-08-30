@@ -77,6 +77,49 @@ repository at the same commit.
    while mis-rooted, the steps have an invoker that does not exercise them
    against their real subject.
 
+## Second instance, found at the Sprint 005 close (2026-08-30)
+
+The same class, reached by a different mechanism: not `cwd` inheritance but a
+direct adoption of the framework root.
+
+`scripts/model_ledger.py:188` calls `agents_root()` unconditionally, and
+`OUT_REL` is `docs/audits/MODEL_LEDGER.md` relative to it. `collect(root)` then
+enumerates `root/docs/sprints/`. In a host:
+
+| What the close asks for | What the script does |
+| :--- | :--- |
+| `close_workflow.md` `model_ledger_regen` done-criterion: `docs/audits/MODEL_LEDGER.md` exists | Writes `.agents/docs/audits/MODEL_LEDGER.md` |
+| A ledger derived from **this sprint's** `task_scope.md` Model/Effort columns | Derives it from the **framework's** sprint records |
+
+Observed here: the run reported `Wrote docs/audits/MODEL_LEDGER.md (10 sprint
+rows)` — ten rows from the nucleus's own sprints, while this host has five. The
+host's own ledger is never produced, so the step's done-criterion cannot be met
+in a host by running the command the step names. It did not dirty the submodule
+only because the regenerated content was byte-identical to the nucleus's
+committed copy; a host whose sprint records differed would have modified a
+tracked framework file, which `submodule_purity.py` would then correctly refuse
+at the very close that produced it.
+
+This is the rule `scripts/_root.py` states, violated directly rather than by
+inheritance: *"Host-scoped scripts MUST NOT adopt `agents_root()`."*
+
+### Third instance — `.agents/Makefile` is not space-safe
+
+Unrelated to rooting, found in the same step. The `model-ledger` and
+`docs-freshness-check` targets interpolate the repository path unquoted, so a
+host whose path contains a space breaks:
+
+```
+cd /Users/gstmirabal/Developer/GitHub . Extractor/.agents && python3 scripts/model_ledger.py
+python3: can't open file '/Users/gstmirabal/Developer/GitHub/scripts/model_ledger.py'
+```
+
+`make` reported `Error 2`, and the shell pipeline still reported `EXIT=0`, so the
+failure is invisible to a caller that checks the exit code of the pipeline rather
+than of `make`. Both gates were run by invoking the scripts directly instead.
+Quote every path interpolation in `Makefile` and add a test that runs a target
+from a directory whose name contains a space.
+
 ## Proposed fix (nucleus)
 
 1. Split root resolution in `session_start.py`: keep `repo_root()` for locating
