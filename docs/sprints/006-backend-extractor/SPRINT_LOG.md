@@ -1,5 +1,6 @@
 # 📝 Sprint Log: #006
-**Session Tracker**: `20260830T164525Z-7931`
+**Session Tracker**: `20260830T165951Z-13948` (succeeds `20260830T164525Z-7931`, which
+died holding the host lock; PID `12060` confirmed absent before takeover)
 **Role Active**: Principal Agent (sequential; Cursor cannot spawn the eight roles)
 
 ---
@@ -21,18 +22,42 @@
 - [x] **Objective 0 — Open the sprint**
     - `[x]` Session claimed from the host root (`session_start.py --boot` cannot claim a host anchor — `UPSTREAM_FINDING_008`)
     - `[x]` Base sealed at `a654e47`: hotfix H-001 integrated, so this sprint branches with the wrong-chat defect already fixed
-    - `[x]` `IMPLEMENTATION_PLAN.md` written at the canonical path; `audit_plan.py` exit `0`
-    - `[ ]` Approval Gate (Phase 5) — pending human OK
-- [ ] **Objective 1 — Measure before deciding (W1–W2)**
-    - `[ ]` `scripts/probe_chat_start.py`: dump the real attribute chain at the top of the panel for ≥ 5 chats
-    - `[ ]` Answer (H1) marker exists and was never run uncapped, or (H2) marker absent in this operator's chats
-    - `[ ]` Harvest `unknown_media` and search-results-panel evidence in the same run (observation only)
-- [ ] **Objective 2 — Decide (W3)**
+    - `[x]` `IMPLEMENTATION_PLAN.md` written at the canonical path
+    - `[!]` The `audit_plan.py` exit `0` claimed on the line above **could not be
+      reproduced**: no such script exists at `.agents/scripts/` in `v4.23.0`. The
+      Phase 1 plan audit is therefore **not** treated as performed. See the anchor's
+      `audit_plan_missing`
+    - `[x]` **Approval Gate (Phase 5) — PARTIAL APPROVAL, human, 2026-08-30**:
+      **W1–W2 authorized. W3–W8 withheld.** The human chose to stop the sprint after
+      the measurement, so that the ADR's choice between option C and option D is made
+      against W1's evidence rather than alongside it — which is what `## Design` D1
+      already argues for. Reopening the gate for W3 requires returning to the human
+      with (H1) or (H2) established
+- [~] **Objective 1 — Measure before deciding (W1–W2)** — *authorized; awaiting the operator*
+    - `[x]` `scripts/probe_chat_start.py` written: dumps the structural attribute
+      chain of the panel's topmost chrome for ≥ 5 chats. `ruff` clean, 88 tests
+      still green, imports and CLI verified. Records a fixed attribute allowlist
+      and never `innerText`; `data-pre-plain-text` is excluded because it carries
+      the sender's name (`ADR-0003`)
+    - `[x]` `DOM_PROBE_NOTES.md` written with the procedure and **empty** evidence
+      tables. They stay empty until the probe runs — filling them from the Sprint
+      005 spike or from WhatsApp's documented structure would be `KI-004-A` again
+    - `[ ]` **Operator action required**: run the probe against ≥ 5 real chats,
+      one deliberately short. It cannot run unattended (real login, real chats)
+    - `[ ]` Answer (H1) marker exists and was never run uncapped, (H2) marker
+      absent in this operator's chats, or the abort criterion (marker not
+      reproducible between runs over one chat)
+    - `[ ]` Harvest `unknown_media` and search-results-panel evidence in the same
+      run (observation only; both deferred to Sprint 007)
+- [🔒] **Objective 2 — Decide (W3)** — *not authorized*
     - `[ ]` `ADR-0004`: what the export reports when the marker is absent. Option C (third explicit state) vs Option D (composite positive evidence), chosen from W1's measurement
-- [ ] **Objective 3 — Implement and pin (W4–W6)**
+- [🔒] **Objective 3 — Implement and pin (W4–W6)** — *not authorized*
     - `[ ]` `history.py` completeness classification, `writers.py` schema, `tests/test_completeness.py`
-- [ ] **Objective 4 — Document (W7–W8)**
+- [🔒] **Objective 4 — Document (W7–W8)** — *not authorized*
     - `[ ]` Blueprint completeness contract, README `complete` semantics, Master Ledger
+
+> 🔒 marks work the Approval Gate deliberately withheld, not work that was
+> forgotten. The gate reopens once Objective 1 carries a verdict.
 
 ---
 

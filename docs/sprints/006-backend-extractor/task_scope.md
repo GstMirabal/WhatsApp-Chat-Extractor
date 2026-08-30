@@ -36,14 +36,19 @@ copied from `config/model_tiers.json` (`F-20260825-027`).
 
 | # | File | Operation | Risk | Assignee | Model | Effort | Status |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| W1 | `scripts/probe_chat_start.py` | create | medium | `implementer_agent` | `claude-opus-5` | `high` | ⏳ |
-| W2 | `docs/sprints/006-backend-extractor/DOM_PROBE_NOTES.md` | create | low | `doc_orchestrator` | `composer-2.5` | — | ⏳ |
-| W3 | `docs/decisions/ADR-0004-completeness-criterion.md` | create | high | `doc_orchestrator` | `claude-opus-5` | `max` | ⏳ |
-| W4 | `src/whatsapp_chat_extractor/history.py` | modify | high | `implementer_agent` | `claude-opus-5` | `max` | ⏳ |
-| W5 | `tests/test_completeness.py` | create | medium | `implementer_agent` | `claude-opus-5` | `high` | ⏳ |
-| W6 | `src/whatsapp_chat_extractor/writers.py` | modify | medium | `implementer_agent` | `claude-opus-5` | `high` | ⏳ |
-| W7 | `docs/architecture/EXTRACTOR_BLUEPRINT.md` | modify | low | `doc_orchestrator` | `composer-2.5` | — | ⏳ |
-| W8 | `README.md` | modify | low | `doc_orchestrator` | `composer-2.5` | — | ⏳ |
+| W1 | `scripts/probe_chat_start.py` | create | medium | `implementer_agent` | `claude-opus-5` | `high` | ✅ |
+| W2 | `docs/sprints/006-backend-extractor/DOM_PROBE_NOTES.md` | create | low | `doc_orchestrator` | `composer-2.5` | — | 🟡 |
+| W3 | `docs/decisions/ADR-0004-completeness-criterion.md` | create | high | `doc_orchestrator` | `claude-opus-5` | `max` | 🔒 |
+| W4 | `src/whatsapp_chat_extractor/history.py` | modify | high | `implementer_agent` | `claude-opus-5` | `max` | 🔒 |
+| W5 | `tests/test_completeness.py` | create | medium | `implementer_agent` | `claude-opus-5` | `high` | 🔒 |
+| W6 | `src/whatsapp_chat_extractor/writers.py` | modify | medium | `implementer_agent` | `claude-opus-5` | `high` | 🔒 |
+| W7 | `docs/architecture/EXTRACTOR_BLUEPRINT.md` | modify | low | `doc_orchestrator` | `composer-2.5` | — | 🔒 |
+| W8 | `README.md` | modify | low | `doc_orchestrator` | `composer-2.5` | — | 🔒 |
+
+**Status legend.** ✅ done · 🟡 written, awaiting the operator's probe run ·
+🔒 **not authorized**: the Approval Gate of 2026-08-30 covered W1–W2 only, so
+W3–W8 stay closed until the probe's verdict reopens the gate. A row marked 🔒 is
+out of scope for this session, and `no_interference` refuses any write to it.
 
 ## Escalation notes
 
