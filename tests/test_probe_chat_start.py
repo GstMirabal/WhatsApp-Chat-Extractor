@@ -186,7 +186,11 @@ def test_unopenable_chat_is_recorded_and_survived(monkeypatch) -> None:
     def refuse(page: object, query: str) -> str:
         raise RuntimeError("wrong chat")
 
+    def also_refuse(*args: object) -> str:
+        raise RuntimeError("wrong chat")
+
     monkeypatch.setattr(probe, "open_chat_by_query", refuse)
+    monkeypatch.setattr(probe, "_try_open_strategies", also_refuse)
     monkeypatch.setattr(probe, "_reload_to_chat_list", lambda page: None)
     result = probe.probe_one_chat(KeyboardPage(), "x", max_passes=1)
     assert result["chat_id"] is None
@@ -226,7 +230,7 @@ def test_search_state_is_cleared_before_every_open(monkeypatch) -> None:
     page = KeyboardPage()
     monkeypatch.setattr(probe, "open_chat_by_query", lambda p, q: "Someone")
 
-    title, error = probe.open_for_probe(page, "second chat")
+    title, error, _ = probe.open_for_probe(page, "second chat")
 
     assert (title, error) == ("Someone", "")
     assert page.keys == ["Escape", "Escape"], "search state was not dismissed"
@@ -235,22 +239,23 @@ def test_search_state_is_cleared_before_every_open(monkeypatch) -> None:
 def test_a_stale_search_box_is_retried_after_a_reload(monkeypatch) -> None:
     """Dismissing is best-effort; a reload is the fallback, and it is used."""
     page = KeyboardPage()
-    attempts = {"n": 0}
     reloaded = {"n": 0}
 
-    def flaky(p: object, q: str) -> str:
-        attempts["n"] += 1
-        if attempts["n"] == 1:
-            raise RuntimeError("Chat search box not found")
-        return "Someone"
-
-    monkeypatch.setattr(probe, "open_chat_by_query", flaky)
+    monkeypatch.setattr(
+        probe, "open_chat_by_query",
+        lambda p, q: (_ for _ in ()).throw(RuntimeError("Chat search box not found")),
+    )
+    monkeypatch.setattr(
+        probe, "_try_open_strategies",
+        lambda p, q: (_ for _ in ()).throw(RuntimeError("Chat search box not found"))
+        if reloaded["n"] == 0 else ("Someone", "sel", {}),
+    )
     monkeypatch.setattr(
         probe, "_reload_to_chat_list",
         lambda p: reloaded.__setitem__("n", reloaded["n"] + 1),
     )
 
-    title, error = probe.open_for_probe(page, "second chat")
+    title, error, _ = probe.open_for_probe(page, "second chat")
 
     assert (title, error) == ("Someone", "")
     assert reloaded["n"] == 1, "the probe gave up without reloading"
@@ -264,16 +269,92 @@ def test_one_dead_chat_does_not_end_the_run(monkeypatch) -> None:
     """
     page = KeyboardPage()
 
-    def always_refuse(p: object, q: str) -> str:
+    def always_refuse(*args: object) -> str:
         raise RuntimeError("Chat search box not found")
 
     monkeypatch.setattr(probe, "open_chat_by_query", always_refuse)
+    monkeypatch.setattr(probe, "_try_open_strategies", always_refuse)
     monkeypatch.setattr(probe, "_reload_to_chat_list", lambda p: None)
 
-    title, error = probe.open_for_probe(page, "x")
+    title, error, _ = probe.open_for_probe(page, "x")
 
     assert title is None
     assert "search box not found" in error
+
+
+# ------------------------------------------- which node actually opens a chat
+
+
+class ClickPage(KeyboardPage):
+    """Records clicks and reports which selector opened a conversation."""
+
+    def __init__(self, opens_on: str | None, counts: dict[str, int]) -> None:
+        super().__init__({})
+        self.opens_on = opens_on
+        self.counts = counts
+        self.clicked: list[str] = []
+        self.opened = False
+
+    def locator(self, selector: str) -> ClickPage:
+        self._selector = selector
+        return self
+
+    @property
+    def first(self) -> ClickPage:
+        return self
+
+    def count(self) -> int:
+        return self.counts.get(self._selector, 0)
+
+    def click(self, timeout: int = 0) -> None:
+        self.clicked.append(self._selector)
+        if self._selector == self.opens_on:
+            self.opened = True
+
+
+def test_the_selector_that_opens_the_chat_is_recorded(monkeypatch) -> None:
+    """Run 1's real failure: the exporter clicks a wrapper that does nothing.
+
+    `role="listitem"` matched 0 and `#pane-side div[role="row"]` matched 59, so
+    `_open_first_result` clicked a container that accepts a click and opens
+    nothing — the operator had to click the chat by hand. The probe must try
+    the candidates and report which one worked, because that is the evidence a
+    later fix to the exporter has to rest on.
+    """
+    page = ClickPage(
+        opens_on='[data-testid="cell-frame-container"]',
+        counts={'[data-testid="cell-frame-container"]': 36,
+                '#pane-side div[role="listitem"]': 0,
+                '#pane-side div[role="row"]': 59},
+    )
+    monkeypatch.setattr(probe, "_dismiss_search", lambda p: None)
+    monkeypatch.setattr(probe, "search_results_evidence", lambda p: {"counts": {}})
+    monkeypatch.setattr(
+        probe.sys.modules["whatsapp_chat_extractor.export_one"],
+        "_type_query", lambda p, q: None,
+    )
+    monkeypatch.setattr(
+        probe, "_verified_title", lambda p, q: "Someone" if page.opened else None
+    )
+    monkeypatch.setattr(
+        probe, "_click_and_verify",
+        lambda p, q, sel: ("Someone" if (p.locator(sel).count() and sel == p.opens_on
+                                         and not p.click(timeout=0)) else None),
+    )
+
+    title, strategy, _ = probe._try_open_strategies(page, "someone")
+
+    assert title == "Someone"
+    assert strategy == '[data-testid="cell-frame-container"]'
+
+
+def test_a_click_that_opens_the_wrong_chat_is_rejected(monkeypatch) -> None:
+    """H-001's guarantee is not relaxed to make a strategy succeed."""
+    monkeypatch.setattr(
+        probe.sys.modules["whatsapp_chat_extractor.export_one"],
+        "read_open_chat_title", lambda p: "Someone Else",
+    )
+    assert probe._verified_title(FakePage({}), "ana") is None
 
 
 def test_no_chats_requested_is_refused() -> None:

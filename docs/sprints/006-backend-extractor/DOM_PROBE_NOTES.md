@@ -80,6 +80,11 @@ One row per probed chat. `chat_id` is the pseudonymous digest, never a name.
 WhatsApp: `export_one` opens one chat per process, so a second search on one
 page had never been exercised. Fixed (§6).
 
+> ⚠️ **Run 1's single data point is not clean.** The operator reports having had
+> to click the chat by hand: the automated click did not open it. So `chat_1fc92bb`
+> was measured, but the run did not open it unaided, and no run has yet
+> demonstrated the probe opening a chat on its own. §6 records why.
+
 **Per-selector match counts.** A selector that fires on the *wrong* node is a
 different defect from one that never fires, and only this table separates them.
 
@@ -214,6 +219,31 @@ that is wrong produces evidence that is wrong and looks exactly the same.
 Neither harness is in the repository: `tests/test_completeness.py` (W5) is
 gate-locked, so writing tests into `tests/` would have breached `task_scope`.
 They live in the session scratchpad.
+
+**A third defect is in the exporter, and is NOT fixed here.** The operator
+reported that the first search opens nothing until the chat is clicked by hand.
+`_open_first_result` (`export_one.py:177`) clicks `.first` of the earliest
+candidate with any match, and run 1's own numbers explain the outcome:
+
+| Candidate | Matches | Outcome |
+| :--- | :--- | :--- |
+| `#pane-side div[role="listitem"]` | 0 | skipped |
+| `#pane-side div[role="row"]` | 59 | **clicked** — a wrapper that accepts the click and opens nothing |
+| `[data-testid="cell-frame-container"]` | 36 | never reached |
+
+The click raises no error, so the loop returns satisfied and the run waits on a
+conversation that never opened. It has gone unnoticed because the exporter is
+always run with an operator present, who clicks the chat without registering
+that they are covering for a defect.
+
+**It is deliberately not fixed in this sprint.** `export_one.py` is not in
+`task_scope`, and — more to the point — those counts come from a page with a
+conversation *already open*, not from a live search. Correcting a selector on
+them would be reasoning about a DOM instead of measuring it, which is exactly
+`KI-004-A`. The probe now records `opening.strategy` and
+`opening.search_results` (counts plus the first hit's subtree, measured during
+the search), so run 2 produces the evidence a fix must rest on. Human decision
+of 2026-08-30: measure first.
 
 **A second defect was found by run 1 itself**, which no harness had reached:
 `export_one` opens one chat per process, so a *second* search on one page was

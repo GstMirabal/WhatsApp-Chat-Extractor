@@ -85,6 +85,28 @@ DEFAULT_MAX_PASSES = 400
 # the date divider and the first bubble's wrapper with room to spare.
 TOP_NODE_LIMIT = 12
 EXIT_BELOW_MINIMUM = 3
+# Descendants of the first search hit to record. The hit's own node may not be
+# the clickable one, and this is what shows which descendant is.
+RESULT_TREE_LIMIT = 14
+# Ordered attempts at opening a search hit, most specific first.
+#
+# `export_one._open_first_result` clicks `.first` of the earliest selector with
+# any match, and run 1 measured why that fails here: `role="listitem"` matches
+# nothing (0), so it falls through to `#pane-side div[role="row"]` (59) — a
+# wrapper that accepts a click and does nothing. The operator then opens the
+# chat by hand and the run looks like it worked.
+#
+# The probe therefore tries several and records which one actually opened the
+# chat, rather than assuming. Nothing is fixed in the exporter on this evidence
+# alone: these counts came from a page with a chat already open, not from a
+# live search, and guessing from them is the mistake `KI-004-A` names.
+SEARCH_CLICK_SELECTORS = (
+    '[data-testid="cell-frame-container"]',
+    '#pane-side div[role="listitem"]',
+    '#pane-side div[role="row"]',
+)
+# How long a click gets to produce an open conversation before it is judged.
+OPEN_SETTLE_MS = 1_500
 
 # Structural attributes only. `data-pre-plain-text`, `title`, `alt` and
 # `aria-label` are all absent by design: each can carry a person's name.
@@ -131,6 +153,35 @@ _TOP_CHROME_JS = """
 
 _OUTSIDE_PANE_JS = """
 (el) => !el.closest('#pane-side')
+"""
+
+# The first search hit and its descendants. Which node carries the click
+# handler is the open question, and a signature of the subtree is what answers
+# it. Text is never read: `class` and `role` say enough about shape.
+_RESULT_TREE_JS = """
+(el, limit) => {
+  const allow = ['data-icon', 'data-testid', 'role', 'class', 'tabindex', 'dir'];
+  const sign = (node, depth) => {
+    const attrs = {};
+    for (const name of allow) {
+      const value = node.getAttribute(name);
+      if (value !== null) { attrs[name] = value.slice(0, 160); }
+    }
+    return {
+      tag: node.tagName.toLowerCase(),
+      depth: depth,
+      attrs: attrs,
+      child_count: node.childElementCount,
+    };
+  };
+  const out = [sign(el, 0)];
+  for (const kid of Array.from(el.querySelectorAll('*')).slice(0, limit)) {
+    let depth = 0;
+    for (let p = kid.parentElement; p && p !== el; p = p.parentElement) { depth++; }
+    out.push(sign(kid, depth + 1));
+  }
+  return out;
+}
 """
 
 # A tally, not a sample. `top_chrome_signatures` walks the panel in document
@@ -387,31 +438,155 @@ def _reload_to_chat_list(page: Page) -> None:
     wait_until_ready(page)
 
 
-def open_for_probe(page: Page, query: str) -> tuple[str | None, str]:
-    """Open ``query``'s chat, recovering once from stale search state.
+def search_results_evidence(page: Page) -> dict[str, Any]:
+    """Record what a live search left in the chat-list pane.
+
+    This is the measurement that run 1 could not make. Every earlier count came
+    from a page with a conversation already open, so which node a search hit
+    actually is — and which of its descendants takes the click — has never been
+    observed. Both are needed before `_open_first_result` can be corrected in
+    the exporter rather than guessed at.
+
+    Args:
+        page: Page showing search results for a query already typed.
+
+    Returns:
+        dict[str, Any]: Match count per candidate selector, plus the subtree of
+            the first hit of the first selector that matched.
+    """
+    counts = {
+        selector: len(page.query_selector_all(selector))
+        for selector in SEARCH_CLICK_SELECTORS
+    }
+    tree: list[dict] = []
+    for selector in SEARCH_CLICK_SELECTORS:
+        node = page.query_selector(selector)
+        if node is None:
+            continue
+        tree = list(node.evaluate(_RESULT_TREE_JS, RESULT_TREE_LIMIT))
+        return {"counts": counts, "first_hit_selector": selector, "first_hit": tree}
+    return {"counts": counts, "first_hit_selector": None, "first_hit": tree}
+
+
+def _click_and_verify(page: Page, query: str, selector: str) -> str | None:
+    """Click the first node matching ``selector`` and check what opened.
+
+    Args:
+        page: Page showing search results.
+        query: Fragment the operator typed, used to verify the conversation.
+        selector: Candidate to click.
+
+    Returns:
+        str | None: The verified title, or None when this candidate did not
+            open a conversation matching ``query``.
+    """
+    from playwright.sync_api import Error as PlaywrightError
+
+    from whatsapp_chat_extractor.export_one import (
+        _title_matches_query,
+        read_open_chat_title,
+    )
+
+    locator = page.locator(selector)
+    try:
+        if locator.count() == 0:
+            return None
+        locator.first.click(timeout=5_000)
+    except PlaywrightError as exc:
+        logger.debug("Click miss on %s: %s", selector, exc)
+        return None
+
+    page.wait_for_timeout(OPEN_SETTLE_MS)
+    title = read_open_chat_title(page)
+    if title and _title_matches_query(title, query):
+        return title
+    return None
+
+
+def _try_open_strategies(page: Page, query: str) -> tuple[str | None, str, dict]:
+    """Type ``query`` and try each opening strategy until one verifies.
 
     Args:
         page: Ready WhatsApp Web page.
         query: Chat fragment typed by the operator.
 
     Returns:
-        tuple[str | None, str]: The verified chat title and an empty string, or
-            ``None`` and the reason the chat could not be opened.
+        tuple[str | None, str, dict]: Verified title (or None), the strategy
+            that worked (or ""), and the search-results evidence.
+    """
+    from whatsapp_chat_extractor.export_one import _type_query
+
+    _dismiss_search(page)
+    _type_query(page, query)
+    evidence = search_results_evidence(page)
+
+    for selector in SEARCH_CLICK_SELECTORS:
+        title = _click_and_verify(page, query, selector)
+        if title:
+            logger.info("Opened via %s", selector)
+            return title, selector, evidence
+        _dismiss_search(page)
+        _type_query(page, query)
+
+    page.keyboard.press("Enter")
+    page.wait_for_timeout(OPEN_SETTLE_MS)
+    title = _verified_title(page, query)
+    return title, "keyboard:Enter" if title else "", evidence
+
+
+def _verified_title(page: Page, query: str) -> str | None:
+    """Return the open conversation's title when it matches ``query``."""
+    from whatsapp_chat_extractor.export_one import (
+        _title_matches_query,
+        read_open_chat_title,
+    )
+
+    title = read_open_chat_title(page)
+    return title if title and _title_matches_query(title, query) else None
+
+
+def open_for_probe(page: Page, query: str) -> tuple[str | None, str, dict]:
+    """Open ``query``'s chat, trying every strategy and recording which worked.
+
+    The exporter's `open_chat_by_query` is tried first, so the common path stays
+    the measured one. Its fallbacks exist because run 1 showed that path does
+    not open a chat unaided in this build.
+
+    Verification is never relaxed: every strategy must leave a conversation
+    whose title contains ``query``, which is hotfix H-001's guarantee. A
+    strategy that opens the wrong chat is discarded, not reported.
+
+    Args:
+        page: Ready WhatsApp Web page.
+        query: Chat fragment typed by the operator.
+
+    Returns:
+        tuple[str | None, str, dict]: The verified title (or None), the reason
+            it failed (empty when it did not), and a diagnosis recording which
+            strategy opened the chat plus the search-results evidence.
     """
     _dismiss_search(page)
     try:
-        return open_chat_by_query(page, query), ""
+        title = open_chat_by_query(page, query)
+        return title, "", {"strategy": "export_one.open_chat_by_query"}
     except RuntimeError as exc:
-        logger.warning("Opening failed, attempting recovery: %s", exc)
+        logger.warning("Exporter path did not open the chat: %s", exc)
 
     try:
-        _reload_to_chat_list(page)
-        return open_chat_by_query(page, query), ""
+        title, strategy, evidence = _try_open_strategies(page, query)
     except RuntimeError as exc:
-        # The message can name the query, which the operator typed; it never
-        # carries a title, and the query is not stored in the output.
-        logger.error("Chat could not be opened and verified: %s", exc)
-        return None, str(exc)[:300]
+        logger.warning("Search unusable, reloading: %s", exc)
+        _reload_to_chat_list(page)
+        try:
+            title, strategy, evidence = _try_open_strategies(page, query)
+        except RuntimeError as inner:
+            logger.error("Chat could not be opened: %s", inner)
+            return None, str(inner)[:300], {"strategy": None}
+
+    diagnosis = {"strategy": strategy or None, "search_results": evidence}
+    if title is None:
+        return None, "No strategy opened a conversation matching the query", diagnosis
+    return title, "", diagnosis
 
 
 def probe_one_chat(page: Page, query: str, *, max_passes: int) -> dict[str, Any]:
@@ -427,13 +602,14 @@ def probe_one_chat(page: Page, query: str, *, max_passes: int) -> dict[str, Any]
             On failure, ``error`` carries the reason and the rest is absent, so
             one unopenable chat does not void the whole probe.
     """
-    title, error = open_for_probe(page, query)
+    title, error, opening = open_for_probe(page, query)
     if title is None:
-        return {"chat_id": None, "error": error}
+        return {"chat_id": None, "error": error, "opening": opening}
 
     scroll = scroll_to_top(page, max_passes=max_passes)
     return {
         "chat_id": pseudonymous_chat_id(title),
+        "opening": opening,
         "scroll": scroll,
         "marker": marker_evidence(page),
         "top_chrome": top_chrome_signatures(page),
