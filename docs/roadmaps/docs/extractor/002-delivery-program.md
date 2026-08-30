@@ -7,8 +7,8 @@ Program authority: [ADR-0001](../../decisions/ADR-0001-product-scope-whatsapp-we
 | :--- | :--- | :--- | :--- |
 | P0 | 002 | CLOSED | Seal product + delivery ADRs, overview, this roadmap |
 | P1 | 003 | CLOSED | Spike: one chat via WhatsApp Web → text JSON in `data/` |
-| P2 | 004 | PLANNED | Happy path: Cursor agent + scripts for a usable dump |
-| P3 | 005+ | PLANNED | Harden: full history, all chats, retries / partial failure |
+| P2 | 004 | CLOSED | Happy path: full-history harvest, pseudonymous JSON, `/wa-export` |
+| P3 | 005+ | PLANNED | Harden: all chats, retries / partial failure (full history landed early, in P2) |
 | — | — | OUT OF REPO | AI analysis (solicitudes, sentimiento), learning server, bot |
 
 ## Phase notes
@@ -17,5 +17,5 @@ Program authority: [ADR-0001](../../decisions/ADR-0001-product-scope-whatsapp-we
 | :--- | :--- | :--- |
 | P0 | Decisions only (no product code) | Playwright, `src/`, live dump |
 | P1 | Minimal package + Playwright proof on Mac | All-chats dump, Cursor skill polish |
-| P2 | Agent orchestration command/skill; scripts do the work | Sentiment/bot; perfect resilience |
+| P2 | Agent orchestration command/skill; scripts do the work; full history per chat | Sentiment/bot; perfect resilience; all-chats dump |
 | P3 | Completeness and robustness of export | Downstream AI products |

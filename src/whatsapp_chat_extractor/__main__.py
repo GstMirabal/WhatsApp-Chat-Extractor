@@ -7,10 +7,12 @@ import logging
 import sys
 from pathlib import Path
 
-from whatsapp_chat_extractor.export_one import (
-    collect_visible_messages,
-    open_chat_by_query,
-    scroll_message_panel,
+from whatsapp_chat_extractor.export_one import open_chat_by_query
+from whatsapp_chat_extractor.history import (
+    DEFAULT_LOAD_WAIT_MS,
+    DEFAULT_MAX_PASSES,
+    DEFAULT_STALL_THRESHOLD,
+    harvest_history,
 )
 from whatsapp_chat_extractor.session import (
     DEFAULT_PROFILE_DIR,
@@ -30,6 +32,8 @@ logging.basicConfig(
     format="%(levelname)s %(name)s: %(message)s",
 )
 logger = logging.getLogger("wa-extract")
+
+EXIT_INCOMPLETE = 3
 
 
 def _add_shared_args(parser: argparse.ArgumentParser) -> None:
@@ -72,7 +76,13 @@ def cmd_login(args: argparse.Namespace) -> int:
 
 
 def cmd_export_one(args: argparse.Namespace) -> int:
-    """Export one human-selected chat to JSON under ``data/``."""
+    """Export one human-selected chat's full history to JSON under ``data/``.
+
+    Returns:
+        int: ``0`` when the harvest reached the start of the chat, ``3`` when it
+            stopped at the pass cap, so a caller can tell a complete corpus from
+            a truncated one without parsing the file.
+    """
     from playwright.sync_api import sync_playwright
 
     with sync_playwright() as playwright:
@@ -85,24 +95,38 @@ def cmd_export_one(args: argparse.Namespace) -> int:
             page = open_whatsapp(context)
             wait_until_ready(page, timeout_ms=args.timeout_ms)
             title = open_chat_by_query(page, args.query, timeout_ms=60_000)
-            scroll_message_panel(page, passes=args.scroll_passes)
-            messages = collect_visible_messages(page)
+            harvest = harvest_history(
+                page,
+                chat_title=title,
+                max_passes=args.max_passes,
+                stall_threshold=args.stall_threshold,
+                load_wait_ms=args.load_wait_ms,
+            )
             export = build_export(
-                chat_id=args.chat_id or title,
-                title=title,
-                messages=messages,
+                chat_title=title,
+                messages=harvest["messages"],
+                complete=harvest["complete"],
+                stopped_reason=harvest["stopped_reason"],
             )
             path = write_chat_export(export, data_dir=args.data_dir)
             print(path)
         finally:
             context.close()
+
+    if not harvest["complete"]:
+        logger.error(
+            "Incomplete export: stopped at the %s pass cap. Re-run with a "
+            "higher --max-passes to reach the start of the chat.",
+            args.max_passes,
+        )
+        return EXIT_INCOMPLETE
     return 0
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="wa-extract",
-        description="WhatsApp Web text export spike (one chat → JSON).",
+        description="WhatsApp Web text export (one chat → full-history JSON).",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -117,7 +141,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     export_one = sub.add_parser(
         "export-one",
-        help="Open one chat by search query and write JSON under data/",
+        help="Open one chat by search query and write its full history to data/",
     )
     _add_shared_args(export_one)
     export_one.add_argument(
@@ -126,21 +150,36 @@ def build_parser() -> argparse.ArgumentParser:
         help="Chat title / contact fragment (human-chosen)",
     )
     export_one.add_argument(
-        "--chat-id",
-        default="",
-        help="Optional stable id; defaults to resolved title",
-    )
-    export_one.add_argument(
         "--data-dir",
         type=Path,
         default=DEFAULT_DATA_DIR,
         help="Output directory (default: data/)",
     )
+    # No --chat-id: the export is pseudonymous, and a caller-supplied id is a
+    # way to put a real name back into the filename and the payload.
     export_one.add_argument(
-        "--scroll-passes",
+        "--max-passes",
         type=int,
-        default=8,
-        help="Upward scroll passes before collect (spike, not full history)",
+        default=DEFAULT_MAX_PASSES,
+        help=f"Hard cap on scroll passes (default: {DEFAULT_MAX_PASSES})",
+    )
+    export_one.add_argument(
+        "--stall-threshold",
+        type=int,
+        default=DEFAULT_STALL_THRESHOLD,
+        help=(
+            "Consecutive passes without new messages that end the harvest "
+            f"(default: {DEFAULT_STALL_THRESHOLD})"
+        ),
+    )
+    export_one.add_argument(
+        "--load-wait-ms",
+        type=int,
+        default=DEFAULT_LOAD_WAIT_MS,
+        help=(
+            "How long one pass waits for older messages to arrive from the "
+            f"phone (default: {DEFAULT_LOAD_WAIT_MS})"
+        ),
     )
     export_one.set_defaults(func=cmd_export_one)
 

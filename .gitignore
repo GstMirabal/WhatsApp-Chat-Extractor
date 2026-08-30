@@ -2,8 +2,14 @@
 # .agents Claude/Cursor bridge + graphify output (regenerated locally, never commit)
 /CLAUDE.md
 /.claude/agents/
-/.claude/commands/
 /.claude/skills/
+# Host-authored commands are this project's own source, not bridge output.
+# install.sh only ever writes .claude/commands/agents/, so a file at the root of
+# commands/ is safe to track. The pattern excludes the directory's *contents*
+# rather than the directory itself: git does not descend into an excluded
+# directory, so a negation under `/.claude/commands/` would never be consulted.
+/.claude/commands/*
+!/.claude/commands/wa-export.md
 /.claude/settings.local.json
 /.cursor/commands/
 /.cursor/rules/

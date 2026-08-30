@@ -1,4 +1,9 @@
-"""Open one WhatsApp Web chat and collect visible text messages."""
+"""Open one WhatsApp Web chat and read the message panel one pass at a time.
+
+Single-pass primitives only. The loop that walks a whole conversation lives in
+`history.harvest_history`, because the panel virtualizes its rows and a correct
+walk needs an accumulator, not a scroll count.
+"""
 
 from __future__ import annotations
 
@@ -7,7 +12,11 @@ import re
 import sys
 from typing import TYPE_CHECKING
 
-from whatsapp_chat_extractor.writers import MessageRecord
+from whatsapp_chat_extractor.history import (
+    DEFAULT_LOAD_WAIT_MS,
+    HarvestedRow,
+    fallback_message_id,
+)
 
 if TYPE_CHECKING:
     from playwright.sync_api import Locator, Page
@@ -54,6 +63,45 @@ MESSAGE_ROW_SELECTORS = (
 TITLE_SELECTORS = (
     '#main header span[dir="auto"]',
     '[data-testid="conversation-info-header"] span[dir="auto"]',
+)
+# The control that pulls older history from the phone. Matching `button` alone
+# was the first version and it never fired: WhatsApp renders this as a
+# `div[role="button"]` in current builds, so the operator had to click it by
+# hand on every batch. Tag and locale are both unreliable — the text is what
+# identifies it, across whichever element carries it.
+LOAD_EARLIER_TESTID = 'button[data-testid="load-earlier-msgs"]'
+# Deliberately narrow. The first version added `#main a` and `#main [tabindex]`,
+# which are every link and nearly every focusable node *inside the conversation*,
+# and paired them with a `haz clic aquí` alternative — a phrase that occurs in
+# ordinary messages. The harvester clicked links inside the chat.
+LOAD_EARLIER_CANDIDATES = (
+    '#main button, #main div[role="button"], #main span[role="button"]'
+)
+# Every alternative requires the noun "mensajes"/"messages": a verb phrase alone
+# ("haz clic aquí", "click here") is message content as often as it is a control.
+LOAD_EARLIER_PATTERN = re.compile(
+    r"mensajes\s+(m[áa]s\s+)?(antiguos|anteriores|viejos)"
+    r"|(cargar|ver|obtener|mostrar)\s+\S{0,30}?\s?mensajes"
+    r"|(older|earlier|previous)\s+messages"
+    r"|(load|get|show)\s+\S{0,30}?\s?messages",
+    re.IGNORECASE,
+)
+# A control's label is short. A message that happens to mention older messages is
+# usually not, and this is the cheapest discriminator between the two.
+LOAD_EARLIER_MAX_LABEL = 120
+# Best-effort start-of-conversation markers. WA Web does not always render one,
+# so `history.decide_stop` uses these only to report a *proven* start.
+# Direction signals, in the order the live DOM proved reliable (Sprint 004
+# probe). WhatsApp draws the bubble "tail" only on the first message of a run,
+# so consecutive messages from one speaker carry no tail and need the label.
+TAIL_OUT_SELECTOR = '[data-testid="tail-out"], [data-icon="tail-out"]'
+TAIL_IN_SELECTOR = '[data-testid="tail-in"], [data-icon="tail-in"]'
+SPEAKER_LABEL_PATTERN = re.compile(r"^(?P<name>.+):$")
+PRE_PLAIN_NAME_PATTERN = re.compile(r"\]\s*(?P<name>.*?):\s*$")
+CHAT_START_SELECTORS = (
+    '#main [data-icon="lock-refreshed"]',
+    '#main [data-testid="msg-system"] [data-icon="lock"]',
+    '#main div.message-system [data-icon="lock"]',
 )
 
 
@@ -157,7 +205,9 @@ def open_chat_by_query(page: Page, query: str, *, timeout_ms: int = 30_000) -> s
         ) from exc
 
     title = read_open_chat_title(page) or query
-    logger.info("Opened chat title=%r query=%r", title, query)
+    # The title is a real person's name. It is returned so the caller can derive
+    # a pseudonymous id from it, and is deliberately kept out of the log.
+    logger.info("Opened chat for query=%r", query)
     return title
 
 
@@ -173,59 +223,216 @@ def read_open_chat_title(page: Page) -> str:
     return ""
 
 
-def scroll_message_panel(page: Page, *, passes: int = 8) -> None:
-    """Scroll the message panel upward to load older visible history.
+def panel_signature(page: Page) -> str:
+    """A cheap fingerprint of what the message panel currently holds.
 
-    Args:
-        page: Page with an open conversation.
-        passes: Number of PageUp-style scrolls (spike default, not full history).
-    """
-    panel_sel = _first_selector(page, MESSAGE_PANEL_SELECTORS)
-    if panel_sel is None:
-        logger.warning("No message panel for scrolling")
-        return
-    handle = page.query_selector(panel_sel)
-    if handle is None:
-        return
-    for _ in range(passes):
-        handle.evaluate("el => { el.scrollTop = 0; }")
-        page.wait_for_timeout(400)
-
-
-def collect_visible_messages(page: Page) -> list[MessageRecord]:
-    """Collect text-only messages currently in the DOM (spike, not full history).
+    Older messages arriving changes the row count and the panel's scroll height,
+    so comparing this before and after a scroll is direct evidence of loading —
+    unlike a fixed sleep, which only measures that time passed.
 
     Args:
         page: Page with an open conversation.
 
     Returns:
-        Ordered ``MessageRecord`` list; empty if selectors miss.
+        str: ``"<rowCount>:<scrollHeight>"``, or ``""`` when the panel is gone.
+    """
+    panel_sel = _first_selector(page, MESSAGE_PANEL_SELECTORS)
+    if panel_sel is None:
+        return ""
+    handle = page.query_selector(panel_sel)
+    if handle is None:
+        return ""
+    return str(
+        handle.evaluate(
+            "el => `${el.querySelectorAll('[data-id]').length}:${el.scrollHeight}`"
+        )
+    )
+
+
+def scroll_one_pass(
+    page: Page,
+    *,
+    poll_ms: int = 250,
+    max_wait_ms: int = DEFAULT_LOAD_WAIT_MS,
+) -> bool:
+    """Scroll to the top of the panel and wait until older messages arrive.
+
+    Waiting on a fixed timeout was the first version of this and it ended the
+    harvest early: WhatsApp Web needed longer than the 400 ms allowed to hydrate
+    the next batch, three passes in a row saw nothing new, and the run declared
+    the start of the chat reached after 1.2 seconds.
+
+    Args:
+        page: Page with an open conversation.
+        poll_ms: Gap between checks for newly arrived rows.
+        max_wait_ms: How long to keep waiting before calling it a real stall.
+
+    Returns:
+        bool: True when the panel changed, i.e. older messages loaded. False
+            means nothing arrived within ``max_wait_ms`` — the caller treats
+            that as evidence, not as a completed history.
+    """
+    panel_sel = _first_selector(page, MESSAGE_PANEL_SELECTORS)
+    if panel_sel is None:
+        logger.warning("No message panel for scrolling")
+        return False
+    handle = page.query_selector(panel_sel)
+    if handle is None:
+        return False
+
+    before = panel_signature(page)
+    handle.evaluate("el => { el.scrollTop = 0; }")
+    clicked = _click_load_earlier(page)
+
+    waited = 0
+    while waited < max_wait_ms:
+        page.wait_for_timeout(poll_ms)
+        waited += poll_ms
+        if panel_signature(page) != before:
+            return True
+        if not clicked:
+            # The control is frequently rendered only once the scroll settles,
+            # so one attempt before the wait is not enough.
+            clicked = _click_load_earlier(page)
+    logger.info(
+        "Panel unchanged after %s ms at the top (load-earlier control %s)",
+        max_wait_ms,
+        "clicked" if clicked else "not found",
+    )
+    return False
+
+
+def is_load_earlier_label(text: str) -> bool:
+    """Whether a control's text marks it as the 'older messages' loader.
+
+    Args:
+        text: The control's visible text.
+
+    Returns:
+        bool: True when the text matches a known label in ES or EN and is short
+            enough to be a control rather than a message that mentions one.
+    """
+    label = (text or "").strip()
+    if not label or len(label) > LOAD_EARLIER_MAX_LABEL:
+        return False
+    return bool(LOAD_EARLIER_PATTERN.search(label))
+
+
+def _click_load_earlier(page: Page) -> bool:
+    """Click the 'load older messages' control when the panel renders one.
+
+    Identified by text across any clickable element rather than by tag: the
+    previous version matched `button` only and never fired, which left the
+    operator clicking it by hand once per batch.
+
+    Args:
+        page: Page with an open conversation.
+
+    Returns:
+        bool: True when a control was clicked.
+    """
+    from playwright.sync_api import Error as PlaywrightError
+
+    try:
+        node = page.query_selector(LOAD_EARLIER_TESTID)
+        if node is not None:
+            node.click(timeout=2_000)
+            logger.info("Clicked load-earlier control (testid)")
+            return True
+    except PlaywrightError as exc:
+        logger.debug("Load-earlier testid click miss: %s", exc)
+
+    for node in page.query_selector_all(LOAD_EARLIER_CANDIDATES):
+        try:
+            if _inside_a_message(node):
+                continue
+            label = (node.inner_text() or "").strip()
+            if not is_load_earlier_label(label):
+                continue
+            node.click(timeout=2_000)
+            logger.info("Clicked load-earlier control: %r", label[:60])
+            return True
+        except PlaywrightError as exc:
+            logger.debug("Load-earlier click miss: %s", exc)
+    return False
+
+
+def _inside_a_message(node: object) -> bool:
+    """Whether a node sits inside a message bubble rather than the panel chrome.
+
+    The loader is chrome: it is never inside a message. Text matching alone is
+    not enough of a guard, because a message can quote a control's wording, and
+    clicking inside a bubble opens links and context menus in the operator's
+    live session.
+    """
+    return bool(
+        node.evaluate(  # type: ignore[attr-defined]
+            "el => !!el.closest('[data-id], .message-in, .message-out')"
+        )
+    )
+
+
+def at_chat_start(page: Page) -> bool:
+    """Whether a start-of-conversation marker is present in the panel.
+
+    Args:
+        page: Page with an open conversation.
+
+    Returns:
+        bool: True when a marker is found. False is not proof of more history —
+            WA Web omits the marker in many conversations.
+    """
+    return _first_selector(page, CHAT_START_SELECTORS) is not None
+
+
+def collect_visible_rows(page: Page, *, chat_title: str = "") -> list[HarvestedRow]:
+    """Read the text rows currently in the DOM, each with a stable identity.
+
+    Args:
+        page: Page with an open conversation.
+        chat_title: Passed through for direction detection only; never stored.
+
+    Returns:
+        list[HarvestedRow]: Rows in document order (oldest first); empty if
+            selectors miss.
     """
     row_sel = _first_selector(page, MESSAGE_ROW_SELECTORS)
     if row_sel is None:
         logger.warning("No message rows found")
         return []
 
-    rows = page.query_selector_all(row_sel)
-    records: list[MessageRecord] = []
-    order = 0
-    for row in rows:
+    rows: list[HarvestedRow] = []
+    for row in page.query_selector_all(row_sel):
         body = _row_body(row)
         if not body:
             continue
-        sender = _row_sender(row)
+        # Read the id once and hand it on: it is a DOM round trip per row, and
+        # the direction is derived from it rather than from a second query.
+        message_id = _row_id(row)
+        sender = _row_sender(row, message_id, chat_title)
         timestamp = _row_timestamp(row)
-        records.append(
+        rows.append(
             {
+                "message_id": message_id or fallback_message_id(
+                    sender, timestamp, body
+                ),
                 "sender": sender,
                 "timestamp": timestamp,
                 "body": body,
-                "order": order,
             }
         )
-        order += 1
-    logger.info("Collected %s visible text messages", len(records))
-    return records
+    return rows
+
+
+def _row_id(row: object) -> str:
+    """WhatsApp's own message id, read from the row or its nearest ancestor."""
+    own = row.get_attribute("data-id")  # type: ignore[attr-defined]
+    if own:
+        return own.strip()
+    nearest = row.evaluate(  # type: ignore[attr-defined]
+        "el => el.closest('[data-id]')?.getAttribute('data-id') || ''"
+    )
+    return (nearest or "").strip()
 
 
 def _row_body(row: object) -> str:
@@ -237,31 +444,111 @@ def _row_body(row: object) -> str:
     return (selectable.inner_text() or "").strip()
 
 
-def _row_sender(row: object) -> str:
+def _row_sender(row: object, message_id: str = "", chat_title: str = "") -> str:
+    """Which side of the conversation a row belongs to — never who wrote it.
+
+    Returns a role, not a name. The operator's data-protection constraint is
+    that no personal identifier reaches the exported file; the speaker label is
+    read here, compared against the chat title, and discarded.
+
+    Three signals in order, each covering what the previous one misses — every
+    earlier single-signal attempt failed against the live DOM, most recently
+    producing a 513-message export with every sender `unknown`:
+
+    1. The bubble tail (`tail-in`/`tail-out`), definitive when present.
+    2. An `aria-label` of the form `Name:`, which media rows carry when the
+       tail is absent.
+    3. The name in `data-pre-plain-text`, which covers consecutive text
+       messages in a run, where WhatsApp draws neither tail nor label.
+
+    Args:
+        row: The message container element.
+        message_id: Unused for direction; kept so callers can pass the id they
+            already read without a second DOM round trip.
+        chat_title: The contact's title, used only as the comparison target.
+
+    Returns:
+        str: ``me``, ``contact``, or ``unknown`` when no signal resolves.
+    """
+    if row.query_selector(TAIL_OUT_SELECTOR):  # type: ignore[attr-defined]
+        return "me"
+    if row.query_selector(TAIL_IN_SELECTOR):  # type: ignore[attr-defined]
+        return "contact"
+
+    for label in (_row_speaker_label(row), _row_pre_plain_name(row)):
+        role = sender_from_speaker_label(label, chat_title)
+        if role:
+            return role
+
     if row.query_selector(  # type: ignore[attr-defined]
         '[data-testid="msg-dblcheck"], [data-testid="msg-check"]'
     ):
         return "me"
-    pre = row.get_attribute("data-pre-plain-text")  # type: ignore[attr-defined]
-    if pre:
-        match = re.match(r"\[.*?\]\s*(.+?):\s*$", pre.strip())
+    return "unknown"
+
+
+def sender_from_speaker_label(label: str, chat_title: str) -> str:
+    """Turn a speaker label into a role by comparing it with the chat title.
+
+    The label itself is never returned. In a one-to-one chat the title is the
+    contact, so a label equal to it is the contact and any other non-empty
+    label — `Tú:`, `You:`, an own display name — is the operator.
+
+    Args:
+        label: Speaker label with any trailing colon already stripped.
+        chat_title: The open chat's title.
+
+    Returns:
+        str: ``contact``, ``me``, or ``""`` when the label is empty or no title
+            is available to compare against.
+    """
+    name = (label or "").strip()
+    title = (chat_title or "").strip()
+    if not name or not title:
+        return ""
+    return "contact" if name.casefold() == title.casefold() else "me"
+
+
+def _row_speaker_label(row: object) -> str:
+    """First `aria-label` shaped like `Name:`, or empty."""
+    for node in row.query_selector_all("[aria-label]"):  # type: ignore[attr-defined]
+        match = SPEAKER_LABEL_PATTERN.match((node.get_attribute("aria-label") or "").strip())
         if match:
-            return match.group(1).strip()
-    author = row.query_selector(  # type: ignore[attr-defined]
-        'span[aria-label*="You"], span.chat-title, span[dir="auto"]'
-    )
-    if author:
-        text = (author.inner_text() or "").strip()
-        if text:
-            return text
-    return "contact"
+            return match.group("name").strip()
+    return ""
+
+
+def _row_pre_plain_name(row: object) -> str:
+    """Sender name held in `data-pre-plain-text`, or empty."""
+    node = row.query_selector("[data-pre-plain-text]")  # type: ignore[attr-defined]
+    raw = node.get_attribute("data-pre-plain-text") if node else None
+    match = PRE_PLAIN_NAME_PATTERN.search(raw or "")
+    return match.group("name").strip() if match else ""
 
 
 def _row_timestamp(row: object) -> str:
-    meta = row.query_selector(  # type: ignore[attr-defined]
-        '[data-testid="msg-meta"] span, span[dir="auto"].x1rg5ohu, div.copyable-text'
-    )
-    if meta is None:
-        pre = row.get_attribute("data-pre-plain-text")  # type: ignore[attr-defined]
-        return (pre or "").strip()
-    return (meta.inner_text() or "").strip()
+    """The message's own timestamp, with the sender name discarded on the spot.
+
+    WhatsApp renders `data-pre-plain-text="[HH:MM, D/M/YYYY] Name: "` on a
+    `div.copyable-text` **inside** the row. Only the bracketed part is kept, so
+    the name never reaches the caller, let alone the file.
+
+    Returns:
+        str: The bracketed timestamp, or ``""`` when none can be read. An empty
+            string is returned rather than any text that might be message body.
+    """
+    node = row.query_selector("[data-pre-plain-text]")  # type: ignore[attr-defined]
+    pre = node.get_attribute("data-pre-plain-text") if node else None
+    if pre:
+        match = re.match(r"\s*\[(.*?)\]", pre)
+        if match:
+            return match.group(1).strip()
+
+    meta = row.query_selector('[data-testid="msg-meta"] span')  # type: ignore[attr-defined]
+    if meta is not None:
+        text = (meta.inner_text() or "").strip()
+        # Accept only clock-shaped text: the previous fallback matched
+        # `div.copyable-text`, whose inner text is the message body.
+        if re.match(r"^\d{1,2}:\d{2}", text):
+            return text
+    return ""

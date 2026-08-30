@@ -30,6 +30,4 @@ where = ["src"]
 testpaths = ["tests"]
 pythonpath = ["src"]
 
-[tool.ruff]
-line-length = 88
-target-version = "py311"
+# Ruff configuration lives in `.ruff.toml` (see the header there for why).

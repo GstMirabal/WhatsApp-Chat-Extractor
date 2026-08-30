@@ -1,0 +1,20 @@
+version: 2
+
+# Playwright is the one runtime dependency and it tracks a moving browser
+# target, so a stale pin is a functional risk here, not only a security one.
+updates:
+  - package-ecosystem: pip
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
