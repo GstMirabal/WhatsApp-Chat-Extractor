@@ -115,6 +115,12 @@ gobierna el caso contrario, el de una rutina que sí corre sola.
 Orden obligado: W1 → W2 → W3 antes de W4. W4 sin el ADR de W3 sería implementar
 una decisión no tomada.
 
+**W3 fue reasignado en Fase 4.1.** La propuesta de arriba nombra
+`principal_agent`, pero ese perfil no posee `Write`/`Edit` por diseño (`§6`) y
+`check_task_scope.py` rechaza asignarle un `create` (exit `2`, medido). La
+autoridad es `agent_assignment.md`, que lo asigna a `doc_orchestrator`: la
+decisión sigue siendo del lead, la transcripción es del documentalista.
+
 ---
 
 ## Dependencies
