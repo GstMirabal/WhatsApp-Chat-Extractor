@@ -183,15 +183,10 @@ def test_missing_panel_yields_no_inventory_rather_than_an_exception() -> None:
 
 def test_unopenable_chat_is_recorded_and_survived(monkeypatch) -> None:
     """`probe_one_chat` degrades to an error entry instead of raising."""
-    def refuse(page: object, query: str) -> str:
+    def refuse(*args: object) -> str:
         raise RuntimeError("wrong chat")
 
-    def also_refuse(*args: object) -> str:
-        raise RuntimeError("wrong chat")
-
-    monkeypatch.setattr(probe, "open_chat_by_query", refuse)
-    monkeypatch.setattr(probe, "_try_open_strategies", also_refuse)
-    monkeypatch.setattr(probe, "_reload_to_chat_list", lambda page: None)
+    monkeypatch.setattr(probe, "_try_open_strategies", refuse)
     result = probe.probe_one_chat(KeyboardPage(), "x", max_passes=1)
     assert result["chat_id"] is None
     assert "wrong chat" in result["error"]
@@ -219,64 +214,82 @@ class KeyboardPage(FakePage):
         self.waits += 1
 
 
-def test_search_state_is_cleared_before_every_open(monkeypatch) -> None:
-    """The live run's failure: chat 1 opened, chats 2-5 could not.
+def test_every_search_starts_from_a_reloaded_chat_list(monkeypatch) -> None:
+    """Run 2's failure: state degraded across chats, so each search reloads.
 
-    `export_one` opens one chat per process, so a *second* search on one page
-    was never exercised until this probe. The box still held the previous query
-    and stopped matching on its placeholder, so four of five chats died with
-    "Chat search box not found" and the probe returned no verdict.
+    Chats 1-2 opened, chat 3 could not find the search box, and chats 4-5
+    searched into a pane where every candidate matched zero nodes. Escape from
+    inside a conversation did not reliably restore the chat list, so the probe
+    now reloads before every query rather than trying to undo the last one.
     """
     page = KeyboardPage()
-    monkeypatch.setattr(probe, "open_chat_by_query", lambda p, q: "Someone")
-
-    title, error, _ = probe.open_for_probe(page, "second chat")
-
-    assert (title, error) == ("Someone", "")
-    assert page.keys == ["Escape", "Escape"], "search state was not dismissed"
-
-
-def test_a_stale_search_box_is_retried_after_a_reload(monkeypatch) -> None:
-    """Dismissing is best-effort; a reload is the fallback, and it is used."""
-    page = KeyboardPage()
-    reloaded = {"n": 0}
-
-    monkeypatch.setattr(
-        probe, "open_chat_by_query",
-        lambda p, q: (_ for _ in ()).throw(RuntimeError("Chat search box not found")),
-    )
-    monkeypatch.setattr(
-        probe, "_try_open_strategies",
-        lambda p, q: (_ for _ in ()).throw(RuntimeError("Chat search box not found"))
-        if reloaded["n"] == 0 else ("Someone", "sel", {}),
-    )
+    reloads = {"n": 0}
     monkeypatch.setattr(
         probe, "_reload_to_chat_list",
-        lambda p: reloaded.__setitem__("n", reloaded["n"] + 1),
+        lambda p: reloads.__setitem__("n", reloads["n"] + 1),
     )
+    monkeypatch.setattr(
+        probe.sys.modules["whatsapp_chat_extractor.export_one"],
+        "_type_query", lambda p, q: None,
+    )
+    monkeypatch.setattr(page, "evaluate", lambda js: False, raising=False)
 
-    title, error, _ = probe.open_for_probe(page, "second chat")
+    probe._search_for(page, "ana")
 
-    assert (title, error) == ("Someone", "")
-    assert reloaded["n"] == 1, "the probe gave up without reloading"
+    assert reloads["n"] == 1, "the search did not start from a clean chat list"
+
+
+def test_typing_into_the_message_composer_is_refused(monkeypatch) -> None:
+    """The guard that stops the probe writing into someone's conversation.
+
+    `_clear_and_type` types into whatever holds focus. Run 2 produced the state
+    that makes this dangerous: for two chats every candidate matched zero nodes,
+    so the text never reached the results pane. With focus in the composer, the
+    typed query becomes a draft, and a stray Enter would send it to the contact.
+    """
+    page = KeyboardPage()
+    monkeypatch.setattr(probe, "_reload_to_chat_list", lambda p: None)
+    monkeypatch.setattr(
+        probe.sys.modules["whatsapp_chat_extractor.export_one"],
+        "_type_query", lambda p, q: None,
+    )
+    # Focus reported as inside `#main`: the open conversation.
+    monkeypatch.setattr(page, "evaluate", lambda js: True, raising=False)
+
+    with pytest.raises(RuntimeError, match="composer"):
+        probe._search_for(page, "ana")
+
+
+def test_no_enter_fallback_exists(monkeypatch) -> None:
+    """A failed open must never fall through to a keypress.
+
+    `export_one._open_first_result` presses Enter when no selector clicks. On a
+    page whose focus is in the composer that sends the query to the contact, so
+    the probe has no such fallback: it reports failure instead.
+    """
+    page = KeyboardPage()
+    monkeypatch.setattr(probe, "_search_for", lambda p, q: None)
+    monkeypatch.setattr(probe, "search_results_evidence", lambda p: {"counts": {}})
+    monkeypatch.setattr(probe, "_click_and_verify", lambda p, q, sel: None)
+
+    title, strategy, _ = probe._try_open_strategies(page, "ana")
+
+    assert (title, strategy) == (None, "")
+    assert page.keys == [], "the probe pressed a key after failing to open a chat"
 
 
 def test_one_dead_chat_does_not_end_the_run(monkeypatch) -> None:
-    """A chat that cannot be opened after a reload is recorded, not raised.
+    """A chat that cannot be opened is recorded, not raised.
 
-    Four chats failing must still leave the fifth probeable, which is what
-    kept the first live run from being a total loss.
+    Three chats failing must still leave the other two probeable, which is what
+    kept run 2 from being a total loss.
     """
-    page = KeyboardPage()
-
     def always_refuse(*args: object) -> str:
         raise RuntimeError("Chat search box not found")
 
-    monkeypatch.setattr(probe, "open_chat_by_query", always_refuse)
     monkeypatch.setattr(probe, "_try_open_strategies", always_refuse)
-    monkeypatch.setattr(probe, "_reload_to_chat_list", lambda p: None)
 
-    title, error, _ = probe.open_for_probe(page, "x")
+    title, error, _ = probe.open_for_probe(KeyboardPage(), "x")
 
     assert title is None
     assert "search box not found" in error
@@ -327,19 +340,10 @@ def test_the_selector_that_opens_the_chat_is_recorded(monkeypatch) -> None:
                 '#pane-side div[role="listitem"]': 0,
                 '#pane-side div[role="row"]': 59},
     )
-    monkeypatch.setattr(probe, "_dismiss_search", lambda p: None)
+    monkeypatch.setattr(probe, "_search_for", lambda p, q: None)
     monkeypatch.setattr(probe, "search_results_evidence", lambda p: {"counts": {}})
     monkeypatch.setattr(
-        probe.sys.modules["whatsapp_chat_extractor.export_one"],
-        "_type_query", lambda p, q: None,
-    )
-    monkeypatch.setattr(
         probe, "_verified_title", lambda p, q: "Someone" if page.opened else None
-    )
-    monkeypatch.setattr(
-        probe, "_click_and_verify",
-        lambda p, q, sel: ("Someone" if (p.locator(sel).count() and sel == p.opens_on
-                                         and not p.click(timeout=0)) else None),
     )
 
     title, strategy, _ = probe._try_open_strategies(page, "someone")

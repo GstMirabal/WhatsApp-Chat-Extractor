@@ -50,7 +50,6 @@ from whatsapp_chat_extractor.export_one import (
     MESSAGE_ROW_SELECTORS,
     SEARCH_RESULT_SELECTORS,
     at_chat_start,
-    open_chat_by_query,
     scroll_one_pass,
 )
 from whatsapp_chat_extractor.history import (
@@ -153,6 +152,16 @@ _TOP_CHROME_JS = """
 
 _OUTSIDE_PANE_JS = """
 (el) => !el.closest('#pane-side')
+"""
+
+# Whether the focused element sits inside the open conversation. `_clear_and_type`
+# types into whatever holds focus, so this is the difference between running a
+# search and writing into someone's chat.
+_FOCUS_IN_CONVERSATION_JS = """
+() => {
+  const el = document.activeElement;
+  return !!(el && el.closest('#main'));
+}
 """
 
 # The first search hit and its descendants. Which node carries the click
@@ -408,23 +417,6 @@ def scroll_to_top(
         logger.info("Pass %s (stall %s/%s)", passes_used, stall_count, stall_threshold)
 
 
-def _dismiss_search(page: Page) -> None:
-    """Clear leftover search state so the next query starts from the chat list.
-
-    The exporter opens one chat per process, so nothing before this probe ever
-    needed a *second* search on one page. The first live run found the cost:
-    chat 1 succeeded and chats 2-5 all failed with "Chat search box not found",
-    because the box still held the previous query and no longer matched on its
-    placeholder.
-
-    Args:
-        page: WhatsApp Web page in any state.
-    """
-    for _ in range(2):
-        page.keyboard.press("Escape")
-        page.wait_for_timeout(300)
-
-
 def _reload_to_chat_list(page: Page) -> None:
     """Reload WhatsApp Web and block until the chat list is usable again.
 
@@ -482,11 +474,6 @@ def _click_and_verify(page: Page, query: str, selector: str) -> str | None:
     """
     from playwright.sync_api import Error as PlaywrightError
 
-    from whatsapp_chat_extractor.export_one import (
-        _title_matches_query,
-        read_open_chat_title,
-    )
-
     locator = page.locator(selector)
     try:
         if locator.count() == 0:
@@ -497,10 +484,7 @@ def _click_and_verify(page: Page, query: str, selector: str) -> str | None:
         return None
 
     page.wait_for_timeout(OPEN_SETTLE_MS)
-    title = read_open_chat_title(page)
-    if title and _title_matches_query(title, query):
-        return title
-    return None
+    return _verified_title(page, query)
 
 
 def _try_open_strategies(page: Page, query: str) -> tuple[str | None, str, dict]:
@@ -514,10 +498,7 @@ def _try_open_strategies(page: Page, query: str) -> tuple[str | None, str, dict]
         tuple[str | None, str, dict]: Verified title (or None), the strategy
             that worked (or ""), and the search-results evidence.
     """
-    from whatsapp_chat_extractor.export_one import _type_query
-
-    _dismiss_search(page)
-    _type_query(page, query)
+    _search_for(page, query)
     evidence = search_results_evidence(page)
 
     for selector in SEARCH_CLICK_SELECTORS:
@@ -525,13 +506,43 @@ def _try_open_strategies(page: Page, query: str) -> tuple[str | None, str, dict]
         if title:
             logger.info("Opened via %s", selector)
             return title, selector, evidence
-        _dismiss_search(page)
-        _type_query(page, query)
+        _search_for(page, query)
 
-    page.keyboard.press("Enter")
-    page.wait_for_timeout(OPEN_SETTLE_MS)
-    title = _verified_title(page, query)
-    return title, "keyboard:Enter" if title else "", evidence
+    # There is deliberately no Enter fallback. `_clear_and_type` types into
+    # whatever holds focus, and run 2 showed focus can end up outside the search
+    # box entirely: for two chats every candidate matched zero nodes, meaning
+    # the text never reached the results pane. Pressing Enter in that state, on
+    # a page with a conversation open, sends the query to the contact as a
+    # message. `export_one._open_first_result:191` still has that fallback.
+    return None, "", evidence
+
+
+def _search_for(page: Page, query: str) -> None:
+    """Return to a clean chat list and type ``query`` into the search box.
+
+    Reloading rather than pressing Escape is the lesson of run 2: chats 1-2
+    opened, chat 3 could not find the search box, and chats 4-5 searched into
+    nothing. State degraded across chats, and Escape from inside a conversation
+    did not reliably restore the chat list.
+
+    Args:
+        page: WhatsApp Web page in any state.
+        query: Fragment to type.
+
+    Raises:
+        RuntimeError: If focus lands inside the conversation panel, where typed
+            text becomes a draft message rather than a search.
+    """
+    from whatsapp_chat_extractor.export_one import _type_query
+
+    _reload_to_chat_list(page)
+    _type_query(page, query)
+    if page.evaluate(_FOCUS_IN_CONVERSATION_JS):
+        raise RuntimeError(
+            "Focus landed inside the conversation panel, so the query was typed "
+            "into the message composer rather than the search box. Refusing to "
+            "continue: the next keystroke would edit a real conversation."
+        )
 
 
 def _verified_title(page: Page, query: str) -> str | None:
@@ -548,9 +559,11 @@ def _verified_title(page: Page, query: str) -> str | None:
 def open_for_probe(page: Page, query: str) -> tuple[str | None, str, dict]:
     """Open ``query``'s chat, trying every strategy and recording which worked.
 
-    The exporter's `open_chat_by_query` is tried first, so the common path stays
-    the measured one. Its fallbacks exist because run 1 showed that path does
-    not open a chat unaided in this build.
+    `export_one.open_chat_by_query` is deliberately **not** called. Run 1 showed
+    its click opens nothing in this build, and `_open_first_result:191` then
+    presses Enter as a fallback — which, with focus outside the search box, sends
+    the query to a contact as a message. The probe reproduces the exporter's
+    verification but not that fallback.
 
     Verification is never relaxed: every strategy must leave a conversation
     whose title contains ``query``, which is hotfix H-001's guarantee. A
@@ -565,23 +578,11 @@ def open_for_probe(page: Page, query: str) -> tuple[str | None, str, dict]:
             it failed (empty when it did not), and a diagnosis recording which
             strategy opened the chat plus the search-results evidence.
     """
-    _dismiss_search(page)
-    try:
-        title = open_chat_by_query(page, query)
-        return title, "", {"strategy": "export_one.open_chat_by_query"}
-    except RuntimeError as exc:
-        logger.warning("Exporter path did not open the chat: %s", exc)
-
     try:
         title, strategy, evidence = _try_open_strategies(page, query)
     except RuntimeError as exc:
-        logger.warning("Search unusable, reloading: %s", exc)
-        _reload_to_chat_list(page)
-        try:
-            title, strategy, evidence = _try_open_strategies(page, query)
-        except RuntimeError as inner:
-            logger.error("Chat could not be opened: %s", inner)
-            return None, str(inner)[:300], {"strategy": None}
+        logger.error("Chat could not be opened: %s", exc)
+        return None, str(exc)[:300], {"strategy": None}
 
     diagnosis = {"strategy": strategy or None, "search_results": evidence}
     if title is None:
