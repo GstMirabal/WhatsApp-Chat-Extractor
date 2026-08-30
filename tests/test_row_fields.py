@@ -13,7 +13,13 @@ supplies its result, so what is under test here is the branching around it.
 
 from __future__ import annotations
 
-from whatsapp_chat_extractor.export_one import _row_sender, _row_timestamp
+import pytest
+
+from whatsapp_chat_extractor.export_one import (
+    _row_sender,
+    _row_timestamp,
+    is_load_earlier_label,
+)
 
 
 class FakeNode:
@@ -134,3 +140,29 @@ def test_timestamp_accepts_a_clock_shaped_meta_fallback() -> None:
 
 def test_timestamp_is_empty_when_the_row_offers_nothing() -> None:
     assert _row_timestamp(FakeRow()) == ""
+
+
+@pytest.mark.parametrize(
+    "label",
+    [
+        "Cargar mensajes anteriores",
+        "CARGAR MENSAJES ANTERIORES",
+        "HAZ CLIC AQUÍ PARA VER LOS MENSAJES MÁS ANTIGUOS DE TU TELÉFONO",
+        "Haz clic aquí para obtener mensajes más antiguos de tu teléfono",
+        "Mensajes mas antiguos",
+        "Load earlier messages",
+        "CLICK HERE TO GET OLDER MESSAGES FROM YOUR PHONE",
+        "Older messages",
+    ],
+)
+def test_load_earlier_labels_are_recognised(label: str) -> None:
+    """The operator had to click this by hand: the matcher missed every form."""
+    assert is_load_earlier_label(label)
+
+
+@pytest.mark.parametrize(
+    "label",
+    ["Enviar", "Send", "Adjuntar", "", "Buscar", "Ok!", "Mensaje"],
+)
+def test_ordinary_controls_are_not_mistaken_for_the_loader(label: str) -> None:
+    assert not is_load_earlier_label(label)

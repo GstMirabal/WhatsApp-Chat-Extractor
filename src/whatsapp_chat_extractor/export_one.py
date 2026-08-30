@@ -12,7 +12,11 @@ import re
 import sys
 from typing import TYPE_CHECKING
 
-from whatsapp_chat_extractor.history import HarvestedRow, fallback_message_id
+from whatsapp_chat_extractor.history import (
+    DEFAULT_LOAD_WAIT_MS,
+    HarvestedRow,
+    fallback_message_id,
+)
 
 if TYPE_CHECKING:
     from playwright.sync_api import Locator, Page
@@ -60,16 +64,26 @@ TITLE_SELECTORS = (
     '#main header span[dir="auto"]',
     '[data-testid="conversation-info-header"] span[dir="auto"]',
 )
-# Best-effort start-of-conversation markers. WA Web does not always render one,
-# so `history.decide_stop` treats a run of empty passes as the reliable signal
-# and uses these only to report a *proven* start (`stopped_reason`).
-LOAD_EARLIER_SELECTORS = (
-    'button[data-testid="load-earlier-msgs"]',
-    '#main button:has-text("Cargar mensajes anteriores")',
-    '#main button:has-text("Load earlier messages")',
-    '#main button:has-text("HAZ CLIC AQUÍ PARA VER LOS MENSAJES MÁS ANTIGUOS")',
-    '#main button:has-text("CLICK HERE TO GET OLDER MESSAGES")',
+# The control that pulls older history from the phone. Matching `button` alone
+# was the first version and it never fired: WhatsApp renders this as a
+# `div[role="button"]` in current builds, so the operator had to click it by
+# hand on every batch. Tag and locale are both unreliable — the text is what
+# identifies it, across whichever element carries it.
+LOAD_EARLIER_TESTID = 'button[data-testid="load-earlier-msgs"]'
+LOAD_EARLIER_CANDIDATES = (
+    '#main button, #main div[role="button"], #main span[role="button"], '
+    "#main a, #main [tabindex]"
 )
+LOAD_EARLIER_PATTERN = re.compile(
+    r"mensajes?\s+(m[áa]s\s+)?antiguos"
+    r"|mensajes\s+anteriores"
+    r"|(older|earlier)\s+messages"
+    r"|click\s+here\s+to\s+get"
+    r"|haz\s+clic\s+aqu[íi]",
+    re.IGNORECASE,
+)
+# Best-effort start-of-conversation markers. WA Web does not always render one,
+# so `history.decide_stop` uses these only to report a *proven* start.
 CHAT_START_SELECTORS = (
     '#main [data-icon="lock-refreshed"]',
     '#main [data-testid="msg-system"] [data-icon="lock"]',
@@ -225,7 +239,7 @@ def scroll_one_pass(
     page: Page,
     *,
     poll_ms: int = 250,
-    max_wait_ms: int = 8_000,
+    max_wait_ms: int = DEFAULT_LOAD_WAIT_MS,
 ) -> bool:
     """Scroll to the top of the panel and wait until older messages arrive.
 
@@ -254,7 +268,7 @@ def scroll_one_pass(
 
     before = panel_signature(page)
     handle.evaluate("el => { el.scrollTop = 0; }")
-    _click_load_earlier(page)
+    clicked = _click_load_earlier(page)
 
     waited = 0
     while waited < max_wait_ms:
@@ -262,23 +276,65 @@ def scroll_one_pass(
         waited += poll_ms
         if panel_signature(page) != before:
             return True
-    logger.info("Panel unchanged after %s ms at the top of the list", max_wait_ms)
+        if not clicked:
+            # The control is frequently rendered only once the scroll settles,
+            # so one attempt before the wait is not enough.
+            clicked = _click_load_earlier(page)
+    logger.info(
+        "Panel unchanged after %s ms at the top (load-earlier control %s)",
+        max_wait_ms,
+        "clicked" if clicked else "not found",
+    )
     return False
 
 
-def _click_load_earlier(page: Page) -> None:
-    """Click an explicit 'load earlier messages' control when one is rendered."""
+def is_load_earlier_label(text: str) -> bool:
+    """Whether a control's text marks it as the 'older messages' loader.
+
+    Args:
+        text: The control's visible text.
+
+    Returns:
+        bool: True when the text matches a known label in ES or EN.
+    """
+    return bool(LOAD_EARLIER_PATTERN.search(text or ""))
+
+
+def _click_load_earlier(page: Page) -> bool:
+    """Click the 'load older messages' control when the panel renders one.
+
+    Identified by text across any clickable element rather than by tag: the
+    previous version matched `button` only and never fired, which left the
+    operator clicking it by hand once per batch.
+
+    Args:
+        page: Page with an open conversation.
+
+    Returns:
+        bool: True when a control was clicked.
+    """
     from playwright.sync_api import Error as PlaywrightError
 
-    for selector in LOAD_EARLIER_SELECTORS:
+    try:
+        node = page.query_selector(LOAD_EARLIER_TESTID)
+        if node is not None:
+            node.click(timeout=2_000)
+            logger.info("Clicked load-earlier control (testid)")
+            return True
+    except PlaywrightError as exc:
+        logger.debug("Load-earlier testid click miss: %s", exc)
+
+    for node in page.query_selector_all(LOAD_EARLIER_CANDIDATES):
         try:
-            node = page.query_selector(selector)
-            if node is None:
+            label = (node.inner_text() or "").strip()
+            if not is_load_earlier_label(label):
                 continue
             node.click(timeout=2_000)
-            return
+            logger.info("Clicked load-earlier control: %r", label[:60])
+            return True
         except PlaywrightError as exc:
-            logger.debug("Load-earlier click miss on %s: %s", selector, exc)
+            logger.debug("Load-earlier click miss: %s", exc)
+    return False
 
 
 def at_chat_start(page: Page) -> bool:
