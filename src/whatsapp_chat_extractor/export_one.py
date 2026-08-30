@@ -70,18 +70,25 @@ TITLE_SELECTORS = (
 # hand on every batch. Tag and locale are both unreliable — the text is what
 # identifies it, across whichever element carries it.
 LOAD_EARLIER_TESTID = 'button[data-testid="load-earlier-msgs"]'
+# Deliberately narrow. The first version added `#main a` and `#main [tabindex]`,
+# which are every link and nearly every focusable node *inside the conversation*,
+# and paired them with a `haz clic aquí` alternative — a phrase that occurs in
+# ordinary messages. The harvester clicked links inside the chat.
 LOAD_EARLIER_CANDIDATES = (
-    '#main button, #main div[role="button"], #main span[role="button"], '
-    "#main a, #main [tabindex]"
+    '#main button, #main div[role="button"], #main span[role="button"]'
 )
+# Every alternative requires the noun "mensajes"/"messages": a verb phrase alone
+# ("haz clic aquí", "click here") is message content as often as it is a control.
 LOAD_EARLIER_PATTERN = re.compile(
-    r"mensajes?\s+(m[áa]s\s+)?antiguos"
-    r"|mensajes\s+anteriores"
-    r"|(older|earlier)\s+messages"
-    r"|click\s+here\s+to\s+get"
-    r"|haz\s+clic\s+aqu[íi]",
+    r"mensajes\s+(m[áa]s\s+)?(antiguos|anteriores|viejos)"
+    r"|(cargar|ver|obtener|mostrar)\s+\S{0,30}?\s?mensajes"
+    r"|(older|earlier|previous)\s+messages"
+    r"|(load|get|show)\s+\S{0,30}?\s?messages",
     re.IGNORECASE,
 )
+# A control's label is short. A message that happens to mention older messages is
+# usually not, and this is the cheapest discriminator between the two.
+LOAD_EARLIER_MAX_LABEL = 120
 # Best-effort start-of-conversation markers. WA Web does not always render one,
 # so `history.decide_stop` uses these only to report a *proven* start.
 CHAT_START_SELECTORS = (
@@ -295,9 +302,13 @@ def is_load_earlier_label(text: str) -> bool:
         text: The control's visible text.
 
     Returns:
-        bool: True when the text matches a known label in ES or EN.
+        bool: True when the text matches a known label in ES or EN and is short
+            enough to be a control rather than a message that mentions one.
     """
-    return bool(LOAD_EARLIER_PATTERN.search(text or ""))
+    label = (text or "").strip()
+    if not label or len(label) > LOAD_EARLIER_MAX_LABEL:
+        return False
+    return bool(LOAD_EARLIER_PATTERN.search(label))
 
 
 def _click_load_earlier(page: Page) -> bool:
@@ -326,6 +337,8 @@ def _click_load_earlier(page: Page) -> bool:
 
     for node in page.query_selector_all(LOAD_EARLIER_CANDIDATES):
         try:
+            if _inside_a_message(node):
+                continue
             label = (node.inner_text() or "").strip()
             if not is_load_earlier_label(label):
                 continue
@@ -335,6 +348,21 @@ def _click_load_earlier(page: Page) -> bool:
         except PlaywrightError as exc:
             logger.debug("Load-earlier click miss: %s", exc)
     return False
+
+
+def _inside_a_message(node: object) -> bool:
+    """Whether a node sits inside a message bubble rather than the panel chrome.
+
+    The loader is chrome: it is never inside a message. Text matching alone is
+    not enough of a guard, because a message can quote a control's wording, and
+    clicking inside a bubble opens links and context menus in the operator's
+    live session.
+    """
+    return bool(
+        node.evaluate(  # type: ignore[attr-defined]
+            "el => !!el.closest('[data-id], .message-in, .message-out')"
+        )
+    )
 
 
 def at_chat_start(page: Page) -> bool:

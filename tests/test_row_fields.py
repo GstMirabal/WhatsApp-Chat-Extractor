@@ -166,3 +166,32 @@ def test_load_earlier_labels_are_recognised(label: str) -> None:
 )
 def test_ordinary_controls_are_not_mistaken_for_the_loader(label: str) -> None:
     assert not is_load_earlier_label(label)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "Haz clic aquí para ver la oferta",
+        "haz clic aqui y te lo mando",
+        "Click here to see the photos",
+        "Te reenvío esto, haz clic aquí: https://example.com/promo",
+    ],
+)
+def test_message_text_that_says_click_here_is_not_the_loader(body: str) -> None:
+    """The harvester clicked links inside the conversation because of this.
+
+    `haz clic aquí` was an alternative in the pattern on its own, and it is
+    ordinary message content. Every alternative requires the noun now.
+    """
+    assert not is_load_earlier_label(body)
+
+
+def test_a_long_message_quoting_the_control_is_not_the_loader() -> None:
+    """A bubble can quote the wording; a control's own label stays short."""
+    quoted = (
+        "Oye, cuando abras el chat en el ordenador te sale un aviso arriba que "
+        "pone cargar mensajes anteriores, dale ahí y te aparece todo lo que "
+        "hablamos el mes pasado, que si no no lo vas a encontrar nunca"
+    )
+    assert len(quoted) > 120
+    assert not is_load_earlier_label(quoted)
