@@ -43,10 +43,27 @@ an invalid one.
 | `ChatExport` JSON | file schema | `writers.ChatExport` / this blueprint §3 |
 | `/wa-export <chat>` | slash command | `.claude/commands/wa-export.md` |
 
-Data model (schema v2, #004):
-- **ChatExport**: `schema_version`, `chat_id`, `title`, `exported_at`,
-  `message_count`, `complete`, `stopped_reason`, `messages[]`
+Data model (schema v3, #004):
+- **ChatExport**: `schema_version`, `chat_id`, `exported_at`, `message_count`,
+  `complete`, `stopped_reason`, `messages[]`
 - **MessageRecord**: `sender`, `timestamp`, `body`, `order` (text only)
+
+### Identity contract
+
+No personal identifier is written to disk.
+
+| Field | Rule |
+| :--- | :--- |
+| `chat_id` | `chat_` + first 12 hex of `sha256(chat title)`. Stable across exports |
+| filename | `<chat_id>_<stamp>.json` — a directory listing shows no name |
+| `title` | Removed in v3. The title is hashed in `build_export` and dropped |
+| `sender` | A role — `me`, `contact`, `unknown` — never a name |
+| `timestamp` | The bracketed part of `data-pre-plain-text`; the name after it is discarded in the same expression |
+
+This is **pseudonymization, not anonymization**, and the blueprint says so
+rather than implying more: the digest is unsalted, so a holder of the contact
+list can confirm a match by hashing a candidate name. Message bodies are
+untouched and may name people on their own.
 
 ### Completeness contract
 
@@ -57,8 +74,12 @@ because WhatsApp Web does not always render a start marker:
 | `stopped_reason` | `complete` | Meaning |
 | :--- | :--- | :--- |
 | `chat_start` | `true` | A start-of-conversation marker was found |
-| `stalled` | `true` | Repeated passes at the top revealed nothing new |
+| `stalled` | `false` | The panel stopped loading; the top is inferred, not proven |
 | `max_passes` | `false` | The hard cap ended the run; history remains above |
+
+`stalled` counted as complete until the first live run, which exported 217
+messages of a longer conversation and marked them complete. Only the marker is
+proof; an inference is not recorded as one.
 
 `wa-extract export-one` exits `3` on `complete: false`, so a caller detects a
 truncated corpus without parsing the file.
@@ -74,11 +95,15 @@ truncated corpus without parsing the file.
    rows scrolled out of view are removed from the DOM, so a single read after N
    scrolls loses the recent end of the conversation, and raising N makes the
    loss larger rather than smaller.
-4. Message identity is WhatsApp's `data-id` when the row carries one, otherwise
+4. A pass ends by scrolling to the top, clicking any load-earlier control, and
+   polling the panel's signature (row count + scroll height) until it changes or
+   `max_wait_ms` elapses. Waiting on a fixed timeout ended the first live
+   harvest after 1.2 seconds; the wait is on evidence of loading now.
+5. Message identity is WhatsApp's `data-id` when the row carries one, otherwise
    a SHA-1 of `sender|timestamp|body`. Without a stable identity, deduplication
    across passes cannot be proven correct.
-5. Pytest exercises `writers` and the pure half of `history` with synthetic pass
-   sequences only (no live WhatsApp).
+6. Pytest exercises `writers`, the pure half of `history`, and row-field
+   extraction with stub rows — no live WhatsApp.
 
 ## 5. Crosscutting Concepts
 
@@ -94,6 +119,8 @@ truncated corpus without parsing the file.
 | Exports never committed | `rg -n '^/data/' .gitignore` |
 | Text-only messages | Schema has no media fields |
 | Truncation is always declared | `complete` / `stopped_reason` in every export; exit `3` |
+| No name on disk | `tests/test_writers.py` asserts the name is absent from payload and filename |
+| Sender is a role, never a person | `tests/test_row_fields.py` |
 | Harvest always terminates | `--max-passes` hard cap, covered by `tests/test_history.py` |
 | Submodule purity | `git -C .agents status --porcelain` empty at close |
 
@@ -114,3 +141,5 @@ truncated corpus without parsing the file.
 | Harvest pass | One cycle of read-DOM → merge → decide → scroll |
 | Stalled pass | A pass that revealed no message id not already held |
 | Row virtualization | WA Web removing off-screen message rows from the DOM |
+| Panel signature | Row count + scroll height, compared to detect real loading |
+| Pseudonymous id | `chat_` + digest of the title; stable, name-free, unsalted |
