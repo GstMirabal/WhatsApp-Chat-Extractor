@@ -63,6 +63,13 @@ TITLE_SELECTORS = (
 # Best-effort start-of-conversation markers. WA Web does not always render one,
 # so `history.decide_stop` treats a run of empty passes as the reliable signal
 # and uses these only to report a *proven* start (`stopped_reason`).
+LOAD_EARLIER_SELECTORS = (
+    'button[data-testid="load-earlier-msgs"]',
+    '#main button:has-text("Cargar mensajes anteriores")',
+    '#main button:has-text("Load earlier messages")',
+    '#main button:has-text("HAZ CLIC AQUÍ PARA VER LOS MENSAJES MÁS ANTIGUOS")',
+    '#main button:has-text("CLICK HERE TO GET OLDER MESSAGES")',
+)
 CHAT_START_SELECTORS = (
     '#main [data-icon="lock-refreshed"]',
     '#main [data-testid="msg-system"] [data-icon="lock"]',
@@ -170,7 +177,9 @@ def open_chat_by_query(page: Page, query: str, *, timeout_ms: int = 30_000) -> s
         ) from exc
 
     title = read_open_chat_title(page) or query
-    logger.info("Opened chat title=%r query=%r", title, query)
+    # The title is a real person's name. It is returned so the caller can derive
+    # a pseudonymous id from it, and is deliberately kept out of the log.
+    logger.info("Opened chat for query=%r", query)
     return title
 
 
@@ -186,22 +195,90 @@ def read_open_chat_title(page: Page) -> str:
     return ""
 
 
-def scroll_one_pass(page: Page, *, settle_ms: int = 400) -> None:
-    """Scroll the message panel one step upward and let older rows render.
+def panel_signature(page: Page) -> str:
+    """A cheap fingerprint of what the message panel currently holds.
+
+    Older messages arriving changes the row count and the panel's scroll height,
+    so comparing this before and after a scroll is direct evidence of loading —
+    unlike a fixed sleep, which only measures that time passed.
 
     Args:
         page: Page with an open conversation.
-        settle_ms: Wait after the scroll so WA Web can hydrate older rows.
+
+    Returns:
+        str: ``"<rowCount>:<scrollHeight>"``, or ``""`` when the panel is gone.
+    """
+    panel_sel = _first_selector(page, MESSAGE_PANEL_SELECTORS)
+    if panel_sel is None:
+        return ""
+    handle = page.query_selector(panel_sel)
+    if handle is None:
+        return ""
+    return str(
+        handle.evaluate(
+            "el => `${el.querySelectorAll('[data-id]').length}:${el.scrollHeight}`"
+        )
+    )
+
+
+def scroll_one_pass(
+    page: Page,
+    *,
+    poll_ms: int = 250,
+    max_wait_ms: int = 8_000,
+) -> bool:
+    """Scroll to the top of the panel and wait until older messages arrive.
+
+    Waiting on a fixed timeout was the first version of this and it ended the
+    harvest early: WhatsApp Web needed longer than the 400 ms allowed to hydrate
+    the next batch, three passes in a row saw nothing new, and the run declared
+    the start of the chat reached after 1.2 seconds.
+
+    Args:
+        page: Page with an open conversation.
+        poll_ms: Gap between checks for newly arrived rows.
+        max_wait_ms: How long to keep waiting before calling it a real stall.
+
+    Returns:
+        bool: True when the panel changed, i.e. older messages loaded. False
+            means nothing arrived within ``max_wait_ms`` — the caller treats
+            that as evidence, not as a completed history.
     """
     panel_sel = _first_selector(page, MESSAGE_PANEL_SELECTORS)
     if panel_sel is None:
         logger.warning("No message panel for scrolling")
-        return
+        return False
     handle = page.query_selector(panel_sel)
     if handle is None:
-        return
+        return False
+
+    before = panel_signature(page)
     handle.evaluate("el => { el.scrollTop = 0; }")
-    page.wait_for_timeout(settle_ms)
+    _click_load_earlier(page)
+
+    waited = 0
+    while waited < max_wait_ms:
+        page.wait_for_timeout(poll_ms)
+        waited += poll_ms
+        if panel_signature(page) != before:
+            return True
+    logger.info("Panel unchanged after %s ms at the top of the list", max_wait_ms)
+    return False
+
+
+def _click_load_earlier(page: Page) -> None:
+    """Click an explicit 'load earlier messages' control when one is rendered."""
+    from playwright.sync_api import Error as PlaywrightError
+
+    for selector in LOAD_EARLIER_SELECTORS:
+        try:
+            node = page.query_selector(selector)
+            if node is None:
+                continue
+            node.click(timeout=2_000)
+            return
+        except PlaywrightError as exc:
+            logger.debug("Load-earlier click miss on %s: %s", selector, exc)
 
 
 def at_chat_start(page: Page) -> bool:
@@ -273,30 +350,57 @@ def _row_body(row: object) -> str:
 
 
 def _row_sender(row: object) -> str:
+    """Which side of the conversation a row belongs to — never who wrote it.
+
+    Returns a role, not a name. The operator's data-protection constraint is
+    that no personal identifier reaches the exported file, and an agent learning
+    from the conversation needs the turns separated, not the people named.
+
+    The earlier implementation read `data-pre-plain-text` off the row itself,
+    where WhatsApp does not put it, and fell through to a `span[dir="auto"]`
+    fallback that matched the clock — which is why 214 of 217 messages in the
+    first full export carried a time of day as their sender.
+
+    Returns:
+        str: ``me``, ``contact``, or ``unknown`` when the row shows neither
+            side. ``unknown`` is reported rather than guessed.
+    """
+    side = row.evaluate(  # type: ignore[attr-defined]
+        "el => el.closest('.message-out') ? 'me'"
+        " : (el.closest('.message-in') ? 'contact' : '')"
+    )
+    if side:
+        return str(side)
     if row.query_selector(  # type: ignore[attr-defined]
         '[data-testid="msg-dblcheck"], [data-testid="msg-check"]'
     ):
         return "me"
-    pre = row.get_attribute("data-pre-plain-text")  # type: ignore[attr-defined]
-    if pre:
-        match = re.match(r"\[.*?\]\s*(.+?):\s*$", pre.strip())
-        if match:
-            return match.group(1).strip()
-    author = row.query_selector(  # type: ignore[attr-defined]
-        'span[aria-label*="You"], span.chat-title, span[dir="auto"]'
-    )
-    if author:
-        text = (author.inner_text() or "").strip()
-        if text:
-            return text
-    return "contact"
+    return "unknown"
 
 
 def _row_timestamp(row: object) -> str:
-    meta = row.query_selector(  # type: ignore[attr-defined]
-        '[data-testid="msg-meta"] span, span[dir="auto"].x1rg5ohu, div.copyable-text'
-    )
-    if meta is None:
-        pre = row.get_attribute("data-pre-plain-text")  # type: ignore[attr-defined]
-        return (pre or "").strip()
-    return (meta.inner_text() or "").strip()
+    """The message's own timestamp, with the sender name discarded on the spot.
+
+    WhatsApp renders `data-pre-plain-text="[HH:MM, D/M/YYYY] Name: "` on a
+    `div.copyable-text` **inside** the row. Only the bracketed part is kept, so
+    the name never reaches the caller, let alone the file.
+
+    Returns:
+        str: The bracketed timestamp, or ``""`` when none can be read. An empty
+            string is returned rather than any text that might be message body.
+    """
+    node = row.query_selector("[data-pre-plain-text]")  # type: ignore[attr-defined]
+    pre = node.get_attribute("data-pre-plain-text") if node else None
+    if pre:
+        match = re.match(r"\s*\[(.*?)\]", pre)
+        if match:
+            return match.group(1).strip()
+
+    meta = row.query_selector('[data-testid="msg-meta"] span')  # type: ignore[attr-defined]
+    if meta is not None:
+        text = (meta.inner_text() or "").strip()
+        # Accept only clock-shaped text: the previous fallback matched
+        # `div.copyable-text`, whose inner text is the message body.
+        if re.match(r"^\d{1,2}:\d{2}", text):
+            return text
+    return ""
