@@ -35,6 +35,35 @@ this code.
 Written here rather than left in a chat transcript: a release that skipped its
 gate should be legible to whoever reads this repository next.
 
+## Deviation on record — v0.5.0 merged without CI (second occurrence)
+
+Sprint 005, PR `#5`, merged 2026-08-30 under explicit authorization from the
+repository owner after the same gate refused it again. What was observed, in
+full:
+
+| Signal | Value |
+| :--- | :--- |
+| `ci_gate.py 5` | exit `2` — *"What `main` requires could not be determined … branch protection: forbidden; rulesets: forbidden"* |
+| PR checks | `no exported chats committed`, `ruff`, `pytest (3.11)`, `pytest (3.13)` — all `failure` in 2–4 s |
+| Steps executed in those jobs | **Zero** |
+| GitHub annotation on all four | *"The job was not started because recent account payments have failed or your spending limit needs to be increased."* |
+
+**The red checks are a billing block, not a code failure**, and the distinction
+is the reason this table exists: a reader who sees four failed checks against a
+merged commit would otherwise conclude the code was known-broken and shipped.
+Nothing in `.github/workflows/ci.yml` ran.
+
+The only verification behind `v0.5.0` is local, on the operator's Mac:
+`ruff check .` exit `0`, **78** passing tests, a live export of 301 messages
+whose written file contains no `blob:`, `data:image` or `https://` URL and no
+contact name, and a successful `pip wheel`. No independent infrastructure has
+run this code.
+
+This is now a pattern rather than an incident. Two consecutive releases have
+been merged past the same gate, and the gate is not at fault: it reported
+honestly both times. Until the billing block is cleared, every release here
+carries the operator's word alone.
+
 ---
 
 ## What already works on the private repository

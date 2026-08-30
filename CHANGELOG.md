@@ -8,6 +8,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · Versioning: [SemVer](
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-08-30
+
 > The first three `Added` entries and the last two `Changed` entries were reconstructed on 2026-08-30 by `/agents:reconcile` from the commit range `ac806f5..c090646` and its diffs, after `detect_drift.py` returned verdict `U`. No product code changed in that range; it was documentation and planning only. Everything else is Sprint 005 execution.
 
 ### Added
