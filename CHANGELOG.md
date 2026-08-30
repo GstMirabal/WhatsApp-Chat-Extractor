@@ -8,6 +8,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · Versioning: [SemVer](
 
 ## [Unreleased]
 
+> Entries below were reconstructed on 2026-08-30 by `/agents:reconcile` from the commit range `ac806f5..c090646` and its diffs, after `detect_drift.py` returned verdict `U`. No product code changed in that range; it is documentation and planning only.
+
+### Added
+- `docs/decisions/ADR-0003-media-placeholders-in-export.md` — media messages become placeholder records carrying a `kind` instead of being skipped. Supersedes the *Coverage* row of ADR-0001 §2. No media byte is stored. #005
+- `docs/sprints/005-backend-extractor/IMPLEMENTATION_PLAN.md` — Sprint 005 plan, status `DRAFT`, not approved. #005
+- `docs/sprints/005-backend-extractor/RESUME_NOTES.md` — session-close state that cannot be recovered by reading the code. #005
+
+### Changed
+- `docs/roadmaps/docs/extractor/002-delivery-program.md` — the single `P3 harden` row becomes four sprints: P2.5 (005, corpus fidelity + operator surface), P3a (006, one chat proven complete), P3b (007, all chats), P4 (008, platform hardening, `GATED`). Sprint 005 exists because Sprint 004's scope review found four declared items never built: the Cursor entry point ADR-0001 names, the `README.md` and `LICENSE` that `pyproject.toml` declares, and platform hardening. #005
+- `docs/0_SYSTEM_OVERVIEW.md` — records ADR-0003, the released `v0.4.0` state and the Sprint 005 resume pointer; the artifact table adds ADR-0003, `.github/workflows/ci.yml` and `docs/PLATFORM_HARDENING.md`. #005
+
 ## [0.4.0] - 2026-08-30
 
 ### Added
