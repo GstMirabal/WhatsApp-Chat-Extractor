@@ -51,14 +51,41 @@
       tiers rewritten off `config/model_tiers.json` `claude_code`
     - `[x]` **Approval Gate (Phase 5) — FULL APPROVAL, human, 2026-08-31**:
       all four blocks (W1–W15) authorized, and `ADR-0004` confirmed as Option C
-- [ ] **Objective 1 — Decide and pin the completeness contract (W1–W4)**
-    - `[ ]` `ADR-0004`: Option C, `completeness: proven | unproven | truncated`,
-      chosen against Sprint 006's measurement rather than alongside it
-    - `[ ]` `history.py` classification, `writers.py` schema v5, `tests/test_completeness.py`
-- [ ] **Objective 2 — Measure the chat list (W5–W6)** — *requires the operator*
-    - `[ ]` Answer whether the chat list virtualizes, and whether a chat's index
-      survives a run. Both are unmeasured today; `KI-004-A` forbids assuming either
-- [ ] **Objective 3 — Enumerate, export, declare (W7–W11)**
+- [x] **Objective 1 — Decide and pin the completeness contract (W1–W4)** — *landed*
+    - `[x]` `ADR-0004` (`5447312`): Option C, `completeness: proven | unproven |
+      truncated`, chosen against Sprint 006's measurement rather than alongside it
+    - `[x]` `history.classify_completeness` (`7a94f73`) — pure, fails closed: an
+      unrecognised stop reason is `truncated`, never `proven`
+    - `[x]` `writers.py` schema v5 (`08b03ee`); `complete` retained and **derived**
+      from `completeness == "proven"`, so the two cannot disagree
+    - `[x]` `tests/test_completeness.py` (`f27da4b`), written first and observed
+      failing (`ImportError`) before the implementation existed (`code_craft §6`)
+    - `[x]` `tests/test_writers.py` migrated v4 → v5 (`cbceafb`, W3a) — eleven of
+      its cases asserted the old contract literally
+    - `[x]` `__main__.py` (`ea3a878`, W11a): **only `truncated` exits non-zero.**
+      Under the v4 boolean this branch fired on every export ever produced,
+      telling the operator each run had failed and to raise a cap that was not
+      the cause
+    - `[x]` Block tip verified: `ruff` clean, **128 passed, 1 skipped**
+- [~] **Objective 2 — Measure the chat list (W5–W6)** — *code landed; the run is the operator's*
+    - `[x]` `scripts/probe_chat_list.py` (`f0e2dda`): measures (Q1) whether
+      `#pane-side` virtualizes and (Q2) whether a chat's index survives a
+      re-reading. Reads titles only to hash them; no title, and no message body,
+      reaches the report
+    - `[x]` `tests/test_probe_chat_list.py` (`f30cb48`, W5b): the Phase 4.3 table
+      shipped W5 with no test row — the identical omission Sprint 006 made for
+      W1. The commit hook did not catch it this time because it guards `fix(`
+    - `[x]` `CHAT_LIST_PROBE_NOTES.md` (`497edae`) with **empty** evidence
+      tables. They stay empty until the probe runs
+    - `[ ]` **Operator action required**: run
+      `.venv/bin/python3 scripts/probe_chat_list.py --scroll-passes 20`. It cannot
+      run unattended (real login, real conversations)
+    - `[ ]` Fill §3 and §4 of the notes from the JSON report
+- [🚧] **Objective 3 is blocked on Objective 2, by design.** `IMPLEMENTATION_PLAN.md`
+  §D2 states that W7 is not written until W6 carries numbers. Writing the
+  enumerator against an unmeasured DOM is `KI-004-A`, which this project has paid
+  for three times
+- [ ] **Objective 3 — Enumerate, export, declare (W7–W11)** — *gated on Objective 2*
     - `[ ]` `chat_list.py`, `manifest.py`, `export-all`, per-chat failure policy
 - [ ] **Objective 4 — Document (W12–W15)**
     - `[ ]` Blueprint, README, System Overview, Master Ledger
@@ -90,6 +117,7 @@ Not run yet. Execution authorized 2026-08-31; gates run after the blocks land.
 (exit `0`) · Active Sprint `ai-sprint/007` · **Human OK granted 2026-08-31** ·
 QA + Tester verdicts outstanding.
 
-**Next Phase**: Phase 6 Execution, block A first. W5's probe run and any
-`export-all` invocation require the operator present (real login, real chats,
-real personal data) and therefore cannot be wrapped in an unattended routine.
+**Next Phase**: Phase 6 Execution is **paused on an operator action**, not on a
+decision. Blocks A and B are committed; block C is gated on the probe run, and
+that run requires the operator present (real login, real chats, real personal
+data) and cannot be wrapped in an unattended routine.
