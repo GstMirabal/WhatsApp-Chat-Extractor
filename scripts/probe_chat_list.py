@@ -248,6 +248,7 @@ def measure_virtualization(
     quiet = 0
     max_rendered = 0
     reached_bottom = False
+    within_pass_collisions = 0
     for index in range(scroll_passes):
         digests, untitled = read_list_digests(page)
         added = [digest for digest in digests if digest not in seen]
@@ -255,10 +256,17 @@ def measure_virtualization(
         max_rendered = max(max_rendered, len(digests))
         metrics = _pane_metrics(page)
         reached_bottom = at_pane_bottom(metrics)
+        # Two rows rendered together are two different conversations, so a
+        # repeated digest inside one window is a genuine title collision — the
+        # question the abort criterion asks, and the one thing that would stop
+        # the digest serving as the enumerator's key.
+        collisions = len(digests) - len(set(digests))
+        within_pass_collisions = max(within_pass_collisions, collisions)
         passes.append({
             "pass": index + 1, "rendered_rows": len(digests),
             "untitled_rows": untitled, "new_digests": len(added),
-            "total_distinct": len(seen), "at_bottom": reached_bottom, **metrics,
+            "total_distinct": len(seen), "at_bottom": reached_bottom,
+            "title_collisions_in_window": collisions, **metrics,
         })
         # Quiet passes only mean "no more conversations" once there is nothing
         # left to scroll. Before that they mean the sweep is inside the render
@@ -272,6 +280,8 @@ def measure_virtualization(
         "max_rendered_at_once": max_rendered,
         "total_distinct_digests": len(seen),
         "reached_bottom": reached_bottom,
+        "max_title_collisions_in_a_window": within_pass_collisions,
+        "row_observations": sum(row["rendered_rows"] for row in passes),
         "coverage": _coverage(passes),
         "verdict": virtualization_verdict(
             max_rendered, len(seen), len(passes), reached_bottom=reached_bottom
@@ -332,23 +342,23 @@ def virtualization_verdict(
     return "not-virtualized"
 
 
-def measure_index_stability(
-    page: Page, *, settle_ms: int
-) -> dict[str, Any]:
-    """Read the list twice and report whether position still means chat.
+def read_anchored_at_top(page: Page, *, settle_ms: int) -> list[str]:
+    """Scroll the pane to its head and read the rows rendered there.
 
-    The two readings are separated by a scroll to the top and a settle, which is
-    the least disruptive thing an enumerator does between conversations. A run
-    that opens chats does strictly more, so instability here is a lower bound.
+    Both stability readings are anchored here, and that is the whole point.
+    Run 2 (2026-08-31) compared a reading taken at ``scroll_top`` 67817 against
+    one taken at 0 and reported every position changed — it had compared the
+    last 68 conversations of a virtualized list against the first 69. Run 1
+    reported the opposite from the same code, because its sweep had barely
+    moved and the two windows overlapped. Neither measured reordering.
 
     Args:
         page: WhatsApp Web page showing the chat list.
-        settle_ms: Wait between the two readings.
+        settle_ms: Wait for the pane to render its head.
 
     Returns:
-        dict[str, Any]: Both readings, positions compared, and a verdict.
+        list[str]: Digests of the rows rendered at the head, in list order.
     """
-    first, _ = read_list_digests(page)
     page.evaluate(
         """(selector) => {
             const pane = document.querySelector(selector);
@@ -357,12 +367,26 @@ def measure_index_stability(
         CHAT_PANE_SELECTOR,
     )
     page.wait_for_timeout(settle_ms)
-    second, _ = read_list_digests(page)
+    digests, _ = read_list_digests(page)
+    return digests
+
+
+def compare_readings(first: list[str], second: list[str]) -> dict[str, Any]:
+    """Whether position still means the same conversation across two readings.
+
+    Args:
+        first: Digests from the first anchored reading.
+        second: Digests from the second, taken at the same anchor.
+
+    Returns:
+        dict[str, Any]: Counts, the first changed positions, and a verdict.
+    """
     compared = min(len(first), len(second))
     changed = [i for i in range(compared) if first[i] != second[i]]
     return {
         "reading_1_rows": len(first),
         "reading_2_rows": len(second),
+        "anchor": "pane head (scroll_top 0) for both readings",
         "positions_compared": compared,
         "positions_that_changed": len(changed),
         "changed_positions": changed[:20],
@@ -441,10 +465,16 @@ def _run_probe(args: argparse.Namespace) -> dict[str, Any]:
             title_selector = _working_title_selector(
                 page.query_selector_all(CHAT_ROW_SELECTOR)
             )
+            # Reading 1 before the sweep and reading 2 after it, both anchored
+            # at the pane head. The sweep is the interval: on run 2 it took 102
+            # passes, so the two readings sit minutes apart — the timescale a
+            # real enumeration runs at, rather than an artificial pause.
+            before = read_anchored_at_top(page, settle_ms=args.settle_ms)
             virtualization = measure_virtualization(
                 page, scroll_passes=args.scroll_passes, settle_ms=args.settle_ms
             )
-            stability = measure_index_stability(page, settle_ms=args.settle_ms)
+            after = read_anchored_at_top(page, settle_ms=args.settle_ms)
+            stability = compare_readings(before, after)
         finally:
             context.close()
     return {
@@ -494,6 +524,12 @@ def main(argv: list[str] | None = None) -> int:
         stability["positions_compared"],
     )
     logger.info("Title selector that worked: %s", report["title_selector_used"])
+    logger.info(
+        "Title collisions: at most %s within a single rendered window, over %s "
+        "row observations.",
+        virtualization["max_title_collisions_in_a_window"],
+        virtualization["row_observations"],
+    )
     if "inconclusive" in (virtualization["verdict"], stability["verdict"]):
         logger.warning(
             "A verdict is inconclusive. Re-run with more --scroll-passes, or "

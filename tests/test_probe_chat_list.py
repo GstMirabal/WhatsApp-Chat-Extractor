@@ -22,6 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from probe_chat_list import (
     TITLE_SELECTORS,
     at_pane_bottom,
+    compare_readings,
     read_list_digests,
     virtualization_verdict,
 )
@@ -193,3 +194,49 @@ def test_two_chats_sharing_a_title_collide_into_one_digest() -> None:
     digests, _ = read_list_digests(page)
     assert len(digests) == 2
     assert len(set(digests)) == 1
+
+
+# --- compare_readings -----------------------------------------------------
+
+
+def test_identical_readings_are_stable() -> None:
+    reading = ["chat_a", "chat_b", "chat_c"]
+    assert compare_readings(reading, list(reading))["verdict"] == "stable"
+
+
+def test_a_reordered_list_is_unstable() -> None:
+    """One arriving message moves a chat to the top and shifts everything."""
+    result = compare_readings(
+        ["chat_a", "chat_b", "chat_c"], ["chat_c", "chat_a", "chat_b"]
+    )
+    assert result["verdict"] == "unstable"
+    assert result["positions_that_changed"] == 3
+
+
+def test_only_the_overlap_is_compared() -> None:
+    """Two readings of a virtualized pane rarely render the same row count."""
+    result = compare_readings(["chat_a", "chat_b"], ["chat_a", "chat_b", "chat_c"])
+    assert result["positions_compared"] == 2
+    assert result["verdict"] == "stable"
+
+
+def test_two_empty_readings_decide_nothing() -> None:
+    assert compare_readings([], [])["verdict"] == "inconclusive"
+
+
+def test_a_repeated_digest_within_one_reading_is_counted() -> None:
+    """A title collision: the one thing that would stop the digest being a key."""
+    result = compare_readings(["chat_a", "chat_a", "chat_b"], ["chat_a", "chat_a", "chat_b"])
+    assert result["duplicate_digests_in_reading_1"] == 1
+
+
+def test_both_readings_declare_their_anchor() -> None:
+    """Run 2 compared the pane foot against its head and called it reordering.
+
+    68 of 68 positions "changed" because the readings were different windows of
+    a 899-chat virtualized list, not because anything moved. Run 1 reported the
+    opposite from the same code for the mirror-image reason. The anchor is now
+    part of the record so a reader can see which question was answered.
+    """
+    result = compare_readings(["chat_a"], ["chat_a"])
+    assert "scroll_top 0" in result["anchor"]
