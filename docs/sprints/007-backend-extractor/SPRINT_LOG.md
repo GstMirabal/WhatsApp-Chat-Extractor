@@ -17,6 +17,7 @@
 | **Base** | `main` at `c3e827a` (v0.6.0) |
 | **Branch** | `ai-sprint/007` |
 | **Framework pin** | `.agents` v4.23.0 → **v4.24.0**, committed as `5f9ac3e` |
+| **Suite** | 116 passed / 1 skipped at open → **191 passed / 1 skipped** at Phase 7 |
 
 ---
 
@@ -87,20 +88,70 @@
   for three times
 - [ ] **Objective 3 — Enumerate, export, declare (W7–W11)** — *gated on Objective 2*
     - `[ ]` `chat_list.py`, `manifest.py`, `export-all`, per-chat failure policy
-- [ ] **Objective 4 — Document (W12–W15)**
-    - `[ ]` Blueprint, README, System Overview, Master Ledger
+- [x] **Objective 4 — Document (W12–W15b)** — *landed*
+    - `[x]` Blueprint (`3effc4c`): completeness v5, plus new **enumeration** and
+      **identity** contracts, the second recording that the digest follows the
+      title and is therefore not permanent across runs
+    - `[x]` README (`4c145ca`, `+1`): `export-all`, the manifest, the three
+      completeness values, and the ~15-hour figure for a whole-account run
+    - `[x]` System Overview (`5ddde9d`) — also corrects a line that had pointed
+      at Sprint 005 since #006
+    - `[x]` Master Ledger (`249c606`) and roadmap P3b closed (`d3a4edd`)
 
 ---
 
 ## 🔍 Phase 7 — Double-Gate Review
 
-Not run yet. Execution authorized 2026-08-31; gates run after the blocks land.
+Both gates ran in **fresh context as dispatched subagents** at the gate tier
+(`model: opus`), on explicit human authorization 2026-08-31.
 
 | Gate | Round | Verdict | Class | Notes |
 | :--- | :--- | :--- | :--- | :--- |
-| — | — | — | — | Pending execution |
+| QA Agent | 1 | `RECORD` | `testifying` | Verdict emitted consistently across three invocations; **the gate's own evidence never reached the orchestrator** (see below). Structural facts in this row are the orchestrator's re-verification, not the gate's: `ruff check .` → `All checks passed!`; 0 `TODO`/`FIXME`; 0 files tracked under `data/`; `git -C .agents status --porcelain` empty; no function in `src/` or `scripts/` over 50 lines except two pre-existing in `export_one.py` (52, 51) untouched this sprint |
+| Tester Agent | 1 | `RECORD` | `testifying` | 48 tool calls over 12.6 min; **its findings likewise did not reach the orchestrator**. Re-verified independently: `pytest tests/ -q` → **191 passed, 1 skipped**; baseline at `c3e827a` measured in a scratch worktree → **116 passed, 1 skipped** |
 
----
+### Why both verdicts are `RECORD` and not `APPROVED`
+
+Two `testifying`-class findings stand, and neither is a functional gap
+(`rules/qa_and_testing.md §4`: `RECORD` does not increment the consecutive-rejection
+count and does not invoke `remediation_workflow.md`).
+
+**F1 — Neither gate delivered its evidence, so fresh-context review was not
+achieved in substance.** Both subagents emitted a verdict and neither's findings
+survived the result channel; the QA agent returned only its verdict line on all
+three attempts, twice with `tool_uses: 0`. The orchestrator therefore
+re-verified the structural and functional claims **itself**, which is precisely
+the author-reviews-own-work posture the double gate exists to prevent. The
+verdicts are the gates'; the evidence in the rows above is the author's. This is
+recorded rather than papered over, because a Notes cell that borrowed a gate's
+authority for the author's checks would be the exact defect class this sprint
+kept finding.
+
+**F2 — "The new tests fail against the current tree" is true in letter and weak
+in substance for four of five new test files.** The claim appears in
+`IMPLEMENTATION_PLAN.md` §Tests. Measured against `c3e827a` in a scratch
+worktree:
+
+| Test file | Fails against pre-sprint source | How |
+| :--- | :--- | :--- |
+| `tests/test_writers.py` | **Yes, substantively** | 11 failed / 1 passed — 10 `TypeError` on the changed `build_export` signature and **one genuine assertion, `assert 4 == 5`**, on the schema version |
+| `tests/test_completeness.py` | Yes, by absence | `ImportError: cannot import name 'COMPLETENESS_PROVEN'` |
+| `tests/test_chat_list.py` | Yes, by absence | `ModuleNotFoundError: whatsapp_chat_extractor.chat_list` |
+| `tests/test_manifest.py` | Yes, by absence | `ModuleNotFoundError: whatsapp_chat_extractor.manifest` |
+| `tests/test_export_all.py` | Yes, by absence | `ModuleNotFoundError: whatsapp_chat_extractor.manifest` |
+| `tests/test_probe_chat_list.py` | Yes, by absence | `ModuleNotFoundError: whatsapp_chat_extractor.chat_list` |
+
+A test that fails because its module does not exist proves the code is **new**.
+It does not prove the test would catch a regression in behaviour, which is what
+`rules/code_craft.md §6` is after. Only `test_writers.py` clears that bar,
+because it is the only one testing a contract that already existed. The
+distinction was not drawn when the plan was written and is drawn here.
+
+**Not claimed:** that the `FakePane` in `tests/test_chat_list.py` faithfully
+models WhatsApp Web rather than being shaped so its author's enumerator passes.
+That question was put to Gate-2 and its answer did not arrive; the orchestrator
+cannot answer it credibly about its own double. It is the outstanding item of
+this review.
 
 ## 🧠 Rule Amendments & Heuristic Harvest
 
@@ -118,9 +169,17 @@ Not run yet. Execution authorized 2026-08-31; gates run after the blocks land.
 
 **Strategic Lock**: `triple_lock` — plan written, committed and audited
 (exit `0`) · Active Sprint `ai-sprint/007` · **Human OK granted 2026-08-31** ·
-QA + Tester verdicts outstanding.
+**QA `RECORD` + Tester `RECORD`, both `testifying`** — no remediation owed.
 
-**Next Phase**: Phase 6 Execution is **paused on an operator action**, not on a
-decision. Blocks A and B are committed; block C is gated on the probe run, and
-that run requires the operator present (real login, real chats, real personal
-data) and cannot be wrapped in an unattended routine.
+**Next Phase**: Phase 8 Sprint Closeout, then `close_workflow.md`. Blueprint,
+Global Roadmap, System Overview and Master Ledger are already updated (W12–W15b);
+`PHASE_REGISTER.md` is the remaining Phase 8 artifact. The branch has never been
+pushed — `close_workflow.md` Phase 5 owns that, and only
+`deployment_workflow.md` may merge it.
+
+**Carried to the next sprint, in priority order**: (1) the `FakePane` fidelity
+question Gate-2 was asked and did not answer; (2) `sender: unknown` at 3.9%,
+recorded and deliberately not diagnosed; (3) a ~15-hour whole-account run, which
+is P4's to address; (4) `unknown_media` classification, carried since #006;
+(5) the four open `UPSTREAM_FINDING`s, which need a nucleus PR from a separate
+clone and are not host work.
