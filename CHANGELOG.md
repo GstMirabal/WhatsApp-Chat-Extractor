@@ -8,6 +8,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · Versioning: [SemVer](
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-08-31
+
+> Merged from `ai-sprint/006` as PR #7 under explicit human authorization **without CI verification — the fourth such occurrence**. `ci_gate.py` exited `2` for two independent platform reasons: it could not read what `main` requires (branch protection and rulesets both `forbidden`, the token lacks scope), and all four checks reported failure in 2 seconds each having produced **no logs at all** (`gh run view --log-failed` → `log not found`) — the same GitHub billing signature recorded for PR #5 and PR #6. Verified locally on the exact merged tip `b05e7dc`: 116 passed, 1 skipped, `ruff` clean, no files tracked under `data/`. Unblocking this is `/agents:harden` plus GitHub billing; neither is code.
+
 > Sprint 006 (`ai-sprint/006`) closes **partially by design**. The Approval Gate
 > authorized W1–W2 only, so that `ADR-0004` would be written against the probe's
 > measurement rather than alongside it; W4a was a later, narrow unlock for the
