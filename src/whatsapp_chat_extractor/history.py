@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, TypedDict
 
 from whatsapp_chat_extractor.writers import MessageRecord
@@ -297,6 +298,73 @@ def build_result(
     }
 
 
+@dataclass
+class _HarvestState:
+    """Mutable position of one harvest, carried between passes.
+
+    A dataclass rather than four locals because :func:`_one_pass` has to advance
+    all of them and `agents.md §1` caps a function at 50 lines; passing and
+    returning a tuple of four would move the complexity rather than remove it.
+    """
+
+    stall_count: int = 0
+    passes_used: int = 0
+    reason: str | None = None
+    panel_loading: bool = False
+
+
+def _one_pass(
+    page: Page,
+    accumulator: MessageAccumulator,
+    state: _HarvestState,
+    *,
+    chat_title: str,
+    max_passes: int,
+    stall_threshold: int,
+    load_wait_ms: int,
+) -> None:
+    """Read the panel once, decide whether to stop, and scroll if not.
+
+    Args:
+        page: Page with an open conversation.
+        accumulator: Rows discovered so far; mutated.
+        state: Harvest position; mutated.
+        chat_title: Forwarded to row collection for direction detection only.
+        max_passes: Hard cap on scroll passes.
+        stall_threshold: Quiet passes that end the run.
+        load_wait_ms: How long this pass waits for older messages.
+    """
+    from whatsapp_chat_extractor.export_one import (
+        at_chat_start,
+        collect_visible_rows,
+        scroll_one_pass,
+    )
+
+    added = accumulator.add_pass(collect_visible_rows(page, chat_title=chat_title))
+    state.passes_used += 1
+    if added:
+        state.stall_count = 0
+    logger.info("Pass %s: +%s new, %s total (stall %s/%s)", state.passes_used,
+                added, len(accumulator), state.stall_count, stall_threshold)
+    # Read once and reuse: the same observation decides whether to stop and how
+    # to classify the stop. Sampling it twice could report a spinner to one and
+    # not the other, which is a disagreement no reader could resolve.
+    state.panel_loading = panel_is_loading(page)
+    state.reason = decide_stop(
+        at_start=at_chat_start(page),
+        stall_count=state.stall_count,
+        stall_threshold=stall_threshold,
+        passes_used=state.passes_used,
+        max_passes=max_passes,
+        panel_loading=state.panel_loading,
+    )
+    if state.reason is None and not scroll_one_pass(page, max_wait_ms=load_wait_ms):
+        # The scroll waited for older messages and none arrived. That is the
+        # stall signal, not "the collect found nothing" — a pass can legibly add
+        # zero rows while the panel is still loading beneath it.
+        state.stall_count += 1
+
+
 def harvest_history(
     page: Page,
     *,
@@ -318,51 +386,20 @@ def harvest_history(
     Returns:
         HarvestResult: Ordered messages plus completeness metadata.
     """
-    from whatsapp_chat_extractor.export_one import (
-        at_chat_start,
-        collect_visible_rows,
-        scroll_one_pass,
-    )
-
     accumulator = MessageAccumulator()
-    stall_count = 0
-    passes_used = 0
-    reason: str | None = None
-    loading = False
+    state = _HarvestState()
 
-    while reason is None:
-        added = accumulator.add_pass(
-            collect_visible_rows(page, chat_title=chat_title)
+    while state.reason is None:
+        _one_pass(
+            page, accumulator, state,
+            chat_title=chat_title, max_passes=max_passes,
+            stall_threshold=stall_threshold, load_wait_ms=load_wait_ms,
         )
-        passes_used += 1
-        if added:
-            stall_count = 0
-        logger.info(
-            "Pass %s: +%s new, %s total (stall %s/%s)",
-            passes_used, added, len(accumulator), stall_count, stall_threshold,
-        )
-        # Read once and reuse: the same observation decides whether to stop and
-        # how to classify the stop. Sampling it twice could report a spinner to
-        # one and not the other, which is a disagreement no reader could resolve.
-        loading = panel_is_loading(page)
-        reason = decide_stop(
-            at_start=at_chat_start(page),
-            stall_count=stall_count,
-            stall_threshold=stall_threshold,
-            passes_used=passes_used,
-            max_passes=max_passes,
-            panel_loading=loading,
-        )
-        if reason is None and not scroll_one_pass(page, max_wait_ms=load_wait_ms):
-            # The scroll waited for older messages and none arrived. That is the
-            # stall signal, not "the collect found nothing" — a pass can legibly
-            # add zero rows while the panel is still loading beneath it.
-            stall_count += 1
 
-    logger.info("Harvest stopped (%s) after %s passes", reason, passes_used)
+    logger.info("Harvest stopped (%s) after %s passes", state.reason, state.passes_used)
     return build_result(
         accumulator,
-        stopped_reason=reason,
-        passes_used=passes_used,
-        panel_loading=loading,
+        stopped_reason=state.reason,
+        passes_used=state.passes_used,
+        panel_loading=state.panel_loading,
     )
