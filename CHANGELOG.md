@@ -69,6 +69,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · Versioning: [SemVer](
   or a regression; it is **recorded, not diagnosed**, because the sprint that
   guesses at direction is the sprint `KI-004-A` was written about. Routed to a
   later sprint together with the `unknown_media` classification already queued.
+- **The enumerator undercounts silently when the chat list reorders mid-sweep.**
+  Measured after the gates, against the real geometry: 882 of 899 conversations
+  found at one reorder per 5 reads, 856 at one per 2. No duplicates — the digest
+  key prevents that — so the failure is pure loss, and `enumeration_complete`
+  still reports `true` because the pane foot was reached. One arriving message
+  causes it, and a whole-account run is hours long. Pinned as a test; the fix
+  (re-sweep until two consecutive sweeps agree) needs its own measurement. #007
 - **Resume is not implemented.** The manifest carries the identity, outcome and
   file of every conversation, which is what a later sprint needs to skip what
   already succeeded. Retries stay out on purpose: retrying without having measured

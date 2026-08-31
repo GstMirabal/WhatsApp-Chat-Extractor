@@ -124,6 +124,27 @@ class FakePane:
         return max(0, len(self.titles) * self.row_height - self.client_height)
 
 
+class ReorderingPane(FakePane):
+    """A list that moves the last conversation to the top every N reads.
+
+    What an arriving message does to a real chat list. `FakePane` never
+    reorders, which makes it more forgiving than WhatsApp Web on exactly the
+    axis Q2 could not settle: the probe measured position stable over a
+    two-minute sweep, and an enumeration of 899 conversations runs longer.
+    """
+
+    def __init__(self, *args: object, every: int = 5, **kwargs: object) -> None:
+        super().__init__(*args, **kwargs)
+        self._every = every
+        self._reads = 0
+
+    def query_selector_all(self, selector: str) -> list[FakeRow]:
+        self._reads += 1
+        if self._reads % self._every == 0 and len(self.titles) > 1:
+            self.titles.insert(0, self.titles.pop())
+        return super().query_selector_all(selector)
+
+
 def titles(count: int) -> list[str]:
     return [f"Chat {index:03d}" for index in range(count)]
 
@@ -291,3 +312,65 @@ def test_an_unreadable_title_fails_closed() -> None:
     ref: ChatRef = {"chat_id": pseudonymous_chat_id("Chat 010"), "index": 10}
     with pytest.raises(RuntimeError, match="no readable title"):
         open_chat_by_digest(pane, ref, total=40, settle_ms=0)
+
+
+# --- fidelity of the double, and the limit it exposes ---------------------
+
+# Geometry as measured on WhatsApp Web (probe runs 2 and 3, 2026-08-31):
+# 899 conversations, at most 70 rendered at once, 746px viewport over a
+# ~68 400px pane — roughly 76px per row, so the render buffer is about 7.8x
+# the one-viewport scroll step. The default fixture above tiles exactly
+# (window == step), which is more forgiving on that axis; these use the real
+# numbers instead.
+MEASURED = {"window": 70, "row_height": 76, "client_height": 746}
+
+
+def test_the_sweep_is_complete_under_the_measured_geometry() -> None:
+    pane = FakePane(titles(899), **MEASURED)
+    refs = sweep_chat_list(pane, max_passes=4000, settle_ms=0)
+    assert len(refs) == 899
+    assert len({ref["chat_id"] for ref in refs}) == 899
+
+
+def test_the_sweep_survives_a_virtualizer_that_renders_late() -> None:
+    """A real virtualizer re-renders asynchronously; `FakePane` never lags."""
+    class LaggyPane(FakePane):
+        def __init__(self, *args: object, lag: int = 2, **kwargs: object) -> None:
+            super().__init__(*args, **kwargs)
+            self._lag = lag
+            self._pending: list[int] = []
+
+        def query_selector_all(self, selector: str) -> list[FakeRow]:
+            self._pending.append(self.scroll_top)
+            shown = self._pending.pop(0) if len(self._pending) > self._lag else 0
+            live, self.scroll_top = self.scroll_top, shown
+            rows = super().query_selector_all(selector)
+            self.scroll_top = live
+            return rows
+
+    pane = LaggyPane(titles(899), lag=3, **MEASURED)
+    assert len(sweep_chat_list(pane, max_passes=4000, settle_ms=0)) == 899
+
+
+def test_a_reordering_list_makes_the_sweep_UNDERCOUNT_silently() -> None:
+    """A MEASURED LIMIT of the shipped enumerator, pinned so it is not a surprise.
+
+    When the list reorders mid-sweep — one arriving message does it — a
+    conversation can move from below the sweep position to above it and never be
+    seen. The digest key prevents visiting one twice, so there are **no
+    duplicates**; the loss is silent undercounting, and `enumeration_complete`
+    still reports `true` because the pane foot *was* reached.
+
+    Measured here: 899 conversations, one reorder every 5 reads, ~882 found.
+    This asserts the defect exists rather than asserting a fixed number, because
+    the exact count depends on interleaving. Sprint 007 shipped it knowingly:
+    Q2 measured position stable over a two-minute sweep and did not measure a
+    busy account over a longer one. The fix belongs to a later sprint — sweeping
+    until two consecutive sweeps agree is the obvious candidate — and it needs
+    its own measurement, not a guess.
+    """
+    pane = ReorderingPane(titles(899), every=5, **MEASURED)
+    refs = sweep_chat_list(pane, max_passes=4000, settle_ms=0)
+    ids = [ref["chat_id"] for ref in refs]
+    assert len(ids) == len(set(ids)), "no conversation may be enumerated twice"
+    assert len(refs) < 899, "this test exists to pin an undercount that is real"

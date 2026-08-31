@@ -147,11 +147,38 @@ It does not prove the test would catch a regression in behaviour, which is what
 because it is the only one testing a contract that already existed. The
 distinction was not drawn when the plan was written and is drawn here.
 
-**Not claimed:** that the `FakePane` in `tests/test_chat_list.py` faithfully
-models WhatsApp Web rather than being shaped so its author's enumerator passes.
-That question was put to Gate-2 and its answer did not arrive; the orchestrator
-cannot answer it credibly about its own double. It is the outstanding item of
-this review.
+**F3 — The `FakePane` fidelity question, put to Gate-2 and unanswered, was
+answered by experiment instead, and it found a real limit.**
+
+The default fixture tiles exactly — `window` 4 rows against a 4-row scroll step,
+a buffer/step ratio of **1.0x** — where WhatsApp Web measures **7.8x** (70 rows
+rendered, 746px viewport, ~76px rows). That default is more forgiving than
+reality on the one axis probe run 1 got wrong. Against it, though,
+`test_a_sweep_does_not_stop_inside_the_render_buffer` runs at **15x**, harsher
+than reality, so the buffer condition *is* genuinely exercised.
+
+The sweep was then run against the measured geometry and against two ways the
+double is more forgiving than WhatsApp Web:
+
+| Condition | Result |
+| :--- | :--- |
+| Measured geometry, 899 conversations | **899/899**, no duplicates |
+| Buffer 15x and 70x the scroll step | Complete |
+| Virtualizer rendering up to 3 reads late | **899/899** — lag is survived |
+| **List reordering mid-sweep** (one arriving message) | **882/899 at one reorder per 5 reads; 856/899 at one per 2** |
+
+**The enumerator undercounts silently when the list reorders.** A conversation
+can move from below the sweep position to above it and never be seen. The digest
+key prevents visiting one twice — there are **no duplicates** — so the failure is
+pure loss, and `enumeration_complete` still reports `true` because the pane foot
+was genuinely reached. Q2 measured position stable over a two-minute sweep on a
+quiet list; it did not measure a busy account over the 3.5 minutes enumeration
+actually took, still less over a 15-hour run.
+
+Pinned as `tests/test_chat_list.py::test_a_reordering_list_makes_the_sweep_UNDERCOUNT_silently`
+so it is a known limit rather than a future surprise. **Not fixed here**:
+re-sweeping until two consecutive sweeps agree is the obvious candidate and it
+needs its own measurement, which is the discipline this sprint was run on.
 
 ## 🧠 Rule Amendments & Heuristic Harvest
 
