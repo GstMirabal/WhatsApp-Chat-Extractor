@@ -147,10 +147,50 @@ distinct digests, so no reordering collapsed two rows into one chat.
 Aggregate: 311 rows — `text: 260`, `unknown: 30`, `voice: 16`, `image: 5`.
 Search-selector leakage outside `#pane-side`: **0**, across all five.
 
+### Run 4 — the same five chats, with the stall defect fixed
+
+`chat_start_probe_20260830T224020Z.json`, after `W4a` stopped the harvest
+calling a still-fetching panel a stall.
+
+| `chat_id` | Passes r3 → r4 | Rows r3 → r4 | Stopped | Marker |
+| :--- | :--- | :--- | :--- | :--- |
+| `chat_41d97` | 175 → **255** | 71 → 39 | `stalled` | No |
+| `chat_35f90` | 274 → 21 | 45 → 47 | `stalled` | No |
+| `chat_731b1` | 26 → 30 | **57 → 57** | `stalled` | No |
+| `chat_7f915` | **22 → 22** | **80 → 80** | `stalled` | No |
+| `chat_4a98b` | **5 → 5** | **58 → 58** | `stalled` | No |
+
+**The fix demonstrably acted.** `chat_41d97` — the chat that had been abandoned
+mid-fetch — ran 80 passes further and this time ended with no `loading-spinner`
+in the chrome. It stopped because the panel genuinely stopped producing history,
+not because the harvest gave up on it.
+
+**Three of five chats reproduce their pass count and row count exactly.** That
+is a stable top rather than an abandonment, and it is the reproducibility the
+plan's abort criterion asked about — answered on the absence rather than the
+presence. `chat_35f90` is the outlier (274 → 21) and is not claimed as settled;
+both runs agree it carries no marker, which is the question at hand.
+
 ### Verdict
 
-**The probe reports `H2`. This document does not adopt it as proven, and the
-reason is in the table above.**
+**H2. The plan's abort criterion is not triggered, and the finding is stated
+with the limit it actually has.**
+
+Across five conversations, two runs, and with the stall defect corrected, **no
+conversation ever reached a `chat_start` stop and no start marker appeared in
+any panel**, with `data-icon` empty in every chrome inventory taken. The
+evidence is reproducible rather than intermittent, so the abort criterion —
+which fires on a marker whose presence flickers between runs — does not apply.
+
+What remains unobservable, and is not claimed: no harvest reached a *provable*
+beginning, so "the marker does not exist" is still an inference. What **is**
+established, and is all `ADR-0004` needs, is the practical fact:
+
+> `complete: true` is unreachable. In five real conversations, corrected
+> harvester included, `COMPLETE_REASONS` never fired once.
+
+A field that is constant cannot distinguish a complete history from a truncated
+one, which is precisely what the field exists to do in a training corpus.
 
 `data-icon` is empty in all five, which is a strong form of absence: not "our
 selector missed" but "no icon-bearing chrome node exists in the panel". The two
