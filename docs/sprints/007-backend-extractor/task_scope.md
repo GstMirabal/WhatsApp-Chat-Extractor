@@ -45,16 +45,18 @@ the prohibition does not invert.
 
 | # | File | Operation | Risk | Assignee | Model | Effort | Status |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| W1 | `docs/decisions/ADR-0004-completeness-criterion.md` | create | high | `doc_orchestrator` | `opus` | `high` | ⏳ |
-| W2 | `src/whatsapp_chat_extractor/history.py` | modify | high | `implementer_agent` | `opus` | `high` | ⏳ |
-| W3 | `src/whatsapp_chat_extractor/writers.py` | modify | high | `implementer_agent` | `opus` | `high` | ⏳ |
-| W4 | `tests/test_completeness.py` | create | medium | `implementer_agent` | `sonnet` | `medium` | ⏳ |
+| W1 | `docs/decisions/ADR-0004-completeness-criterion.md` | create | high | `doc_orchestrator` | `opus` | `high` | ✅ `5447312` |
+| W2 | `src/whatsapp_chat_extractor/history.py` | modify | high | `implementer_agent` | `opus` | `high` | ✅ `7a94f73` |
+| W3 | `src/whatsapp_chat_extractor/writers.py` | modify | high | `implementer_agent` | `opus` | `high` | ✅ `08b03ee` |
+| W3a | `tests/test_writers.py` | modify | medium | `implementer_agent` | `sonnet` | `medium` | ✅ `cbceafb` |
+| W4 | `tests/test_completeness.py` | create | medium | `implementer_agent` | `sonnet` | `medium` | ✅ `f27da4b` |
 | W5 | `scripts/probe_chat_list.py` | create | medium | `implementer_agent` | `sonnet` | `medium` | ⏳ |
 | W6 | `docs/sprints/007-backend-extractor/CHAT_LIST_PROBE_NOTES.md` | create | low | `doc_orchestrator` | `haiku` | `low` | ⏳ |
 | W7 | `src/whatsapp_chat_extractor/chat_list.py` | create | high | `implementer_agent` | `opus` | `high` | ⏳ |
 | W8 | `tests/test_chat_list.py` | create | medium | `implementer_agent` | `sonnet` | `medium` | ⏳ |
 | W9 | `src/whatsapp_chat_extractor/manifest.py` | create | high | `implementer_agent` | `opus` | `high` | ⏳ |
 | W10 | `tests/test_manifest.py` | create | medium | `implementer_agent` | `sonnet` | `medium` | ⏳ |
+| W11a | `src/whatsapp_chat_extractor/__main__.py` | modify | high | `implementer_agent` | `opus` | `high` | ✅ `ea3a878` |
 | W11 | `src/whatsapp_chat_extractor/__main__.py` | modify | high | `implementer_agent` | `opus` | `high` | ⏳ |
 | W12 | `docs/architecture/EXTRACTOR_BLUEPRINT.md` | modify | low | `doc_orchestrator` | `haiku` | `low` | ⏳ |
 | W13 | `README.md` | modify | low | `doc_orchestrator` | `haiku` | `low` | ⏳ |
@@ -90,6 +92,36 @@ Required wherever a row's risk exceeds the mechanical tier's reach.
 Rows W6 and W12–W15 stay mechanical (`haiku` / `low`): they transcribe measured evidence and
 decisions already taken elsewhere, and none of them can put a wrong value into an
 exported corpus.
+
+## Units added during execution
+
+Two rows were not in the Phase 4.3 table and are recorded rather than absorbed,
+following the `W1b` precedent of Sprint 006.
+
+| # | Why it was not planned | Why it is not new scope |
+| :--- | :--- | :--- |
+| W3a `tests/test_writers.py` | The plan's Tests table named `test_writers.py` only as a regression to protect, having missed that eleven of its cases **assert the v4 contract literally** — `SCHEMA_VERSION == 4` and `build_export(complete=…)` | It is W3's test surface. A schema change that leaves the tests of the old schema in place has not been made |
+| W11a `src/whatsapp_chat_extractor/__main__.py` | `build_export` lost its `complete=` argument, so the CLI call site stopped compiling the moment W3 landed | A **partial unlock of W11**, exactly as `W4a` was of `W4` in Sprint 006. It covers only the call site and the exit-code semantics that `ADR-0004` forces; the `export-all` subcommand stays ⏳ in block C |
+
+**W11a is a behaviour fix, not a mechanical port.** Under the v4 boolean the
+`if not harvest["complete"]` branch fired on **every export ever produced**,
+because `complete` was never True: the operator was told each run had failed and
+advised to raise a `--max-passes` cap that was not the cause. Only `truncated`
+now exits `EXIT_INCOMPLETE`.
+
+## Block A verification
+
+Run at the block tip `ea3a878`, host root:
+
+| Command | Result |
+| :--- | :--- |
+| `.venv/bin/ruff check .` | `All checks passed!`, exit `0` |
+| `.venv/bin/pytest tests/ -q` | **128 passed, 1 skipped** (116 at sprint open) |
+
+The five block-A commits are one physical file each (`jurisdictional_lock`), so
+the suite is green at the block tip rather than at every intermediate commit: the
+contract spans `history.py` and `writers.py` and cannot change in one of them
+alone. Recorded here rather than left for a bisect to discover.
 
 ## Conflicts
 
