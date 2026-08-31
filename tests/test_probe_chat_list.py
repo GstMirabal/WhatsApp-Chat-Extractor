@@ -21,6 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
 from probe_chat_list import (
     TITLE_SELECTORS,
+    at_pane_bottom,
     read_list_digests,
     virtualization_verdict,
 )
@@ -64,25 +65,82 @@ def row_titled(title: str, selector: str = TITLE_SELECTORS[0]) -> FakeRow:
     return FakeRow({selector: FakeNode(title=title)})
 
 
+# --- at_pane_bottom -------------------------------------------------------
+
+
+def test_a_pane_with_pixels_left_is_not_at_the_bottom() -> None:
+    """Run 1's actual geometry: 3.3% of the pane traversed."""
+    assert at_pane_bottom(
+        {"scroll_top": 2238, "scroll_height": 68407, "client_height": 746}
+    ) is False
+
+
+def test_a_fully_scrolled_pane_is_at_the_bottom() -> None:
+    assert at_pane_bottom(
+        {"scroll_top": 67661, "scroll_height": 68407, "client_height": 746}
+    ) is True
+
+
+def test_a_pane_shorter_than_its_viewport_is_at_the_bottom() -> None:
+    """Nothing to scroll is a legitimate bottom, not a failure to reach one."""
+    assert at_pane_bottom(
+        {"scroll_top": 0, "scroll_height": 500, "client_height": 746}
+    ) is True
+
+
+def test_an_unreadable_pane_is_never_at_the_bottom() -> None:
+    """`_pane_metrics` returns zeroes when the selector misses.
+
+    Calling that "finished" would let a wrong selector produce a confident
+    verdict about a list it never found.
+    """
+    assert at_pane_bottom(
+        {"scroll_top": 0, "scroll_height": 0, "client_height": 0}
+    ) is False
+
+
 # --- virtualization_verdict ----------------------------------------------
 
 
 def test_more_distinct_than_ever_rendered_means_virtualized() -> None:
     """The finding that would force the enumerator to scroll the pane itself."""
-    assert virtualization_verdict(59, 140, passes_used=8) == "virtualized"
+    assert virtualization_verdict(
+        59, 140, passes_used=8, reached_bottom=True
+    ) == "virtualized"
+
+
+def test_virtualization_is_proven_wherever_it_is_seen() -> None:
+    """Seeing more chats than ever rendered proves it, bottom reached or not."""
+    assert virtualization_verdict(
+        59, 140, passes_used=8, reached_bottom=False
+    ) == "virtualized"
 
 
 def test_everything_rendered_at_once_means_not_virtualized() -> None:
-    assert virtualization_verdict(59, 59, passes_used=8) == "not-virtualized"
+    assert virtualization_verdict(
+        59, 59, passes_used=8, reached_bottom=True
+    ) == "not-virtualized"
+
+
+def test_a_sweep_that_never_reached_the_bottom_decides_nothing() -> None:
+    """The run-1 defect, pinned.
+
+    Four passes, no new digests after the first, and a verdict of
+    `not-virtualized` drawn from 2238 of 68407 pixels. An unchanged count over a
+    stretch that was never finished says nothing about the whole list — it is
+    equally what a sweep still inside the render buffer looks like. This is
+    `history.py:38-44` one panel over, and the assertion below is the fix.
+    """
+    assert virtualization_verdict(
+        70, 70, passes_used=4, reached_bottom=False
+    ) == "inconclusive"
 
 
 def test_a_single_pass_decides_nothing() -> None:
     """One pass cannot distinguish a short list from an unscrolled one."""
-    assert virtualization_verdict(59, 59, passes_used=1) == "inconclusive"
-
-
-def test_a_single_pass_is_inconclusive_even_when_counts_differ() -> None:
-    assert virtualization_verdict(10, 40, passes_used=1) == "inconclusive"
+    assert virtualization_verdict(
+        59, 59, passes_used=1, reached_bottom=True
+    ) == "inconclusive"
 
 
 # --- read_list_digests ----------------------------------------------------

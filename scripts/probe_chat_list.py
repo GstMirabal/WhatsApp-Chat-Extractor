@@ -26,12 +26,13 @@ invoked_by: docs/sprints/007-backend-extractor/CHAT_LIST_PROBE_NOTES.md
 (operator, manually — it needs a real login and real conversations)
 
 Usage:
-    python3 scripts/probe_chat_list.py --scroll-passes 20
-    python3 scripts/probe_chat_list.py --scroll-passes 30 --settle-ms 5000
+    python3 scripts/probe_chat_list.py
+    python3 scripts/probe_chat_list.py --settle-ms 3000 --scroll-passes 800
 
 Exit codes:
     0 — the probe ran and both questions carry a verdict
-    3 — the probe ran but a verdict is `inconclusive`
+    3 — the probe ran but a verdict is `inconclusive`, which includes a sweep
+        that never reached the foot of the pane
 """
 
 from __future__ import annotations
@@ -59,7 +60,11 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(messag
 logger = logging.getLogger("wa-probe-list")
 
 DEFAULT_OUT_DIR = Path("data/probes")
-DEFAULT_SCROLL_PASSES = 20
+# High enough to reach the foot of a real pane, not a round number. Run 1 met a
+# `scroll_height` of 68407 against a 746px viewport: 92 passes to traverse it,
+# so a cap of 20 could not have finished even with a correct stop rule. The
+# sweep stops at the bottom; this only guarantees termination.
+DEFAULT_SCROLL_PASSES = 400
 # How long the list gets to render newly requested rows after a scroll.
 DEFAULT_SETTLE_MS = 1_200
 EXIT_INCONCLUSIVE = 3
@@ -79,9 +84,24 @@ TITLE_SELECTORS = (
 )
 
 # A pass that reveals no digest the run has not already seen. Three in a row
-# means the list stopped producing conversations, which is the only stop signal
-# available — the same inference `history.decide_stop` makes, named as one.
+# means the list stopped producing conversations — but ONLY once the sweep has
+# actually reached the bottom of the pane.
+#
+# Measured, not theorised. Run 1 (2026-08-31) stopped after four passes having
+# moved `scroll_top` from 0 to 2238 of a `scroll_height` of 68407 — 3.3% of the
+# pane — and reported `not-virtualized` on the strength of three quiet passes.
+# The chat list keeps a render buffer far larger than one viewport, so a sweep
+# still inside that buffer sees nothing new and looks exactly like a sweep that
+# has run out of conversations.
+#
+# This is `history.py:38-44` again, one panel over: an inference presented as an
+# arrival. `W4a` fixed it for the message panel two days earlier by refusing to
+# call a stall a top while evidence of more was on screen. Here the evidence is
+# arithmetic — unscrolled pixels remain — which is stronger than a spinner.
 QUIET_PASSES_TO_STOP = 3
+# How close to the foot of the pane counts as having reached it. One viewport,
+# because the last scroll step cannot overshoot by more than that.
+BOTTOM_TOLERANCE_PX = 1
 
 
 def _row_title(row: ElementHandle) -> str:
@@ -190,10 +210,30 @@ def _scroll_pane(page: Page, *, settle_ms: int) -> None:
     page.wait_for_timeout(settle_ms)
 
 
+def at_pane_bottom(metrics: dict[str, int]) -> bool:
+    """Whether the pane has been scrolled to its foot.
+
+    Args:
+        metrics: A reading from :func:`_pane_metrics`.
+
+    Returns:
+        bool: True when no scrollable distance remains. A pane reporting a
+            zero ``scroll_height`` is treated as **not** at the bottom: that is
+            an unreadable pane, and calling it finished is the error this
+            function exists to prevent.
+    """
+    if metrics["scroll_height"] <= 0:
+        return False
+    remaining = (
+        metrics["scroll_height"] - metrics["scroll_top"] - metrics["client_height"]
+    )
+    return remaining <= BOTTOM_TOLERANCE_PX
+
+
 def measure_virtualization(
     page: Page, *, scroll_passes: int, settle_ms: int
 ) -> dict[str, Any]:
-    """Scroll the chat list and record what each pass adds.
+    """Scroll the chat list to its foot and record what each pass adds.
 
     Args:
         page: WhatsApp Web page showing the chat list.
@@ -207,46 +247,88 @@ def measure_virtualization(
     passes: list[dict[str, Any]] = []
     quiet = 0
     max_rendered = 0
+    reached_bottom = False
     for index in range(scroll_passes):
         digests, untitled = read_list_digests(page)
         added = [digest for digest in digests if digest not in seen]
         seen.update(added)
         max_rendered = max(max_rendered, len(digests))
+        metrics = _pane_metrics(page)
+        reached_bottom = at_pane_bottom(metrics)
         passes.append({
             "pass": index + 1, "rendered_rows": len(digests),
             "untitled_rows": untitled, "new_digests": len(added),
-            "total_distinct": len(seen), **_pane_metrics(page),
+            "total_distinct": len(seen), "at_bottom": reached_bottom, **metrics,
         })
+        # Quiet passes only mean "no more conversations" once there is nothing
+        # left to scroll. Before that they mean the sweep is inside the render
+        # buffer, which is not the same statement at all.
         quiet = quiet + 1 if not added else 0
-        if quiet >= QUIET_PASSES_TO_STOP:
+        if reached_bottom and quiet >= QUIET_PASSES_TO_STOP:
             break
         _scroll_pane(page, settle_ms=settle_ms)
     return {
         "passes": passes,
         "max_rendered_at_once": max_rendered,
         "total_distinct_digests": len(seen),
-        "verdict": virtualization_verdict(max_rendered, len(seen), len(passes)),
+        "reached_bottom": reached_bottom,
+        "coverage": _coverage(passes),
+        "verdict": virtualization_verdict(
+            max_rendered, len(seen), len(passes), reached_bottom=reached_bottom
+        ),
         "digests": sorted(seen),
     }
 
 
+def _coverage(passes: list[dict[str, Any]]) -> dict[str, int | float]:
+    """How much of the pane the sweep actually traversed.
+
+    Args:
+        passes: Per-pass records from :func:`measure_virtualization`.
+
+    Returns:
+        dict[str, int | float]: Final scroll position, total height, and the
+            fraction covered. Reported so a verdict can never again rest on a
+            sweep that moved 3% of the pane without that being visible.
+    """
+    if not passes:
+        return {"scroll_top": 0, "scroll_height": 0, "fraction": 0.0}
+    last = passes[-1]
+    height = last["scroll_height"]
+    covered = last["scroll_top"] + last["client_height"]
+    return {
+        "scroll_top": last["scroll_top"],
+        "scroll_height": height,
+        "fraction": round(covered / height, 4) if height else 0.0,
+    }
+
+
 def virtualization_verdict(
-    max_rendered: int, total_distinct: int, passes_used: int
+    max_rendered: int, total_distinct: int, passes_used: int, *, reached_bottom: bool
 ) -> str:
     """Whether scrolling revealed conversations the DOM did not already hold.
+
+    ``not-virtualized`` is a claim about the **whole** list, so it requires the
+    sweep to have reached the foot of the pane. Without that, an unchanged count
+    says only that nothing new appeared in the stretch that was traversed —
+    which is equally true of a sweep still inside the render buffer.
+
+    ``virtualized`` needs no such condition: seeing more conversations than were
+    ever in the DOM at once proves virtualization wherever it is observed.
 
     Args:
         max_rendered: Most rows present in the DOM at any one moment.
         total_distinct: Distinct conversations seen across every pass.
         passes_used: Passes actually run.
+        reached_bottom: Whether the sweep reached the foot of the pane.
 
     Returns:
         str: ``virtualized``, ``not-virtualized`` or ``inconclusive``.
     """
-    if passes_used < 2:
-        return "inconclusive"
     if total_distinct > max_rendered:
         return "virtualized"
+    if passes_used < 2 or not reached_bottom:
+        return "inconclusive"
     return "not-virtualized"
 
 
@@ -303,7 +385,9 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--scroll-passes", type=int, default=DEFAULT_SCROLL_PASSES,
-        help="Hard cap on chat-list scroll passes (default: %(default)s).",
+        help="Hard cap on chat-list scroll passes (default: %(default)s). The "
+             "sweep stops when it reaches the foot of the pane; this only "
+             "guarantees termination.",
     )
     parser.add_argument(
         "--settle-ms", type=int, default=DEFAULT_SETTLE_MS,
@@ -387,12 +471,23 @@ def main(argv: list[str] | None = None) -> int:
     virtualization = report["virtualization"]
     stability = report["index_stability"]
     logger.info("Evidence written to %s", path)
+    coverage = virtualization["coverage"]
     logger.info(
         "Virtualization: %s — %s distinct conversations, at most %s rendered "
         "at once, over %s passes.",
         virtualization["verdict"], virtualization["total_distinct_digests"],
         virtualization["max_rendered_at_once"], len(virtualization["passes"]),
     )
+    logger.info(
+        "Pane coverage: %s%% (%s of %s px), reached_bottom=%s.",
+        round(coverage["fraction"] * 100, 1), coverage["scroll_top"],
+        coverage["scroll_height"], virtualization["reached_bottom"],
+    )
+    if not virtualization["reached_bottom"]:
+        logger.warning(
+            "The sweep never reached the foot of the pane, so no claim about "
+            "the whole list is supported. Raise --scroll-passes."
+        )
     logger.info(
         "Index stability: %s — %s of %s positions changed between two readings.",
         stability["verdict"], stability["positions_that_changed"],
@@ -402,7 +497,9 @@ def main(argv: list[str] | None = None) -> int:
     if "inconclusive" in (virtualization["verdict"], stability["verdict"]):
         logger.warning(
             "A verdict is inconclusive. Re-run with more --scroll-passes, or "
-            "from an account with more conversations."
+            "from an account with more conversations. An inconclusive result "
+            "is an honest one: the alternative is the verdict run 1 produced, "
+            "which named a whole list from 3%% of it."
         )
         return EXIT_INCONCLUSIVE
     return 0
