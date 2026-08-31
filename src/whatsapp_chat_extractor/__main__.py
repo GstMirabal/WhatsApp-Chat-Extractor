@@ -9,6 +9,8 @@ from pathlib import Path
 
 from whatsapp_chat_extractor.export_one import open_chat_by_query
 from whatsapp_chat_extractor.history import (
+    COMPLETENESS_TRUNCATED,
+    COMPLETENESS_UNPROVEN,
     DEFAULT_LOAD_WAIT_MS,
     DEFAULT_MAX_PASSES,
     DEFAULT_STALL_THRESHOLD,
@@ -105,7 +107,7 @@ def cmd_export_one(args: argparse.Namespace) -> int:
             export = build_export(
                 chat_title=title,
                 messages=harvest["messages"],
-                complete=harvest["complete"],
+                completeness=harvest["completeness"],
                 stopped_reason=harvest["stopped_reason"],
             )
             path = write_chat_export(export, data_dir=args.data_dir)
@@ -113,13 +115,25 @@ def cmd_export_one(args: argparse.Namespace) -> int:
         finally:
             context.close()
 
-    if not harvest["complete"]:
+    # Only `truncated` is a failure. Under the v4 boolean this branch fired on
+    # every single export ever produced, because `complete` was never True
+    # (ADR-0004): the operator was told each run had failed and to raise a cap
+    # that was not the cause. `unproven` is the expected outcome and exits 0.
+    if harvest["completeness"] == COMPLETENESS_TRUNCATED:
         logger.error(
-            "Incomplete export: stopped at the %s pass cap. Re-run with a "
-            "higher --max-passes to reach the start of the chat.",
-            args.max_passes,
+            "Truncated export: the harvest ended at %s passes (%s) before the "
+            "conversation did. Re-run with a higher --max-passes.",
+            harvest["passes_used"],
+            harvest["stopped_reason"],
         )
         return EXIT_INCOMPLETE
+    if harvest["completeness"] == COMPLETENESS_UNPROVEN:
+        logger.info(
+            "Export complete as far as can be shown: the panel stopped "
+            "producing history after %s passes, but no start-of-chat marker "
+            "was observed, so the beginning is not proven.",
+            harvest["passes_used"],
+        )
     return 0
 
 
