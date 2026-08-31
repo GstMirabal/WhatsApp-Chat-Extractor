@@ -45,6 +45,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from whatsapp_chat_extractor.chat_list import (
+    CHAT_PANE_SELECTOR,
+    CHAT_ROW_SELECTOR,
+    TITLE_SELECTORS,
+    at_pane_bottom,
+    row_title,
+)
 from whatsapp_chat_extractor.session import (
     DEFAULT_PROFILE_DIR,
     launch_context,
@@ -69,19 +76,12 @@ DEFAULT_SCROLL_PASSES = 400
 DEFAULT_SETTLE_MS = 1_200
 EXIT_INCONCLUSIVE = 3
 
-# The scrollable chat-list pane. Measured by the Sprint 006 probe, which found
-# 59 rows beneath it and zero search-selector leakage outside it.
-CHAT_PANE_SELECTOR = "#pane-side"
-CHAT_ROW_SELECTOR = '[data-testid="cell-frame-container"]'
-
-# Ordered candidates for a row's title, most specific first. Which one works is
-# **measured and reported**, never assumed: this is the same shape as
-# `probe_chat_start._try_open_strategies`, and for the same reason.
-TITLE_SELECTORS = (
-    'span[data-testid="cell-frame-title"] span[title]',
-    'span[data-testid="cell-frame-title"]',
-    "span[title]",
-)
+# Selectors, the title reader and the bottom test now live in
+# `whatsapp_chat_extractor.chat_list` and are imported above. They were defined
+# here first because the probe existed before the module it informed; keeping
+# two copies would let the instrument and the product measure different DOMs,
+# which is the one thing a probe must never permit
+# (`rules/code_craft.md §1`: extract at the second call site).
 
 # A pass that reveals no digest the run has not already seen. Three in a row
 # means the list stopped producing conversations — but ONLY once the sweep has
@@ -99,31 +99,6 @@ TITLE_SELECTORS = (
 # call a stall a top while evidence of more was on screen. Here the evidence is
 # arithmetic — unscrolled pixels remain — which is stronger than a spinner.
 QUIET_PASSES_TO_STOP = 3
-# How close to the foot of the pane counts as having reached it. One viewport,
-# because the last scroll step cannot overshoot by more than that.
-BOTTOM_TOLERANCE_PX = 1
-
-
-def _row_title(row: ElementHandle) -> str:
-    """The conversation title of one chat-list row, or an empty string.
-
-    The title is a person's name. It is returned so the caller can hash it
-    immediately and is never logged or written.
-
-    Args:
-        row: A chat-list row element.
-
-    Returns:
-        str: The title as rendered, or ``""`` when no candidate matched.
-    """
-    for selector in TITLE_SELECTORS:
-        node = row.query_selector(selector)
-        if node is None:
-            continue
-        text = (node.get_attribute("title") or node.inner_text() or "").strip()
-        if text:
-            return text
-    return ""
 
 
 def _working_title_selector(rows: list[ElementHandle]) -> str:
@@ -161,7 +136,7 @@ def read_list_digests(page: Page) -> tuple[list[str], int]:
     digests: list[str] = []
     untitled = 0
     for row in rows:
-        title = _row_title(row)
+        title = row_title(row)
         if not title:
             untitled += 1
             continue
@@ -208,26 +183,6 @@ def _scroll_pane(page: Page, *, settle_ms: int) -> None:
         CHAT_PANE_SELECTOR,
     )
     page.wait_for_timeout(settle_ms)
-
-
-def at_pane_bottom(metrics: dict[str, int]) -> bool:
-    """Whether the pane has been scrolled to its foot.
-
-    Args:
-        metrics: A reading from :func:`_pane_metrics`.
-
-    Returns:
-        bool: True when no scrollable distance remains. A pane reporting a
-            zero ``scroll_height`` is treated as **not** at the bottom: that is
-            an unreadable pane, and calling it finished is the error this
-            function exists to prevent.
-    """
-    if metrics["scroll_height"] <= 0:
-        return False
-    remaining = (
-        metrics["scroll_height"] - metrics["scroll_top"] - metrics["client_height"]
-    )
-    return remaining <= BOTTOM_TOLERANCE_PX
 
 
 def measure_virtualization(
