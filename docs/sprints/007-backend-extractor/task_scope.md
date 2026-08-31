@@ -52,7 +52,7 @@ the prohibition does not invert.
 | W4 | `tests/test_completeness.py` | create | medium | `implementer_agent` | `sonnet` | `medium` | ✅ `f27da4b` |
 | W5 | `scripts/probe_chat_list.py` | create | medium | `implementer_agent` | `sonnet` | `medium` | ✅ `f0e2dda` |
 | W5b | `tests/test_probe_chat_list.py` | create | medium | `implementer_agent` | `sonnet` | `medium` | ✅ `f30cb48` |
-| W6 | `docs/sprints/007-backend-extractor/CHAT_LIST_PROBE_NOTES.md` | create | low | `doc_orchestrator` | `haiku` | `low` | 🟡 |
+| W6 | `docs/sprints/007-backend-extractor/CHAT_LIST_PROBE_NOTES.md` | create | low | `doc_orchestrator` | `haiku` | `low` | ✅ `497edae`+ |
 | W7 | `src/whatsapp_chat_extractor/chat_list.py` | create | high | `implementer_agent` | `opus` | `high` | ⏳ |
 | W8 | `tests/test_chat_list.py` | create | medium | `implementer_agent` | `sonnet` | `medium` | ⏳ |
 | W9 | `src/whatsapp_chat_extractor/manifest.py` | create | high | `implementer_agent` | `opus` | `high` | ⏳ |

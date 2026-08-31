@@ -1,9 +1,10 @@
 # Chat List Probe Notes — Sprint 007 (W5 / W6)
 
-**Status**: **Q1 ANSWERED** by run 2 — the chat list is virtualized, 899
-conversations behind a 70-row window. **Q2 still unanswered**: runs 1 and 2 both
-produced stability verdicts that were artifacts of the probe, not measurements of
-WhatsApp. Run 3 pending.
+**Status**: **Q1 and Q2 both ANSWERED** by runs 2 and 3. The chat list is
+virtualized — 899 conversations behind a 70-row window — and a chat's position is
+stable across the ~2 minutes a full sweep takes, with zero title collisions in
+7 100 row observations. The abort criterion is **not** triggered. Block C
+proceeds.
 
 > Every run is kept below, including the two whose verdicts were wrong. Each
 > failure was found by the *next* measurement rather than by review, and a
@@ -172,14 +173,21 @@ not the enumeration; it would return 70 of 899 conversations and report success.
 `chat_list.py` must sweep the pane and merge by identity, which is the pattern
 `harvest_history` already uses one panel over.
 
-### Run 3 — pending
+### Run 3 — 2026-08-31, `chat_list_probe_20260831T133447Z.json` — **confirms run 2**
 
-| Summary | Value |
-| :--- | :--- |
-| Total distinct digests | |
-| Reached bottom | |
-| Max title collisions in one window | |
-| **Verdict** | |
+| Summary | Run 2 | Run 3 |
+| :--- | :--- | :--- |
+| Total distinct digests | **899** | **899** |
+| Max rendered at once | 70 | 70 |
+| Passes used | 102 | 103 |
+| Pane coverage | 100.0% | 100.0% |
+| Reached bottom | Yes | Yes |
+| Row observations | 7 033 | 7 100 |
+| Max title collisions in one window | not measured | **0** |
+| Verdict | `virtualized` | `virtualized` |
+
+Two independent sweeps, 2.5 hours apart, both reaching the foot of the pane and
+both counting 899. Q1 is reproducible, not a single observation.
 
 **How to read it.** `total_distinct > max_rendered_at_once` means scrolling
 revealed conversations the DOM did not already hold — the list virtualizes. Equal
@@ -278,10 +286,11 @@ here is a **lower bound**, not the worst case.
    run 3 only needs to confirm the sweep still reaches the foot.
 3. Q1 already decides W7's shape: the list virtualizes, so `chat_list.py` sweeps
    the pane and merges by identity. A single read is not the enumeration.
-4. **Q2 decides W7's key.** `stable` would allow position as the key over a short
-   run; `unstable` forces the digest, which is the safer design anyway and the
-   one W7 should be written for unless Q2 comes back stable.
-5. The abort criterion fires only if `max_title_collisions_in_a_window` is above
-   zero **and** positions change: then neither the digest nor the position
-   identifies a conversation, block C is abandoned, and the sprint closes on
-   block A plus this finding.
+4. **Q2 came back `stable` with zero title collisions, so W7 keys on the
+   digest anyway.** Position is proven stable only over a two-minute sweep, and
+   an export of 899 conversations runs far longer; the digest is proven unique
+   across the whole list, which is the stronger guarantee of the two.
+5. **The abort criterion did not fire.** It required title collisions above zero
+   *and* changed positions. Both are zero, so block C proceeds.
+6. The cross-run digest churn (§4) is not a blocker but is a real limit on the
+   export contract. It goes to W12 and W13, not into `chat_list.py`.
