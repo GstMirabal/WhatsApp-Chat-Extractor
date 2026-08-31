@@ -1,12 +1,12 @@
 # System Overview: WhatsApp Chat Extractor
-**Last Audit Sprint**: #006
+**Last Audit Sprint**: #007
 **Last Audit Date**: 2026-08-31
-**Last Audit Commit SHA**: `a62a34e`
+**Last Audit Commit SHA**: `c3e827a` (sprint base; #007 runs on `ai-sprint/007`)
 
 This is the **Documentation Entry Point**. `agents.md §0 (Entry Point)` requires every session to read this file before anything else. It is intentionally short — for the full component inventory, see `.agents/docs/architecture/topology_map.md`.
 
-**Decisions:** [ADR-0001](decisions/ADR-0001-product-scope-whatsapp-web.md) (product) · [ADR-0002](decisions/ADR-0002-delivery-program-and-layout.md) (delivery + layout) · [ADR-0003](decisions/ADR-0003-media-placeholders-in-export.md) (media placeholders)  
-**Released:** `v0.4.0` — full-history export, pseudonymous JSON. **Next:** Sprint 005 (P2.5), plan in `DRAFT`; resume from [RESUME_NOTES.md](sprints/005-backend-extractor/RESUME_NOTES.md)  
+**Decisions:** [ADR-0001](decisions/ADR-0001-product-scope-whatsapp-web.md) (product) · [ADR-0002](decisions/ADR-0002-delivery-program-and-layout.md) (delivery + layout) · [ADR-0003](decisions/ADR-0003-media-placeholders-in-export.md) (media placeholders) · [ADR-0004](decisions/ADR-0004-completeness-criterion.md) (completeness)  
+**Released:** `v0.6.0` — completeness measured, `complete: true` shown unreachable. **In flight:** Sprint 007 (P3b «all chats») on `ai-sprint/007` — schema v5, `export-all`, run manifest  
 **Blueprint:** [EXTRACTOR_BLUEPRINT.md](architecture/EXTRACTOR_BLUEPRINT.md)  
 **Program roadmap:** [docs/roadmaps/docs/extractor/002-delivery-program.md](roadmaps/docs/extractor/002-delivery-program.md)
 
@@ -15,6 +15,8 @@ This is the **Documentation Entry Point**. `agents.md §0 (Entry Point)` require
 ## 1. What this is
 
 **WhatsApp Chat Extractor** produces a **text JSON dump** of customer-support chats from **one** business WhatsApp number, taken via **WhatsApp Web**, so a **separate** AI pipeline can later study requests, behaviour, and sentiment for a care bot.
+
+Since Sprint 007 a single invocation covers the whole account: `export-all` enumerates every conversation and writes a run manifest stating the outcome of each. Measured on 2026-08-31 against 910 conversations.
 
 This repository does **not** implement sentiment analysis, the learning server, or the bot.
 
@@ -40,14 +42,18 @@ Governance: Token-Optimized Agent Pipeline (`.agents` submodule).
 **Level 2 — Container** (per ADR-0001 / ADR-0002; code dirs from Sprint 003+)
 
 ```
-[Cursor agent session] ---> [Export scripts: src/whatsapp_chat_extractor/]
+[Operator / agent session] --> [Export package: src/whatsapp_chat_extractor/]
         |                              |
         | (QR / confirm)               v
         +---------------------> [Playwright → WhatsApp Web]
                                        |
                                        v
-                              [Local corpus: data/ (gitignored)]
+                     [data/ (gitignored): chat exports + run manifest]
 ```
+
+`export-all` sweeps the chat list (virtualized: 910 conversations behind a 70-row
+window), opens each conversation by verified identity, and harvests it with the
+same loop `export-one` uses.
 
 Component-level (Level 3) stays advisory until density history exists; `code_containers` declared for `src/` in Sprint 003.
 
@@ -80,12 +86,17 @@ Run `/agents:start`. It will:
 | :--- | :--- | :--- |
 | `data/` | Export JSON + browser profile (gitignored) | Writes from #003 |
 | `src/whatsapp_chat_extractor/` | Playwright/Web export package | Present (#003) |
+| `src/whatsapp_chat_extractor/chat_list.py` | Chat-list enumeration; opens a chat by verified identity | Present (#007) |
+| `src/whatsapp_chat_extractor/manifest.py` | Run manifest; opt-in `chat_id` → name index | Present (#007) |
+| `scripts/probe_chat_start.py` | Start-marker probe (operator-run) | Present (#006) |
+| `scripts/probe_chat_list.py` | Chat-list virtualization / index-stability probe (operator-run) | Present (#007) |
 | `tests/` | Pytest (fixtures; no live WA) | Present (#003) |
 | `pyproject.toml` | Packaging / CLI `wa-extract` | Present (#003) |
 | `docs/architecture/EXTRACTOR_BLUEPRINT.md` | Extractor reference | Present (#003) |
 | `docs/decisions/ADR-0001-*.md` | Product scope | Present (#002) |
 | `docs/decisions/ADR-0002-*.md` | Delivery + layout | Present (#002) |
 | `docs/decisions/ADR-0003-*.md` | Media placeholders (supersedes ADR-0001 coverage) | Present (#005) |
+| `docs/decisions/ADR-0004-*.md` | Completeness as three values (supersedes ADR-0001 «full history») | Present (#007) |
 | `.github/workflows/ci.yml` | ruff, pytest, no-committed-chats guard | Present (#004), not executing — billing |
 | `docs/PLATFORM_HARDENING.md` | Controls pending a public repository | Present (#004) |
 | `docs/` / `.agents/` | Docs + framework | Present |
