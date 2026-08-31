@@ -50,8 +50,9 @@ the prohibition does not invert.
 | W3 | `src/whatsapp_chat_extractor/writers.py` | modify | high | `implementer_agent` | `opus` | `high` | ✅ `08b03ee` |
 | W3a | `tests/test_writers.py` | modify | medium | `implementer_agent` | `sonnet` | `medium` | ✅ `cbceafb` |
 | W4 | `tests/test_completeness.py` | create | medium | `implementer_agent` | `sonnet` | `medium` | ✅ `f27da4b` |
-| W5 | `scripts/probe_chat_list.py` | create | medium | `implementer_agent` | `sonnet` | `medium` | ⏳ |
-| W6 | `docs/sprints/007-backend-extractor/CHAT_LIST_PROBE_NOTES.md` | create | low | `doc_orchestrator` | `haiku` | `low` | ⏳ |
+| W5 | `scripts/probe_chat_list.py` | create | medium | `implementer_agent` | `sonnet` | `medium` | ✅ `f0e2dda` |
+| W5b | `tests/test_probe_chat_list.py` | create | medium | `implementer_agent` | `sonnet` | `medium` | ✅ `f30cb48` |
+| W6 | `docs/sprints/007-backend-extractor/CHAT_LIST_PROBE_NOTES.md` | create | low | `doc_orchestrator` | `haiku` | `low` | 🟡 |
 | W7 | `src/whatsapp_chat_extractor/chat_list.py` | create | high | `implementer_agent` | `opus` | `high` | ⏳ |
 | W8 | `tests/test_chat_list.py` | create | medium | `implementer_agent` | `sonnet` | `medium` | ⏳ |
 | W9 | `src/whatsapp_chat_extractor/manifest.py` | create | high | `implementer_agent` | `opus` | `high` | ⏳ |
@@ -102,6 +103,7 @@ following the `W1b` precedent of Sprint 006.
 | :--- | :--- | :--- |
 | W3a `tests/test_writers.py` | The plan's Tests table named `test_writers.py` only as a regression to protect, having missed that eleven of its cases **assert the v4 contract literally** — `SCHEMA_VERSION == 4` and `build_export(complete=…)` | It is W3's test surface. A schema change that leaves the tests of the old schema in place has not been made |
 | W11a `src/whatsapp_chat_extractor/__main__.py` | `build_export` lost its `complete=` argument, so the CLI call site stopped compiling the moment W3 landed | A **partial unlock of W11**, exactly as `W4a` was of `W4` in Sprint 006. It covers only the call site and the exit-code semantics that `ADR-0004` forces; the `export-all` subcommand stays ⏳ in block C |
+| W5b `tests/test_probe_chat_list.py` | The Phase 4.3 table shipped W5 with no test row — the identical omission Sprint 006 made for W1, which `hooks/on_commit.py` caught then and did not catch now (this is a `feat(` commit, and the hook guards `fix(`) | It is W5's test surface. `virtualization_verdict` decides the enumerator's whole design from two integers, and an untested verdict function is the weakest link in the block |
 
 **W11a is a behaviour fix, not a mechanical port.** Under the v4 boolean the
 `if not harvest["complete"]` branch fired on **every export ever produced**,
