@@ -140,6 +140,27 @@ because WhatsApp Web does not always render a start marker:
 messages of a longer conversation and marked them complete. Only the marker is
 proof; an inference is not recorded as one.
 
+**A stall requires a quiet panel, not merely a quiet pass (Sprint 006).**
+`decide_stop` takes `panel_loading`, and a visible loading indicator
+(`LOADING_SELECTORS`) suppresses the `stalled` verdict: a spinner is positive
+evidence that more history is coming, so stopping on it reports a top that was
+never reached. `max_passes` is deliberately *not* suppressed, so a spinner that
+never resolves still terminates the run and says `max_passes` — the honest
+reason — rather than claiming a top. Measured: one conversation was declared
+`stalled` after 175 passes with a spinner on screen, and ran 255 with the panel
+genuinely quiet once corrected.
+
+**`complete: true` has never been produced, and Sprint 006 established it is
+unreachable in practice.** Across five real conversations and two runs, with the
+stall defect corrected, `COMPLETE_REASONS` did not fire once and no start marker
+appeared in any panel — `data-icon` was empty in every chrome inventory taken.
+The narrower statement is the honest one: no harvest reached a *provable*
+beginning, so "the marker does not exist" remains an inference. Either way the
+consequence for this contract is the same and is the reason `ADR-0004` is owed —
+**a field that is always `false` cannot distinguish a complete history from a
+truncated one**, which is the single thing it exists to do in a training corpus.
+Evidence: `docs/sprints/006-backend-extractor/DOM_PROBE_NOTES.md`.
+
 `wa-extract export-one` exits `3` on `complete: false`, so a caller detects a
 truncated corpus without parsing the file.
 

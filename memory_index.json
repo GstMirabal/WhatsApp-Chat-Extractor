@@ -1,6 +1,6 @@
 {
-  "last_update": "2026-08-30T16:16:06Z",
-  "sprint_id": "H001",
+  "last_update": "2026-08-31",
+  "sprint_id": "006",
   "entries": [
     {
       "id": "KI-001-A",
@@ -24,7 +24,7 @@
     },
     {
       "id": "KI-003-B",
-      "summary": "Under Cursor PreToolUse, stage files (and fix-regression tests) in one Bash call, then run git commit alone in a later call \u2014 the gate reads the index before the compound command executes.",
+      "summary": "Under Cursor PreToolUse, stage files (and fix-regression tests) in one Bash call, then run git commit alone in a later call — the gate reads the index before the compound command executes.",
       "routing_class": "host"
     },
     {
@@ -91,6 +91,54 @@
       "id": "KI-H001-D",
       "summary": "Fail closed when chat identity is unverifiable: chat_id is a digest and the title is never stored, so an export of the wrong chat is undetectable from the output file.",
       "routing_class": "host"
+    },
+    {
+      "id": "KI-006-A",
+      "sprint": "006",
+      "routing_class": "nucleus",
+      "lesson": "audit_plan.py Filter 6 is a literal substring test, so a plan that PROHIBITS /loop is rejected exactly like one that uses it unguarded."
+    },
+    {
+      "id": "KI-006-B",
+      "sprint": "006",
+      "routing_class": "nucleus",
+      "lesson": "audit_plan.py is cited by three artifacts and exists in none: it is absent from .agents/scripts in v4.23.0, so a Phase 1 plan audit recorded as passing could not be reproduced."
+    },
+    {
+      "id": "KI-006-C",
+      "sprint": "006",
+      "routing_class": "nucleus",
+      "lesson": "scripts/install.py --target cursor deletes host-authored commands from the mirrored directory and then gitignores it, so the next such loss is invisible to git status."
+    },
+    {
+      "id": "KI-006-D",
+      "sprint": "006",
+      "routing_class": "nucleus",
+      "lesson": "session_cost.py reports 'no prior Claude transcript' from the anchor's session_tool field rather than from whether a transcript exists, so cost is unmeasurable whenever the anchor disagrees with the running harness."
+    },
+    {
+      "id": "KI-006-E",
+      "sprint": "006",
+      "routing_class": "host",
+      "lesson": "A sampler with a node budget cannot prove absence: dumping the first N nodes in document order missed a marker nested 30 wrappers deep, and that miss is indistinguishable from the marker not existing."
+    },
+    {
+      "id": "KI-006-F",
+      "sprint": "006",
+      "routing_class": "host",
+      "lesson": "Recording an inference with the confidence of a measurement is this project's recurring failure and the agent committed it too: three selectors matching zero nodes was read as evidence of a typed message, when the real cause was that no chat had those names."
+    },
+    {
+      "id": "KI-006-G",
+      "sprint": "006",
+      "routing_class": "host",
+      "lesson": "An inactivity threshold needs negative evidence of activity, not just elapsed quiet: decide_stop called a panel stalled while a loading spinner was on screen, reporting a top the harvest never reached."
+    },
+    {
+      "id": "KI-006-H",
+      "sprint": "006",
+      "routing_class": "host",
+      "lesson": "Measure the tool against a real browser before pointing it at real data: exercising the probe on a synthetic DOM found a defect that would have made the sprint answer H2 from missing evidence."
     }
   ]
 }

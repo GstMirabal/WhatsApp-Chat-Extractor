@@ -1,7 +1,7 @@
 # System Overview: WhatsApp Chat Extractor
-**Last Audit Sprint**: #003
-**Last Audit Date**: 2026-08-27
-**Last Audit Commit SHA**: `fde3b36`
+**Last Audit Sprint**: #006
+**Last Audit Date**: 2026-08-31
+**Last Audit Commit SHA**: `a62a34e`
 
 This is the **Documentation Entry Point**. `agents.md §0 (Entry Point)` requires every session to read this file before anything else. It is intentionally short — for the full component inventory, see `.agents/docs/architecture/topology_map.md`.
 

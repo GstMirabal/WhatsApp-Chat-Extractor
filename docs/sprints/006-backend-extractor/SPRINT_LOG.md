@@ -63,12 +63,20 @@ died holding the host lock; PID `12060` confirmed absent before takeover)
 
 ## 🔍 Phase 7 — Double-Gate Review
 
-Not yet run. Verdicts are transcribed here by the Orchestrator after Phase 6;
-gates emit, they do not write.
+Run 2026-08-31 over the authorized scope only (W1, W1b, W2, W4a). W3–W8 were
+withheld by the Approval Gate, so no verdict is claimed over them.
 
 | Gate | Round | Verdict | Class | Notes |
 | :--- | :--- | :--- | :--- | :--- |
-| — | — | — | — | Phase 7 not reached |
+| Gate-1 QA | 1 | `APPROVED` | — | `ruff check .` → `All checks passed!`. No `TODO`/`FIXME` in the three files touched. Every function in `scripts/probe_chat_start.py` within `max_lines_per_func` 50 and `max_indentation` 3, measured by AST rather than asserted |
+| Gate-2 Tester | 1 | `APPROVED` | — | `pytest tests/ -q` → **116 passed, 1 skipped** (88 at sprint open). The skip is `test_sampled_chrome_can_miss_a_buried_marker`, which needs a browser; it passes when Chromium can launch (verified: 26 passed for that file outside the sandbox) |
+
+**No `RECORD` is outstanding.** Two `testifying`-class defects arose during the
+sprint and both were corrected in the same session they were found, so neither
+survives as a finding: the log's unreproducible `audit_plan.py exit 0` claim
+(corrected in Objective 0) and an inference about the message composer recorded
+with the confidence of a measurement (corrected in `DOM_PROBE_NOTES.md` §6 after
+the operator supplied the real cause).
 
 ---
 
