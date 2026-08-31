@@ -58,19 +58,25 @@ Requires the operator: a real login, a real account, real conversations. It
 cannot run unattended and must not be wrapped in a routine.
 
 ```
-$ .venv/bin/python3 scripts/probe_chat_list.py --scroll-passes 20
+$ .venv/bin/python3 scripts/probe_chat_list.py
 ```
+
+No flag is needed. The sweep runs until it reaches the foot of the pane; the cap
+only guarantees termination. On run 1's geometry (68 407 px against a 746 px
+viewport) that is roughly 92 passes at 1 200 ms each — **about two minutes**, and
+the browser window must stay open and focused throughout.
 
 | Flag | Default | When to change it |
 | :--- | :--- | :--- |
-| `--scroll-passes` | 20 | Raise it if Q1's verdict comes back `inconclusive`, or if the account has many conversations |
+| `--scroll-passes` | 400 | Raise it only if the log warns that the sweep never reached the foot of the pane. It was 20 for run 1, which could not have traversed that pane under any stop rule |
 | `--settle-ms` | 1200 | Raise it on a slow connection: a pane that has not rendered yet looks like a pane with nothing left to give |
 | `--profile-dir` | `data/browser_profile` | Only to use a different logged-in profile |
 | `--out-dir` | `data/probes` | Only to write the report elsewhere. `data/` is gitignored |
 
 Exit codes: `0` both questions carry a verdict · `3` a verdict is
-`inconclusive`. A verdict of `virtualized` or `unstable` is a **measurement, not
-a failure**, and exits `0`.
+`inconclusive`, **which now includes a sweep that never reached the foot of the
+pane**. A verdict of `virtualized` or `unstable` is a **measurement, not a
+failure**, and exits `0`.
 
 The report lands at `data/probes/chat_list_probe_<stamp>.json`. It is gitignored:
 even structural evidence comes from a real session.
@@ -215,7 +221,7 @@ here is a **lower bound**, not the worst case.
 
 ## 6. What happens next
 
-1. Operator runs the command in §2.
+1. Operator runs the command in §2 — run 2, after the `0d0d0b6` fix.
 2. §3 and §4 are filled **from the JSON report**, not from recollection.
 3. The verdicts decide W7: a stable, fully-materialised list makes the enumerator
    a single read; anything else makes it a scroll-and-merge keyed on the digest.
