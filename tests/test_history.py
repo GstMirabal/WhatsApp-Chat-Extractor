@@ -103,6 +103,42 @@ def test_stalled_passes_stop_the_harvest() -> None:
     ) is None
 
 
+def test_a_loading_panel_is_not_a_stall() -> None:
+    """The defect the Sprint 006 probe measured, in the rule that caused it.
+
+    Walking five conversations, one was declared `stalled` after 175 passes
+    with `data-testid="loading-spinner"` still in the panel chrome: the harvest
+    gave up while WhatsApp was still fetching and reported a top it had never
+    reached. A spinner is positive evidence that more history is coming, so it
+    cannot be read as the beginning of the conversation.
+    """
+    assert decide_stop(
+        at_start=False, stall_count=3, stall_threshold=3,
+        passes_used=10, max_passes=2000, panel_loading=True,
+    ) is None
+
+
+def test_a_spinner_that_never_resolves_still_terminates() -> None:
+    """Suppressing the stall must not cost the termination guarantee.
+
+    `max_passes` is deliberately not suppressed, so a spinner stuck forever
+    ends the run — and reports `max_passes`, which is the honest reason, rather
+    than a top it did not reach.
+    """
+    assert decide_stop(
+        at_start=False, stall_count=3, stall_threshold=3,
+        passes_used=2000, max_passes=2000, panel_loading=True,
+    ) == STOP_MAX_PASSES
+
+
+def test_a_reached_start_still_wins_while_loading() -> None:
+    """A visible marker is measured evidence and outranks a spinner."""
+    assert decide_stop(
+        at_start=True, stall_count=3, stall_threshold=3,
+        passes_used=10, max_passes=2000, panel_loading=True,
+    ) == STOP_CHAT_START
+
+
 def test_pass_cap_stops_the_harvest() -> None:
     assert decide_stop(
         at_start=False, stall_count=0, stall_threshold=3,

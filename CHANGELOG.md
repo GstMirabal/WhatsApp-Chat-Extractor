@@ -8,6 +8,30 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · Versioning: [SemVer](
 
 ## [Unreleased]
 
+> Sprint 006 (`ai-sprint/006`) closes **partially by design**. The Approval Gate
+> authorized W1–W2 only, so that `ADR-0004` would be written against the probe's
+> measurement rather than alongside it; W4a was a later, narrow unlock for the
+> stall rule. W3 (the ADR) and W4–W8 remain unstarted and gate-locked. The
+> sprint's question is answered, which is what it existed for. #006
+
+### Added
+- `scripts/probe_chat_start.py` — an operator-run DOM probe that answers whether WhatsApp Web draws a start-of-conversation marker, instead of assuming it. Records structural attributes from a fixed allowlist, never `innerText`, and excludes `data-pre-plain-text` because it carries the sender's name (`ADR-0003`). Chats appear under the exporter's pseudonymous digest, so the evidence names no one. #006
+- `--from-list N` walks the chat list by index rather than searching. Searching produced every dead end of the first two runs; walking the list removes the whole class, and matches where the product is heading — exporting every chat rather than named ones. #006
+- `chrome_attribute_inventory` — a budget-free tally of every `data-icon`, `data-testid` and `role` in the panel's chrome. `top_chrome_signatures` samples in document order and a marker nested ~30 wrappers deep falls outside its limit; that miss is silent and reads exactly like an absent marker. Found before any real chat was touched, by exercising the probe against a real Chromium. #006
+- `tests/test_probe_chat_start.py` — 28 tests over the probe's contract. One needs a browser (the defect it pins lives in JavaScript) and skips when Chromium cannot launch, so the fast suite stays fast. #006
+- `docs/sprints/006-backend-extractor/DOM_PROBE_NOTES.md` — four runs of measured evidence, including what was **not** established. #006
+
+### Fixed
+- `history.decide_stop` called a still-fetching panel a stall. Probe run 3 caught it live: one conversation was declared `stalled` after 175 passes with a `loading-spinner` still in the panel chrome — the harvest gave up mid-fetch and reported a top it had never reached, the same class of error as the 217-message "complete" export this module already documents. `panel_loading` now suppresses the stall verdict only; `max_passes` still guarantees termination and reports itself honestly, and a reached start still wins over both. Run 4 confirmed the fix acts: that chat ran 255 passes and ended with the panel quiet. #006
+
+### Measured
+- **`complete: true` is unreachable.** Across five real conversations and two runs, with the stall defect corrected, `COMPLETE_REASONS` never fired once and no start marker appeared in any panel — `data-icon` empty in every chrome inventory taken. Three of the five reproduce their pass and row counts exactly between runs, so these are stable tops rather than abandonments, and the plan's abort criterion (a marker whose presence flickers) does not apply. **Not claimed**: no harvest reached a *provable* beginning, so "the marker does not exist" remains an inference. What is established is enough for `ADR-0004` — a field that is constant cannot distinguish a complete history from a truncated one. #006
+- Unknown media is **30 of 311 rows (9.6%)**, well above the 6 of 301 Sprint 005 measured; that sample understated the rate. Signatures captured for Sprint 007. #006
+- No search-result selector matches anything outside `#pane-side` (0 leaks, five chats), which is the question `search_selector_scope` was deferred on. Separately, both `role="listitem"` candidates match **nothing** in this build, so `_open_first_result` silently falls through its first choice. #006
+
+### Known defects, deliberately not fixed
+- `export_one._open_first_result` clicks `.first` of the earliest candidate with any match. `#pane-side div[role="listitem"]` matches 0, so it falls through to `#pane-side div[role="row"]` (59) and clicks a wrapper that accepts the click and opens nothing, raising no error — the operator had been opening chats by hand without registering that they were covering for it. The fix is now **measured** rather than theorised: `[data-testid="cell-frame-container"]` opened every chat it was tried on. Candidate hotfix H-002; loses most of its urgency if the product stops searching by name. #006
+
 ## [0.5.1] - 2026-08-30
 
 > Hotfix release (RA-03), outside the sprint cycle. Merged from `hotfix/H-001` as PR #6 under explicit human authorization **without CI verification — the third such occurrence**. The four checks reported red having produced no logs at all in 2-4 seconds, the same GitHub billing signature recorded for PR #5; the code was verified locally and again on the integrated `main` tip (88 passed, `ruff` clean). Record: `docs/hotfixes/H-001-backend.md`.

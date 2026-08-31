@@ -44,6 +44,18 @@ STOP_MAX_PASSES = "max_passes"
 # is not allowed to be recorded as proof.
 COMPLETE_REASONS = (STOP_CHAT_START,)
 
+# Evidence that the panel is still fetching, so a quiet pass is not a stall.
+#
+# Measured, not guessed: the Sprint 006 probe walked five conversations and one
+# of them (175 passes) was declared `stalled` with `data-testid="loading-spinner"`
+# still present in the panel chrome. The harvest gave up mid-fetch and reported
+# a top it had not reached, which is the same class of error as the 217-message
+# "complete" export above — an inference presented as an arrival.
+LOADING_SELECTORS = (
+    '#main [data-testid="loading-spinner"]',
+    '#main [data-icon="loading-spinner"]',
+)
+
 
 class HarvestedRow(TypedDict):
     """One message row as read from the DOM, before ordering is decided."""
@@ -160,8 +172,15 @@ def decide_stop(
     stall_threshold: int,
     passes_used: int,
     max_passes: int,
+    panel_loading: bool = False,
 ) -> str | None:
     """Whether the harvest should stop, and why.
+
+    ``panel_loading`` suppresses the stall verdict only. A spinner on screen is
+    positive evidence that more history is on its way, and stopping on it
+    reports a top that was never reached. ``max_passes`` is deliberately not
+    suppressed, so a spinner that never resolves still terminates the run — as
+    ``max_passes`` rather than as a top, which is the honest reason.
 
     Args:
         at_start: True when the beginning-of-chat marker is present.
@@ -169,17 +188,33 @@ def decide_stop(
         stall_threshold: How many stalled passes mean the top was reached.
         passes_used: Passes completed so far.
         max_passes: Hard cap that guarantees termination.
+        panel_loading: True when the panel is visibly still fetching.
 
     Returns:
         str | None: A ``STOP_*`` reason, or None to keep scrolling.
     """
     if at_start:
         return STOP_CHAT_START
-    if stall_count >= stall_threshold:
+    if stall_count >= stall_threshold and not panel_loading:
         return STOP_STALLED
     if passes_used >= max_passes:
         return STOP_MAX_PASSES
     return None
+
+
+def panel_is_loading(page: Page) -> bool:
+    """Whether the conversation panel is visibly still fetching older messages.
+
+    Args:
+        page: Page with an open conversation.
+
+    Returns:
+        bool: True when a loading indicator is present in the panel.
+    """
+    for selector in LOADING_SELECTORS:
+        if page.query_selector(selector):
+            return True
+    return False
 
 
 def build_result(
@@ -260,6 +295,7 @@ def harvest_history(
             stall_threshold=stall_threshold,
             passes_used=passes_used,
             max_passes=max_passes,
+            panel_loading=panel_is_loading(page),
         )
         if reason is None and not scroll_one_pass(page, max_wait_ms=load_wait_ms):
             # The scroll waited for older messages and none arrived. That is the

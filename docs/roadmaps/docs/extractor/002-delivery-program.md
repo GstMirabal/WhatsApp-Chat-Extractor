@@ -9,9 +9,9 @@ Program authority: [ADR-0001](../../decisions/ADR-0001-product-scope-whatsapp-we
 | P0 | 002 | CLOSED | Seal product + delivery ADRs, overview, this roadmap |
 | P1 | 003 | CLOSED | Spike: one chat via WhatsApp Web → text JSON in `data/` |
 | P2 | 004 | CLOSED | Happy path: full-history harvest, pseudonymous JSON, `/wa-export` |
-| P2.5 | **005** | **NEXT** | Corpus fidelity + operator surface: media placeholders, Cursor entry, README, LICENSE |
-| P3a | 006 | PLANNED | One chat, **proven** complete: uncapped run, `chat_start` verified, resume after failure |
-| P3b | 007 | PLANNED | All chats: enumeration, per-chat failure policy, run manifest |
+| P2.5 | 005 | CLOSED | Corpus fidelity + operator surface: media placeholders, Cursor entry, README, LICENSE |
+| P3a | 006 | **CLOSED (partial)** | Completeness criterion. **Measured**: `complete: true` is unreachable — `COMPLETE_REASONS` never fired across 5 conversations with the harvester's stall defect corrected. The goal as originally worded ("`chat_start` verified") turned out to be unachievable, which is the finding. `ADR-0004` and the schema change it governs were gate-withheld and carry into 007 |
+| P3b | **007** | **NEXT** | All chats: enumeration, per-chat failure policy, run manifest. **Now carries `ADR-0004`** (what the export reports when no start can be proven) and the schema work behind it. Enumeration is also the shape 006's probe already validated: walking the chat list needs no search, which removes the `_open_first_result` defect from the path entirely |
 | P4 | 008 | GATED | Platform hardening — blocked until the repository is public |
 | — | — | OUT OF REPO | AI analysis (solicitudes, sentimiento), learning server, bot |
 
