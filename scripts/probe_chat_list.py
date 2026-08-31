@@ -185,6 +185,36 @@ def _scroll_pane(page: Page, *, settle_ms: int) -> None:
     page.wait_for_timeout(settle_ms)
 
 
+def _pass_record(
+    page: Page, index: int, digests: list[str], untitled: int,
+    added: int, distinct: int,
+) -> dict[str, Any]:
+    """One row of the per-pass evidence table.
+
+    Args:
+        page: WhatsApp Web page showing the chat list.
+        index: Zero-based pass number.
+        digests: Digests rendered on this pass.
+        untitled: Rows on this pass with no readable title.
+        added: How many digests this pass had not seen before.
+        distinct: Distinct digests seen so far across the sweep.
+
+    Returns:
+        dict[str, Any]: Counts, the pane geometry, and whether the foot is
+            reached. Two rows rendered together are two different
+            conversations, so a repeated digest inside one window is a genuine
+            title collision — the question the abort criterion asks.
+    """
+    metrics = _pane_metrics(page)
+    return {
+        "pass": index + 1, "rendered_rows": len(digests),
+        "untitled_rows": untitled, "new_digests": added,
+        "total_distinct": distinct, "at_bottom": at_pane_bottom(metrics),
+        "title_collisions_in_window": len(digests) - len(set(digests)),
+        **metrics,
+    }
+
+
 def measure_virtualization(
     page: Page, *, scroll_passes: int, settle_ms: int
 ) -> dict[str, Any]:
@@ -209,20 +239,12 @@ def measure_virtualization(
         added = [digest for digest in digests if digest not in seen]
         seen.update(added)
         max_rendered = max(max_rendered, len(digests))
-        metrics = _pane_metrics(page)
-        reached_bottom = at_pane_bottom(metrics)
-        # Two rows rendered together are two different conversations, so a
-        # repeated digest inside one window is a genuine title collision — the
-        # question the abort criterion asks, and the one thing that would stop
-        # the digest serving as the enumerator's key.
-        collisions = len(digests) - len(set(digests))
-        within_pass_collisions = max(within_pass_collisions, collisions)
-        passes.append({
-            "pass": index + 1, "rendered_rows": len(digests),
-            "untitled_rows": untitled, "new_digests": len(added),
-            "total_distinct": len(seen), "at_bottom": reached_bottom,
-            "title_collisions_in_window": collisions, **metrics,
-        })
+        record = _pass_record(page, index, digests, untitled, len(added), len(seen))
+        reached_bottom = record["at_bottom"]
+        within_pass_collisions = max(
+            within_pass_collisions, record["title_collisions_in_window"]
+        )
+        passes.append(record)
         # Quiet passes only mean "no more conversations" once there is nothing
         # left to scroll. Before that they mean the sweep is inside the render
         # buffer, which is not the same statement at all.
@@ -453,6 +475,19 @@ def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     report = _run_probe(args)
     path = _write_report(report, args.out_dir)
+    return _report_findings(report, path)
+
+
+def _report_findings(report: dict[str, Any], path: Path) -> int:
+    """Log what the probe measured and pick the exit code.
+
+    Args:
+        report: The full probe report.
+        path: Where the JSON evidence was written.
+
+    Returns:
+        int: ``0`` when both questions carry a verdict, ``3`` otherwise.
+    """
     virtualization = report["virtualization"]
     stability = report["index_stability"]
     logger.info("Evidence written to %s", path)
@@ -463,11 +498,9 @@ def main(argv: list[str] | None = None) -> int:
         virtualization["verdict"], virtualization["total_distinct_digests"],
         virtualization["max_rendered_at_once"], len(virtualization["passes"]),
     )
-    logger.info(
-        "Pane coverage: %s%% (%s of %s px), reached_bottom=%s.",
-        round(coverage["fraction"] * 100, 1), coverage["scroll_top"],
-        coverage["scroll_height"], virtualization["reached_bottom"],
-    )
+    logger.info("Pane coverage: %s%% (%s of %s px), reached_bottom=%s.",
+                round(coverage["fraction"] * 100, 1), coverage["scroll_top"],
+                coverage["scroll_height"], virtualization["reached_bottom"])
     if not virtualization["reached_bottom"]:
         logger.warning(
             "The sweep never reached the foot of the pane, so no claim about "
