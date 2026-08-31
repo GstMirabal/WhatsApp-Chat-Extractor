@@ -2,7 +2,7 @@
 
 **Session Tracker**: `20260831T053506Z-60338` (session #12; succeeds
 `20260830T165951Z-13948`, which suspended cleanly at Sprint 006 close)
-**Role Active**: Principal Agent (sequential; Cursor cannot spawn the eight roles)
+**Role Active**: Principal Agent (`session_tool: claude-code`, `delegation_mode: native`)
 
 ---
 
@@ -42,8 +42,15 @@
       `token-saver-auditor` skill, which resolves the anchor's `audit_plan_missing`
     - `[x]` Phase 2 environment: `ruff check .` clean, `pytest tests/ -q` →
       **116 passed, 1 skipped** (the sprint-open baseline)
-    - `[ ]` **Approval Gate (Phase 5)** — pending. Four separable tranches are
-      proposed (`IMPLEMENTATION_PLAN.md` §Approval); the human decides which
+    - `[x]` **Harness misrecorded and corrected mid-session.** The anchor was
+      claimed `cursor`/`sequential`; the session is Claude Code. Cause is the
+      Sprint 041 defect fixed in the very bump this session applied —
+      `commands/start.md` hardcoded `--tool cursor` for both harnesses until
+      `v4.24.0`, and the command text arrived from the `v4.23.0` mirror. Anchor
+      now reads `claude-code`/`native`; `RA-18` does not apply; Phase 4 model
+      tiers rewritten off `config/model_tiers.json` `claude_code`
+    - `[x]` **Approval Gate (Phase 5) — FULL APPROVAL, human, 2026-08-31**:
+      all four blocks (W1–W15) authorized, and `ADR-0004` confirmed as Option C
 - [ ] **Objective 1 — Decide and pin the completeness contract (W1–W4)**
     - `[ ]` `ADR-0004`: Option C, `completeness: proven | unproven | truncated`,
       chosen against Sprint 006's measurement rather than alongside it
@@ -60,11 +67,11 @@
 
 ## 🔍 Phase 7 — Double-Gate Review
 
-Not run. Execution has not been authorized.
+Not run yet. Execution authorized 2026-08-31; gates run after the blocks land.
 
 | Gate | Round | Verdict | Class | Notes |
 | :--- | :--- | :--- | :--- | :--- |
-| — | — | — | — | Phase 5 pending |
+| — | — | — | — | Pending execution |
 
 ---
 
@@ -73,15 +80,16 @@ Not run. Execution has not been authorized.
 | Friction Point | Resolution / Workaround | KI ID | routing_class |
 | :--- | :--- | :--- | :--- |
 | `audit_plan.py` was cited by three Sprint 006 artifacts and resolvable by none, because every citation pointed at `.agents/scripts/` | The script ships inside the `token-saver-auditor` skill. Cite `skills/token-saver-auditor/scripts/audit_plan.py`, which `pipeline_workflow.md` Phase 1 already does | `KI-007-A` | `host` |
+| A pin bump applied at Phase 1 changed the harness contract mid-session: the `/agents:start` text was rendered from `v4.23.0` and claimed the anchor as the wrong tool, while `v4.24.0` — installed seconds later — was the release that fixed exactly that | Re-read the harness-sensitive command after any `sync_agents_pin.py` bump, before trusting a flag copied out of it. The pin moved between reading the instruction and acting on it | `KI-007-B` | `host` |
 
 ---
 
 ## ⚓ Documentation Entry Point Seal
 
 **Strategic Lock**: `triple_lock` — plan written, committed and audited
-(exit `0`) · Active Sprint `ai-sprint/007` · gates not yet run · human OK
-outstanding.
+(exit `0`) · Active Sprint `ai-sprint/007` · **Human OK granted 2026-08-31** ·
+QA + Tester verdicts outstanding.
 
-**Next Phase**: Phase 5 Approval Gate. W5's probe run and any `export-all`
-invocation require the operator present (real login, real chats, real personal
-data) and therefore cannot be wrapped in an unattended routine.
+**Next Phase**: Phase 6 Execution, block A first. W5's probe run and any
+`export-all` invocation require the operator present (real login, real chats,
+real personal data) and therefore cannot be wrapped in an unattended routine.

@@ -3,11 +3,19 @@
 Phase 4.1 of `workflows/pipeline_workflow.md`. Source: `IMPLEMENTATION_PLAN.md`
 `## Work`.
 
-**Mode.** `session_tool: cursor`, `delegation_mode: sequential`. Cursor cannot
-spawn the eight pipeline roles, so `Assignee` names **which profile's ruleset
-governs each write**, not a dispatched subagent. Mechanical and gate units are
-dispatched via Cursor `Task` with the Model column (`ADR-0010`); the parent stays
-sequential.
+**Mode.** `session_tool: claude-code`, `delegation_mode: native`. `Assignee` names
+the profile whose ruleset governs each write and which may be dispatched as a
+subagent. Model tiers come from `config/model_tiers.json` `claude_code`, not from
+`audit_cursor_models.py` — see `task_scope.md` §Model tiers for why this file was
+first written for the wrong harness.
+
+**Declared mode and effective execution diverge, and the divergence is reported
+rather than absorbed** (`start_workflow.md` `delegation_conflict`). The harness
+can dispatch the eight roles; this session's operating instructions forbid
+spawning subagents unless the human asks for them. Execution therefore proceeds
+sequentially in the parent, with `Assignee` read as the governing ruleset for
+each write. Silent self-substitution is prohibited — this paragraph is the
+report, and fan-out is available on request.
 
 **Destination.** No unit creates a new agent profile, so every row is `n/a`. The
 column is kept because `check_forge_ladder.py` reads it and because an absent
@@ -38,7 +46,8 @@ W1 remains the lead agent's.
 | W14 | `docs/0_SYSTEM_OVERVIEW.md` | `doc_orchestrator` | n/a | Documentation Entry Point (`agents.md §0`) |
 | W15 | `CHANGELOG.md` | `doc_orchestrator` | n/a | Master Ledger transcription; the entry's content is the lead agent's, the write is not |
 
-**Gates.** Phase 7 runs `qa_agent` then `tester_agent` in fresh-context `Task`
-with `modelId=claude-opus-5`, `effort=max` (measured this session via
-`audit_cursor_models.py --resolve gate`). Fresh context is non-negotiable under
-both tools; sequential mode is not an exemption.
+**Gates.** Phase 7 runs `qa_agent` then `tester_agent` in fresh context at the
+gate tier — `model: opus`, `effort: high` (`config/model_tiers.json`
+`tiers.gate.claude_code`). Fresh context is non-negotiable under both tools and
+is the one place this sprint will dispatch subagents regardless of the divergence
+above: a gate that reviews its own author's context is not a gate.

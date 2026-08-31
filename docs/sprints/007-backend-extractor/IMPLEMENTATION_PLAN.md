@@ -226,15 +226,29 @@ integra sin un invocador declarado y verificable, o una excepción tipada en
 
 | Field | Value | Reproduce |
 | :--- | :--- | :--- |
-| Delegation | `sequential` | `docs/active_state.json` `delegation_mode` |
+| Delegation | `native` | `docs/active_state.json` `delegation_mode` |
 | Work units | 15 | Conteo de filas en las cuatro tablas de Work |
-| Subagents dispatched | 0 | `0` bajo Cursor `sequential` (ADR-0007: Cursor no instancia los ocho roles) |
-| Prior session ratio | n/a (Cursor / sin transcript) | `python3 .agents/scripts/session_cost.py --from-anchor --json` |
+| Subagents dispatched | 2 previstos (`qa_agent`, `tester_agent` en Fase 7) | Los gates corren en contexto fresco bajo ambas herramientas; la autoría va secuencial en el padre |
+| Prior session ratio | pendiente de medición | `python3 .agents/scripts/session_cost.py --from-anchor --json` |
+
+**Corrección de arnés.** Esta sección decía `sequential` / `0 subagentes` /
+«Cursor sin transcript». El ancla se reclamó como `cursor` porque
+`commands/start.md` fijaba `--tool cursor` para ambos arneses hasta `v4.24.0`, y
+el texto del comando llegó desde el espejo `v4.23.0` — segundos antes de que
+`sync_agents_pin.py` instalara justamente esa corrección. La sesión es Claude
+Code: `RA-18` no aplica, y los tiers salen de `config/model_tiers.json`
+`claude_code` (`gate` opus/high, `author` sonnet/medium, `mechanical` haiku/low),
+no de `audit_cursor_models.py`.
+
+**Divergencia declarada** (`start_workflow.md` `delegation_conflict`): el arnés
+puede instanciar los ocho roles, pero las instrucciones operativas de esta sesión
+prohíben lanzar subagentes sin que el humano lo pida. La autoría corre secuencial
+en el agente padre y esto queda **reportado, no absorbido**; el fan-out está
+disponible a petición.
 
 Los umbrales blando (5×) y duro (15×) fuerzan actualizar esta sección antes de
-continuar. Bajo Cursor no hay transcript medible, así que el control efectivo es
-el tamaño del sprint: 15 unidades es grande, y por eso los bloques A–D se
-proponen como tramos de aprobación separables (§Approval).
+continuar. El control efectivo sigue siendo el tamaño del sprint: 15 unidades es
+grande, y por eso los bloques A–D se ordenan como tramos (§Approval).
 
 ---
 
@@ -335,9 +349,10 @@ el error exacto contra el que se escribió `ADR-0004`.
 
 ## Approval — `triple_lock` lock 1
 
-**Tramos de aprobación propuestos.** El Sprint 006 sentó el precedente de
-autorización parcial y funcionó: la medición decidió el ADR en vez de acompañarlo.
-Se propone lo mismo aquí, y la decisión es del humano:
+**APROBACIÓN COMPLETA, humano, 2026-08-31.** Los cuatro bloques (W1–W15) quedan
+autorizados y `ADR-0004` se confirma en la **Opción C**. Los bloques dejan de ser
+tramos de autorización y siguen siendo el **orden obligado** de ejecución, porque
+C depende de los números que produce B:
 
 | Tramo | Unidades | Qué entrega | Depende de |
 | :--- | :--- | :--- | :--- |
@@ -348,10 +363,11 @@ Se propone lo mismo aquí, y la decisión es del humano:
 
 | Field | Value |
 | :--- | :--- |
-| **Approved by** | *(pendiente — Fase 5)* |
-| **Date** | *(pendiente)* |
-| **Plan commit at approval** | *(pendiente)* |
-| **Remaining locks** | Active Sprint · veredictos QA + Tester · OK humano al cierre |
+| **Approved by** | Humano (operador del proyecto), en sesión |
+| **Date** | 2026-08-31 |
+| **Plan commit at approval** | `dd815a6` |
+| **Scope approved** | W1–W15, los cuatro bloques. `ADR-0004` = Opción C |
+| **Remaining locks** | Active Sprint ✅ · veredictos QA + Tester ⏳ · OK humano al cierre ⏳ |
 
 *La Fase 5 es una única autorización humana atendida. NO debe envolverse en un
 `/loop` desatendido (`workflows/pipeline_workflow.md`, `rules/loop_governance.md`).
