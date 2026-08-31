@@ -1,13 +1,14 @@
 # Chat List Probe Notes — Sprint 007 (W5 / W6)
 
-**Status**: run 1 taken 2026-08-31 and **invalidated by a defect in the probe**.
-Run 2 pending. Q1 and Q2 both remain unanswered.
+**Status**: **Q1 ANSWERED** by run 2 — the chat list is virtualized, 899
+conversations behind a 70-row window. **Q2 still unanswered**: runs 1 and 2 both
+produced stability verdicts that were artifacts of the probe, not measurements of
+WhatsApp. Run 3 pending.
 
-> Run 1's numbers are kept below rather than deleted. The probe reported a
-> verdict about a whole list from 3.3% of it, which is the same error
-> `history.py:38-44` records for the message panel and `W4a` fixed there two days
-> earlier. Keeping the run is the point: the mistake is the lesson, and a deleted
-> run cannot be compared against its replacement.
+> Every run is kept below, including the two whose verdicts were wrong. Each
+> failure was found by the *next* measurement rather than by review, and a
+> deleted run cannot be compared against its replacement. Run 1's Q1 verdict and
+> both Q2 verdicts are marked INVALID in place.
 
 ---
 
@@ -128,19 +129,56 @@ traversed this pane even with a correct stop rule (68 407 / 746 ≈ 92 passes).
 `virtualized` still needs no such condition: seeing more conversations than were
 ever in the DOM at once proves it wherever it is observed.
 
-### Run 2 — pending
+### Run 2 — 2026-08-31, `chat_list_probe_20260831T110305Z.json` — **Q1 ANSWERED**
 
-| Pass | Rendered rows | New digests | Total distinct | `scroll_top` | `scroll_height` | `at_bottom` |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| | | | | | | |
+Command: `.venv/bin/python3 scripts/probe_chat_list.py` (after fix `0d0d0b6`)
+
+| Pass | Rendered rows | New digests | Total distinct | `scroll_top` | `at_bottom` |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| 1 | 70 | 70 | 70 | 0 | No |
+| 2 | 70 | 0 | 70 | 746 | No |
+| 3 | 70 | 0 | 70 | 1 492 | No |
+| … | … | … | … | … | … |
+| 99 | 68 | 5 | 894 | 65 828 | No |
+| 100 | 68 | 0 | 894 | 66 494 | No |
+| 101 | 68 | 0 | 899 | 67 160 | No |
+| 102 | 68 | 0 | 899 | 67 817 | **Yes** |
 
 | Summary | Value |
 | :--- | :--- |
-| Max rendered at once | |
+| Max rendered at once | **70** |
+| Total distinct digests | **899** |
+| Row observations across the sweep | 7 033 |
+| Passes used | 102 of a 400 cap |
+| Pane coverage | **100.0%** (67 817 + 666 of 68 483 px) |
+| Reached bottom | **Yes** |
+| Rows with no readable title | **0 of 7 033** |
+| Title selector that worked | `span[title]` — the third candidate |
+| **Verdict** | **`virtualized`** |
+
+**Q1 is answered: the chat list virtualizes.** 899 distinct conversations were
+seen while the DOM never held more than 70 rows at once. That is a proof rather
+than an inference — `virtualization_verdict` returns `virtualized` on this
+evidence regardless of coverage, because seeing more conversations than were ever
+rendered simultaneously cannot happen any other way. The sweep also reached the
+foot of the pane, so the count of 899 is the whole list and not a lower bound.
+
+The passes above also show the fix working: passes 2–4 revealed nothing new — the
+exact stretch on which run 1 stopped and declared a verdict — while pass 99 was
+still discovering conversations, 65 828 px in.
+
+**What this settles for the enumerator (W7).** A single `query_selector_all` is
+not the enumeration; it would return 70 of 899 conversations and report success.
+`chat_list.py` must sweep the pane and merge by identity, which is the pattern
+`harvest_history` already uses one panel over.
+
+### Run 3 — pending
+
+| Summary | Value |
+| :--- | :--- |
 | Total distinct digests | |
-| Passes used | |
-| Pane coverage | |
 | Reached bottom | |
+| Max title collisions in one window | |
 | **Verdict** | |
 
 **How to read it.** `total_distinct > max_rendered_at_once` means scrolling
@@ -153,28 +191,42 @@ verdict is `inconclusive`
 
 ## 4. Evidence — Q2, index stability
 
-### Run 1 — 2026-08-31 — **valid but narrow**
+### Runs 1 and 2 — **BOTH INVALID**, and for the same reason
 
-| Reading | Rows | Taken after |
-| :--- | :--- | :--- |
-| 1 | 70 | The (truncated) scroll sweep of §3 |
-| 2 | 70 | Scroll to top plus one 1 200 ms settle |
+| Run | Reading 1 taken at | Reading 2 taken at | Verdict printed |
+| :--- | :--- | :--- | :--- |
+| 1 | `scroll_top` 2 238 | `scroll_top` 0 | `stable` — 0 of 70 changed |
+| 2 | `scroll_top` **67 817** | `scroll_top` **0** | `unstable` — **68 of 68** changed |
 
-| Summary | Value |
-| :--- | :--- |
-| Positions compared | 70 |
-| Positions that changed | **0** |
-| Changed positions | none |
-| Duplicate digests within reading 1 | **0** |
-| Verdict | `stable` |
+**Neither measured reordering.** The two readings were taken at different scroll
+positions of a virtualized list, so they held different *windows*, not the same
+window at two times. Run 2 compared the last 68 conversations against the first
+69 of 899 — every position differing is arithmetic, not instability. Run 1 got
+the opposite verdict from identical code because its sweep had moved only
+2 238 px, leaving the two windows almost entirely overlapped.
 
-**This result survives run 1's defect, and it is narrower than it looks.** It was
-measured over the 70 rows the DOM held, across the top ~4% of the list, with the
-two readings seconds apart. What it establishes: within one render window and
-over a few seconds, position is identity and no two of those 70 conversations
-share a title. What it does **not** establish: that position survives the minutes
-an enumeration of several hundred chats would take, or that titles stay unique
-across the whole list. Run 2 re-measures both over the full pane.
+The row counts give it away without any further analysis: run 2 reported
+`reading_1_rows: 68` against `reading_2_rows: 69`. Two readings of one window do
+not disagree about how many rows that window has.
+
+**This retracts the "valid but narrow" reading previously recorded here for run
+1.** It was neither: `stable` was as much an artifact as `unstable`, and the
+paragraph claiming otherwise was written before run 2 exposed the mechanism.
+
+**The fix** (`2b33712`): both readings are now anchored at the pane head
+(`read_anchored_at_top`), and the anchor is written into the report so a reader
+can see which question was answered. Reading 1 is taken **before** the sweep and
+reading 2 **after** it, which makes the sweep itself the interval — on run 2's
+timing, roughly two minutes apart, the timescale a real enumeration runs at
+rather than an artificial pause.
+
+The same commit adds `max_title_collisions_in_a_window`, counted across every
+pass. Two rows rendered together are necessarily two different conversations, so
+a repeated digest inside one window is a genuine title collision — which is the
+precise question the abort criterion asks, and which neither run measured across
+the whole list.
+
+### Run 3 — pending
 
 **Corroboration for the title selector.** `span[title]` is generic enough that it
 could in principle have matched a message-preview span rather than the chat name,
@@ -183,13 +235,13 @@ rows were untitled, and 0 of 70 digests changed between readings — a preview
 string is not a stable per-row value. That is corroboration, not proof; run 2
 inherits the question.
 
-### Run 2 — pending
 
 | Summary | Value |
 | :--- | :--- |
 | Positions compared | |
 | Positions that changed | |
 | Duplicate digests within reading 1 | |
+| Max title collisions in one window | |
 | **Verdict** | |
 
 **How to read it.** Any changed position means index is not identity and the
@@ -221,9 +273,15 @@ here is a **lower bound**, not the worst case.
 
 ## 6. What happens next
 
-1. Operator runs the command in §2 — run 2, after the `0d0d0b6` fix.
-2. §3 and §4 are filled **from the JSON report**, not from recollection.
-3. The verdicts decide W7: a stable, fully-materialised list makes the enumerator
-   a single read; anything else makes it a scroll-and-merge keyed on the digest.
-4. If both verdicts are adverse in the way §4 describes, the abort criterion is
-   invoked rather than worked around.
+1. Operator runs the command in §2 — **run 3**, after the `2b33712` fix.
+2. §4 is filled **from the JSON report**, not from recollection. §3 is settled and
+   run 3 only needs to confirm the sweep still reaches the foot.
+3. Q1 already decides W7's shape: the list virtualizes, so `chat_list.py` sweeps
+   the pane and merges by identity. A single read is not the enumeration.
+4. **Q2 decides W7's key.** `stable` would allow position as the key over a short
+   run; `unstable` forces the digest, which is the safer design anyway and the
+   one W7 should be written for unless Q2 comes back stable.
+5. The abort criterion fires only if `max_title_collisions_in_a_window` is above
+   zero **and** positions change: then neither the digest nor the position
+   identifies a conversation, block C is abandoned, and the sprint closes on
+   block A plus this finding.
