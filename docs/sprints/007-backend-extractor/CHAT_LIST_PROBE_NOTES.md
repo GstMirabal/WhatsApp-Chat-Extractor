@@ -1,13 +1,13 @@
 # Chat List Probe Notes — Sprint 007 (W5 / W6)
 
-**Status**: procedure written, **evidence tables empty**. They stay empty until
-`scripts/probe_chat_list.py` runs against a real account.
+**Status**: run 1 taken 2026-08-31 and **invalidated by a defect in the probe**.
+Run 2 pending. Q1 and Q2 both remain unanswered.
 
-> The tables below are deliberately blank. Filling them from the Sprint 006 runs,
-> from WhatsApp Web's documented structure, or from what the selectors "should"
-> return would be `KI-004-A` a fourth time — three successive theories about this
-> DOM were each wrong and each shipped. A blank row is an unanswered question; a
-> plausible row is a wrong answer nobody will re-check.
+> Run 1's numbers are kept below rather than deleted. The probe reported a
+> verdict about a whole list from 3.3% of it, which is the same error
+> `history.py:38-44` records for the message panel and `W4a` fixed there two days
+> earlier. Keeping the run is the point: the mistake is the lesson, and a deleted
+> run cannot be compared against its replacement.
 
 ---
 
@@ -79,43 +79,110 @@ even structural evidence comes from a real session.
 
 ## 3. Evidence — Q1, virtualization
 
-*Empty until the probe runs.*
+### Run 1 — 2026-08-31, `chat_list_probe_20260831T105333Z.json` — **INVALID**
 
-| Pass | Rendered rows | New digests | Total distinct | `scroll_top` | `scroll_height` |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| | | | | | |
+Command: `.venv/bin/python3 scripts/probe_chat_list.py --scroll-passes 20`
+
+| Pass | Rendered rows | New digests | Total distinct | `scroll_top` | `scroll_height` | `client_height` |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| 1 | 70 | 70 | 70 | 0 | 68 407 | 746 |
+| 2 | 70 | 0 | 70 | 746 | 68 407 | 746 |
+| 3 | 70 | 0 | 70 | 1 492 | 68 407 | 746 |
+| 4 | 70 | 0 | 70 | 2 238 | 68 407 | 746 |
+
+| Summary | Value |
+| :--- | :--- |
+| Max rendered at once | 70 |
+| Total distinct digests | 70 |
+| Passes used | 4 of a 20 cap |
+| Rows with no readable title | 0 |
+| Title selector that worked | `span[title]` — the **third** candidate |
+| Pane traversed | 2 238 + 746 of 68 407 px = **4.4%** |
+| Verdict as printed | `not-virtualized` |
+| **Verdict as it stands** | **INVALID — the sweep never reached the foot of the pane** |
+
+**Why it is invalid.** The probe stopped after three passes produced no new
+digest and concluded `not-virtualized`, having moved through 4.4% of the pane.
+An unchanged count over a stretch that was never finished is equally what a
+sweep still inside the render buffer looks like: the list keeps far more than one
+viewport of rows in the DOM, so scrolling 746 px at a time revealed nothing new
+while 66 km of pane remained below.
+
+**What the geometry suggests, and is not claimed.** 68 407 px against 70 rendered
+rows is roughly 977 px per rendered row, where a chat row renders at something
+like 72 px. That arithmetic points at a list of several hundred conversations
+with a 70-row render window — i.e. **virtualized** — but it is an inference from
+a ratio, not a measurement, and this document does not record inferences as
+findings. Run 2 measures it.
+
+**The fix** (`0d0d0b6`): `virtualization_verdict` now returns `inconclusive`
+unless the sweep reached the foot of the pane, `at_pane_bottom` decides that from
+the geometry, and the default cap rose from 20 to 400 — 20 could not have
+traversed this pane even with a correct stop rule (68 407 / 746 ≈ 92 passes).
+`virtualized` still needs no such condition: seeing more conversations than were
+ever in the DOM at once proves it wherever it is observed.
+
+### Run 2 — pending
+
+| Pass | Rendered rows | New digests | Total distinct | `scroll_top` | `scroll_height` | `at_bottom` |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| | | | | | | |
 
 | Summary | Value |
 | :--- | :--- |
 | Max rendered at once | |
 | Total distinct digests | |
 | Passes used | |
-| Rows with no readable title | |
-| Title selector that worked | |
+| Pane coverage | |
+| Reached bottom | |
 | **Verdict** | |
 
 **How to read it.** `total_distinct > max_rendered_at_once` means scrolling
 revealed conversations the DOM did not already hold — the list virtualizes. Equal
-counts over two or more passes mean it does not. One pass decides nothing, which
-is why `virtualization_verdict` returns `inconclusive` there
-(`tests/test_probe_chat_list.py::test_a_single_pass_decides_nothing`).
+counts mean it does not, **but only if `reached_bottom` is true**; otherwise the
+verdict is `inconclusive`
+(`tests/test_probe_chat_list.py::test_a_sweep_that_never_reached_the_bottom_decides_nothing`).
 
 ---
 
 ## 4. Evidence — Q2, index stability
 
-*Empty until the probe runs.*
+### Run 1 — 2026-08-31 — **valid but narrow**
 
 | Reading | Rows | Taken after |
 | :--- | :--- | :--- |
-| 1 | | The scroll sweep of §3 |
-| 2 | | Scroll to top plus one settle interval |
+| 1 | 70 | The (truncated) scroll sweep of §3 |
+| 2 | 70 | Scroll to top plus one 1 200 ms settle |
+
+| Summary | Value |
+| :--- | :--- |
+| Positions compared | 70 |
+| Positions that changed | **0** |
+| Changed positions | none |
+| Duplicate digests within reading 1 | **0** |
+| Verdict | `stable` |
+
+**This result survives run 1's defect, and it is narrower than it looks.** It was
+measured over the 70 rows the DOM held, across the top ~4% of the list, with the
+two readings seconds apart. What it establishes: within one render window and
+over a few seconds, position is identity and no two of those 70 conversations
+share a title. What it does **not** establish: that position survives the minutes
+an enumeration of several hundred chats would take, or that titles stay unique
+across the whole list. Run 2 re-measures both over the full pane.
+
+**Corroboration for the title selector.** `span[title]` is generic enough that it
+could in principle have matched a message-preview span rather than the chat name,
+which would make every digest meaningless. Two facts argue against that: 0 of 70
+rows were untitled, and 0 of 70 digests changed between readings — a preview
+string is not a stable per-row value. That is corroboration, not proof; run 2
+inherits the question.
+
+### Run 2 — pending
 
 | Summary | Value |
 | :--- | :--- |
 | Positions compared | |
 | Positions that changed | |
-| Changed positions (first 20) | |
 | Duplicate digests within reading 1 | |
 | **Verdict** | |
 
