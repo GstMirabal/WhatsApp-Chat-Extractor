@@ -12,8 +12,13 @@ from typing import Any, TypedDict
 logger = logging.getLogger(__name__)
 
 DEFAULT_DATA_DIR = Path("data")
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 CHAT_ID_LENGTH = 12
+
+# Mirrored from `history.COMPLETENESS_PROVEN`. Duplicated rather than imported
+# because `history` imports `MessageRecord` from this module, and importing back
+# would make the pair circular. One string, defined where each side needs it.
+COMPLETENESS_PROVEN = "proven"
 
 
 class MessageRecord(TypedDict):
@@ -32,12 +37,21 @@ class MessageRecord(TypedDict):
 
 
 class ChatExport(TypedDict):
-    """Export for one chat (ADR-0001, ADR-0003), schema v4.
+    """Export for one chat (ADR-0001, ADR-0003, ADR-0004), schema v5.
 
     The consumer of this file is an agent learning from the conversation, so the
     payload states whether it holds the whole history. A truncated dump that is
     indistinguishable from a complete one is worse than an honest partial: v1
     had no way to say which it was.
+
+    v5 replaces that statement with `completeness` — `proven`, `unproven` or
+    `truncated` (ADR-0004). The v4 boolean answered the question with a constant:
+    it was True only for a start-of-conversation marker, and Sprint 006 measured
+    that marker never appearing across five conversations and two runs, so every
+    export ever written said `false`. A field that cannot vary cannot distinguish
+    a whole history from a cut-off one, which is the only thing it is for.
+    `complete` survives, derived from `completeness == "proven"`, because v4
+    files exist and a reader of the boolean must not break on a v5 file.
 
     v4 adds `kind` to every message and stops dropping messages that carry no
     text (ADR-0003). Under v3 a photo or a voice note left no record at all, so
@@ -56,6 +70,7 @@ class ChatExport(TypedDict):
     exported_at: str
     message_count: int
     complete: bool
+    completeness: str
     stopped_reason: str
     messages: list[MessageRecord]
 
@@ -86,7 +101,7 @@ def build_export(
     *,
     chat_title: str,
     messages: list[MessageRecord],
-    complete: bool,
+    completeness: str,
     stopped_reason: str,
 ) -> ChatExport:
     """Build the export payload with a UTC stamp and completeness metadata.
@@ -96,11 +111,16 @@ def build_export(
     is deliberate — an id parameter is a way for a name to be passed straight
     through into the file.
 
+    ``complete`` is derived here rather than accepted as an argument, so the
+    boolean and the three-valued field cannot be given disagreeing values by a
+    caller (ADR-0004).
+
     Args:
         chat_title: Chat title from WhatsApp Web. Hashed, never written.
         messages: Ordered messages of every kind, so `message_count` counts the
             conversation rather than the text subset of it.
-        complete: Whether the harvest reached the beginning of the chat.
+        completeness: ``proven``, ``unproven`` or ``truncated``, as
+            ``history.classify_completeness`` decided it.
         stopped_reason: Which stop condition ended the harvest, so a proven
             start stays distinguishable from an inferred one.
 
@@ -112,7 +132,8 @@ def build_export(
         "chat_id": pseudonymous_chat_id(chat_title),
         "exported_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "message_count": len(messages),
-        "complete": complete,
+        "complete": completeness == COMPLETENESS_PROVEN,
+        "completeness": completeness,
         "stopped_reason": stopped_reason,
         "messages": messages,
     }
@@ -146,10 +167,10 @@ def write_chat_export(
         encoding="utf-8",
     )
     logger.info(
-        "Wrote export to %s (%s messages, complete=%s, stopped=%s)",
+        "Wrote export to %s (%s messages, completeness=%s, stopped=%s)",
         path,
         export["message_count"],
-        export["complete"],
+        export["completeness"],
         export["stopped_reason"],
     )
     return path
