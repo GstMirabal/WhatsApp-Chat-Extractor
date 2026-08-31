@@ -8,6 +8,75 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · Versioning: [SemVer](
 
 ## [Unreleased]
 
+### Added
+
+- **Sprint 007 (`backend-extractor` / P3b «all chats»)** — `wa-extract export-all`
+  enumerates every conversation in the chat list, exports each, and writes a run
+  manifest (`data/run_manifest_<stamp>.json`) stating the outcome of every one.
+  New modules `chat_list.py` (sweep a virtualized list; reopen a chat by verified
+  identity) and `manifest.py` (outcomes, and an opt-in `chat_id` → name index).
+  One conversation failing does not end a run; losing the WhatsApp session does.
+  A conversation beyond `--limit` is recorded as `skipped`, never omitted. #007
+- **`ADR-0004`: completeness is three values, not a boolean.** `completeness` is
+  `proven` \| `unproven` \| `truncated`. `classify_completeness` fails closed —
+  an unrecognised stop reason is `truncated`, never `proven`. #007
+- **`scripts/probe_chat_list.py`** — operator-run probe measuring whether the
+  chat list virtualizes and whether a chat's index survives a sweep. #007
+
+### Changed
+
+- **Export schema v4 → v5.** `completeness` is added and required; `complete`
+  survives as a boolean **derived** from `completeness == "proven"`, so the two
+  cannot disagree and schema-v4 readers keep working. #007
+- **`export-one` no longer reports every export as a failure.** It exited `3`
+  whenever `complete` was false, and `complete` was never true — so **every
+  export ever produced** told the operator the run had failed and advised raising
+  a `--max-passes` cap that was not the cause. Only `truncated` exits `3` now. #007
+- **`build_parser` and `cmd_export_one` split** to stay inside `agents.md §1`'s
+  50-line limit, which this sprint's additions had pushed them past (103 and 58
+  lines). No function in the package now exceeds it, measured by AST. #007
+- **The chat-list DOM contract lives in one place.** `probe_chat_list.py` imports
+  its selectors, title reader and bottom test from `chat_list.py` rather than
+  keeping copies: two copies would let the instrument and the product measure
+  different DOMs. #007
+
+### Measured
+
+- **The chat list virtualizes**: 899 conversations seen while the DOM never held
+  more than 70 rows at once, reproduced across two sweeps 2.5 hours apart, both
+  reaching the foot of the pane. A single `query_selector_all` would return 70 of
+  910 and report success. #007
+- **Position is stable across a sweep** (0 of 69 positions changed) and **no two
+  conversations share a title** (0 collisions in 7 100 row observations), so the
+  digest identifies a conversation within a run. The sprint's abort criterion
+  required both to fail; neither did. #007
+- **Identity is not permanent across runs.** Two sweeps counting 899 each shared
+  **898**: the digest follows the title, so a renamed conversation becomes a new
+  `chat_id` and will not link to its earlier exports. #007
+- **A whole-account run is on the order of 15 hours.** Live verification on
+  2026-08-31: enumeration of 910 conversations took ~3 minutes, then ~60 seconds
+  per conversation, most of it the three 15-second waits confirming the panel had
+  stopped producing history. #007
+- **Live verification of `export-all --limit 3`**: 3 exported, 0 failed, 907
+  skipped of 910 enumerated; 129 messages at schema v5, `completeness: unproven`
+  on all three, no title in any payload or in the manifest. #007
+
+### Known open
+
+- **`sender: unknown` on 3.9% of messages** (5 of 129) in the live verification,
+  and `kind: unknown` on the same proportion. Sprint 005 measured 0 unknown
+  senders over 513 messages in one conversation, so this is either chat-dependent
+  or a regression; it is **recorded, not diagnosed**, because the sprint that
+  guesses at direction is the sprint `KI-004-A` was written about. Routed to a
+  later sprint together with the `unknown_media` classification already queued.
+- **Resume is not implemented.** The manifest carries the identity, outcome and
+  file of every conversation, which is what a later sprint needs to skip what
+  already succeeded. Retries stay out on purpose: retrying without having measured
+  why a conversation fails is guessing at how many times to guess.
+- **`chore(deps): pin .agents to v4.24.0`** — the framework pin moved during this
+  sprint. `UPSTREAM_FINDING_008`, `_010`, `_011` and `_012` are re-verified as
+  still open at that tag and still owe their nucleus PRs.
+
 ## [0.6.0] - 2026-08-31
 
 > Merged from `ai-sprint/006` as PR #7 under explicit human authorization **without CI verification — the fourth such occurrence**. `ci_gate.py` exited `2` for two independent platform reasons: it could not read what `main` requires (branch protection and rulesets both `forbidden`, the token lacks scope), and all four checks reported failure in 2 seconds each having produced **no logs at all** (`gh run view --log-failed` → `log not found`) — the same GitHub billing signature recorded for PR #5 and PR #6. Verified locally on the exact merged tip `b05e7dc`: 116 passed, 1 skipped, `ruff` clean, no files tracked under `data/`. Unblocking this is `/agents:harden` plus GitHub billing; neither is code.
