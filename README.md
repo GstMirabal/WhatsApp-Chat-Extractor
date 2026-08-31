@@ -123,8 +123,8 @@ the log, to know what you got:
 
 | Exit | Meaning |
 | :--- | :--- |
-| `0` | The harvest reached the start of the chat. `complete` is `true`. |
-| `3` | The harvest stopped at the pass cap. The file is valid but truncated. |
+| `0` | The export finished. `completeness` is `proven` or `unproven` — see below. |
+| `3` | The harvest was **truncated**: it ended before the conversation did. |
 | `2` | Timed out waiting for the session or for the chat to open. |
 | `1` | The search matched no chat. |
 
@@ -139,24 +139,93 @@ Useful options:
 From an agent session, `/wa-export <chat>` runs the same command and reports
 `complete` explicitly. It is available in both Claude Code and Cursor.
 
+### Exporting every chat
+
+```bash
+.venv/bin/wa-extract export-all
+```
+
+It enumerates the whole chat list, exports each conversation in turn, and prints
+the path of a **run manifest** stating what happened to every one of them. Start
+with `--limit 3` to see it work before committing to a full run.
+
+| Option | Default | What it does |
+| :--- | :--- | :--- |
+| `--limit` | `0` (all) | Export only the first N chats. The rest are recorded as `skipped`, never omitted. |
+| `--write-index` | off | **Writes real conversation names to disk.** See below. |
+| `--settle-ms` | `1200` | Wait after each chat-list scroll. Raise it on a slow connection. |
+
+**A full run is long.** Measured on 2026-08-31 against an account with 910
+conversations: enumeration took about 3 minutes, and each conversation then took
+roughly 60 seconds, most of it the three 15-second waits that confirm the panel
+has stopped producing history. At that rate a whole-account export is on the
+order of **15 hours**. Lowering `--load-wait-ms` is the lever, at the cost of
+declaring a top the panel had not reached — the error `completeness` exists to
+make visible.
+
+One conversation failing does not end the run. It is recorded in the manifest
+with its reason and the run continues; only losing the WhatsApp session aborts.
+
+The manifest carries **no names**:
+
+```json
+{
+  "schema_version": 1,
+  "chats_enumerated": 910,
+  "enumeration_complete": true,
+  "counts": { "exported": 3, "failed": 0, "skipped": 907,
+              "proven": 0, "unproven": 3, "truncated": 0, "messages": 129 },
+  "chats": [
+    { "chat_id": "chat_5666bd0c69f1", "index": 0, "outcome": "exported",
+      "reason": "", "completeness": "unproven", "message_count": 31,
+      "file": "chat_5666bd0c69f1_20260831T181033Z.json" }
+  ]
+}
+```
+
+`--write-index` additionally writes `data/chat_index_<stamp>.json`, mapping each
+`chat_id` to the **real conversation name**. It is the only file this project
+writes that contains names, it is off by default, and it is deliberately a
+separate file so you can delete it without losing the manifest.
+
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ## What the export contains
 
 ```json
 {
-  "schema_version": 4,
-  "chat_id": "9f60a8baaaab",
+  "schema_version": 5,
+  "chat_id": "chat_9f60a8baaaab",
   "exported_at": "2026-08-30T08:53:00Z",
   "message_count": 301,
   "complete": false,
-  "stopped_reason": "max_passes",
+  "completeness": "unproven",
+  "stopped_reason": "stalled",
   "messages": [
     { "sender": "contact", "timestamp": "18:29, 28/8/2026",
       "body": "¿lo tienes?", "kind": "text", "order": 137 }
   ]
 }
 ```
+
+### How complete is it?
+
+`completeness` answers that in three values ([ADR-0004](docs/decisions/ADR-0004-completeness-criterion.md)):
+
+| Value | Meaning |
+| :--- | :--- |
+| `proven` | A start-of-conversation marker was seen. The whole history is here. |
+| `unproven` | The panel stopped producing history and nothing indicated more was coming. Almost certainly the whole chat — but inferred, not proven. |
+| `truncated` | The harvest ended before the conversation did. Raise `--max-passes`. |
+
+**`proven` has never been produced.** Five conversations were measured across two
+runs and no start marker appeared in any of them, so `unproven` is the normal,
+expected result. The value is kept because the day WhatsApp Web renders such a
+marker, the export must be able to say so.
+
+`complete` is the old boolean, retained so readers of schema v4 keep working. It
+is **derived** from `completeness == "proven"` and is therefore always `false`
+today — which is exactly why `completeness` replaced it.
 
 `sender` is a role — `me`, `contact` or `unknown` — never a name. `kind` is
 mandatory on every message and is one of:
@@ -186,10 +255,13 @@ in code, not by convention:
 
 1. **`data/` is never committed.** It is gitignored and CI fails if a chat
    export appears in a commit.
-2. **No contact name is written to disk.** `chat_id` is a digest of the chat
-   title; the title itself is hashed and dropped. This is pseudonymization, not
-   anonymization: the digest is unsalted, so anyone holding a candidate name can
-   confirm a match.
+2. **No contact name is written to disk unless you ask for it.** `chat_id` is a
+   digest of the chat title; the title itself is hashed and dropped. The one
+   exception is `export-all --write-index`, which is off by default and named
+   for what it does. This is pseudonymization, not anonymization: the digest is
+   unsalted, so anyone holding a candidate name can confirm a match. It is also
+   **not permanent** — the digest follows the title, so a renamed conversation
+   gets a new `chat_id` and will not link to its earlier exports.
 3. **No media content is downloaded or referenced.** No URL, blob or binary
    reaches the file — only the fact that a medium was sent.
 4. **Message bodies stay out of agent transcripts.** The slash command reports
