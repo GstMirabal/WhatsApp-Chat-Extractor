@@ -50,15 +50,16 @@ the prohibition does not invert.
 | W3 | `src/whatsapp_chat_extractor/writers.py` | modify | high | `implementer_agent` | `opus` | `high` | ✅ `08b03ee` |
 | W3a | `tests/test_writers.py` | modify | medium | `implementer_agent` | `sonnet` | `medium` | ✅ `cbceafb` |
 | W4 | `tests/test_completeness.py` | create | medium | `implementer_agent` | `sonnet` | `medium` | ✅ `f27da4b` |
-| W5 | `scripts/probe_chat_list.py` | create | medium | `implementer_agent` | `sonnet` | `medium` | ✅ `f0e2dda` |
+| W5 | `scripts/probe_chat_list.py` | create | medium | `implementer_agent` | `sonnet` | `medium` | ✅ `f0e2dda` `0d0d0b6` `2b33712` `01b7f37` |
 | W5b | `tests/test_probe_chat_list.py` | create | medium | `implementer_agent` | `sonnet` | `medium` | ✅ `f30cb48` |
 | W6 | `docs/sprints/007-backend-extractor/CHAT_LIST_PROBE_NOTES.md` | create | low | `doc_orchestrator` | `haiku` | `low` | ✅ `497edae`+ |
-| W7 | `src/whatsapp_chat_extractor/chat_list.py` | create | high | `implementer_agent` | `opus` | `high` | ⏳ |
-| W8 | `tests/test_chat_list.py` | create | medium | `implementer_agent` | `sonnet` | `medium` | ⏳ |
-| W9 | `src/whatsapp_chat_extractor/manifest.py` | create | high | `implementer_agent` | `opus` | `high` | ⏳ |
-| W10 | `tests/test_manifest.py` | create | medium | `implementer_agent` | `sonnet` | `medium` | ⏳ |
+| W7 | `src/whatsapp_chat_extractor/chat_list.py` | create | high | `implementer_agent` | `opus` | `high` | ✅ `cb2783b` |
+| W8 | `tests/test_chat_list.py` | create | medium | `implementer_agent` | `sonnet` | `medium` | ✅ `1fdef57` |
+| W9 | `src/whatsapp_chat_extractor/manifest.py` | create | high | `implementer_agent` | `opus` | `high` | ✅ `772aad8` |
+| W10 | `tests/test_manifest.py` | create | medium | `implementer_agent` | `sonnet` | `medium` | ✅ `7c4ac69` |
 | W11a | `src/whatsapp_chat_extractor/__main__.py` | modify | high | `implementer_agent` | `opus` | `high` | ✅ `ea3a878` |
-| W11 | `src/whatsapp_chat_extractor/__main__.py` | modify | high | `implementer_agent` | `opus` | `high` | ⏳ |
+| W11 | `src/whatsapp_chat_extractor/__main__.py` | modify | high | `implementer_agent` | `opus` | `high` | ✅ `d7ebc94` |
+| W11b | `tests/test_export_all.py` | create | medium | `implementer_agent` | `sonnet` | `medium` | ✅ `a5e6da8` |
 | W12 | `docs/architecture/EXTRACTOR_BLUEPRINT.md` | modify | low | `doc_orchestrator` | `haiku` | `low` | ⏳ |
 | W13 | `README.md` | modify | low | `doc_orchestrator` | `haiku` | `low` | ⏳ |
 | W14 | `docs/0_SYSTEM_OVERVIEW.md` | modify | low | `doc_orchestrator` | `haiku` | `low` | ⏳ |
@@ -111,6 +112,21 @@ because `complete` was never True: the operator was told each run had failed and
 advised to raise a `--max-passes` cap that was not the cause. Only `truncated`
 now exits `EXIT_INCOMPLETE`.
 
+## Units added during execution — block C
+
+| # | Why it was not planned | Why it is not new scope |
+| :--- | :--- | :--- |
+| W5c (`01b7f37`) | The plan treated the probe and the enumerator as separate files. They need the same selectors, the same title reader and the same bottom test, and `rules/code_craft.md §1` puts the extraction threshold at the second call site | The canonical copy moved into `chat_list.py` and the probe imports it. Two copies would let the instrument and the product measure different DOMs, which is the one thing a probe must never permit |
+| W11b (`a5e6da8`) | The Phase 4.3 table gave W11 no test row, the third time this sprint | The plan's Tests table names the failure policy explicitly (*«un fallo en un chat no aborta la corrida»*). It is W11's test surface, not new work |
+
+**Two functions were split because this sprint pushed them over
+`agents.md §1 max_lines_per_func`.** `build_parser` reached 103 lines and
+`cmd_export_one` 58; both were already long and both were made worse here.
+`build_parser` is now three `_add_<command>` registrars plus a shared
+`_add_harvest_args`, and `report_completeness` is extracted from
+`cmd_export_one`. No function in the package exceeds 50 lines, measured by AST
+rather than asserted.
+
 ## Block A verification
 
 Run at the block tip `ea3a878`, host root:
@@ -124,6 +140,23 @@ The five block-A commits are one physical file each (`jurisdictional_lock`), so
 the suite is green at the block tip rather than at every intermediate commit: the
 contract spans `history.py` and `writers.py` and cannot change in one of them
 alone. Recorded here rather than left for a bisect to discover.
+
+## Blocks B and C verification
+
+Run at `a5e6da8`, host root:
+
+| Command | Result |
+| :--- | :--- |
+| `.venv/bin/ruff check .` | `All checks passed!`, exit `0` |
+| `.venv/bin/pytest tests/ -q` | **191 passed, 1 skipped** (116 at sprint open) |
+| `python3 -m whatsapp_chat_extractor export-all --help` | exit `0`; `--write-index` and `--limit` present |
+| `grep -rn "TODO\|FIXME" src/ scripts/ tests/` | no matches |
+| AST scan for functions over 50 lines | none |
+
+**Not yet verified against a browser.** `export-all` has never run against
+WhatsApp Web. The plan's operator verification (`export-all --limit 3`) is
+outstanding, and no documentation should describe behaviour that has only been
+exercised against doubles.
 
 ## Conflicts
 
