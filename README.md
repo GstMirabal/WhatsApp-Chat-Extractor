@@ -42,22 +42,24 @@
 
 ## About The Project
 
-This tool drives a real WhatsApp Web session in a visible browser, scrolls one
+This tool drives a real WhatsApp Web session in a visible browser, scrolls each
 conversation to the top, and writes its history to a JSON file under `data/`.
 The intended consumer is an agent learning how a business talks to its
 customers, which is why the output is built around one question: **does this
 file hold the whole conversation, or only part of it?**
 
-Every export answers that in the payload itself. `complete` is `true` only when
-the harvest reached a proven start-of-chat marker; a run that stops at the pass
-cap says so, and the CLI exits `3` rather than `0`. A truncated dump that is
-indistinguishable from a complete one is the failure this project was rebuilt to
-prevent.
+Every export answers that in the payload itself, in three values rather than a
+boolean: `proven`, `unproven` or `truncated`. Only `truncated` is a failure, and
+the CLI exits `3` on it. A truncated dump that is indistinguishable from a
+complete one is the failure this project was rebuilt to prevent — and a
+completeness flag that can only ever say one thing is the same failure wearing a
+field name, which is why the boolean was replaced
+([ADR-0004](docs/decisions/ADR-0004-completeness-criterion.md)).
 
 | Property | Value |
 | :--- | :--- |
-| Scope | One chat per invocation, full history |
-| Output | `data/chat_<digest>_<timestamp>.json`, schema v4 |
+| Scope | One chat (`export-one`) or every chat (`export-all`), full history |
+| Output | `data/chat_<digest>_<timestamp>.json`, schema v5, plus a run manifest for `export-all` |
 | Media | Recorded as a placeholder with a `kind`; no media file is downloaded |
 | Identity | No contact name reaches the payload or the filename |
 | Network | WhatsApp Web only; nothing is sent anywhere else |
