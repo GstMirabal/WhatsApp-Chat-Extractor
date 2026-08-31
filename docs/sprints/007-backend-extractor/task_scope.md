@@ -60,10 +60,11 @@ the prohibition does not invert.
 | W11a | `src/whatsapp_chat_extractor/__main__.py` | modify | high | `implementer_agent` | `opus` | `high` | ✅ `ea3a878` |
 | W11 | `src/whatsapp_chat_extractor/__main__.py` | modify | high | `implementer_agent` | `opus` | `high` | ✅ `d7ebc94` |
 | W11b | `tests/test_export_all.py` | create | medium | `implementer_agent` | `sonnet` | `medium` | ✅ `a5e6da8` |
-| W12 | `docs/architecture/EXTRACTOR_BLUEPRINT.md` | modify | low | `doc_orchestrator` | `haiku` | `low` | ⏳ |
-| W13 | `README.md` | modify | low | `doc_orchestrator` | `haiku` | `low` | ⏳ |
-| W14 | `docs/0_SYSTEM_OVERVIEW.md` | modify | low | `doc_orchestrator` | `haiku` | `low` | ⏳ |
-| W15 | `CHANGELOG.md` | modify | low | `doc_orchestrator` | `haiku` | `low` | ⏳ |
+| W12 | `docs/architecture/EXTRACTOR_BLUEPRINT.md` | modify | low | `doc_orchestrator` | `haiku` | `low` | ✅ `3effc4c` |
+| W13 | `README.md` | modify | low | `doc_orchestrator` | `haiku` | `low` | ✅ `4c145ca` |
+| W14 | `docs/0_SYSTEM_OVERVIEW.md` | modify | low | `doc_orchestrator` | `haiku` | `low` | ✅ `5ddde9d` |
+| W15 | `CHANGELOG.md` | modify | low | `doc_orchestrator` | `haiku` | `low` | ✅ `249c606` |
+| W15b | `docs/roadmaps/docs/extractor/002-delivery-program.md` | modify | low | `doc_orchestrator` | `haiku` | `low` | ✅ (this commit) |
 
 **Status legend.** ⏳ authorized, not started · 🟡 written, awaiting the operator's
 probe run · ✅ `<sha>` landed · 🔒 not authorized by the Approval Gate.
@@ -153,10 +154,33 @@ Run at `a5e6da8`, host root:
 | `grep -rn "TODO\|FIXME" src/ scripts/ tests/` | no matches |
 | AST scan for functions over 50 lines | none |
 
-**Not yet verified against a browser.** `export-all` has never run against
-WhatsApp Web. The plan's operator verification (`export-all --limit 3`) is
-outstanding, and no documentation should describe behaviour that has only been
-exercised against doubles.
+## Live verification — 2026-08-31, operator present
+
+`.venv/bin/python3 -m whatsapp_chat_extractor export-all --limit 3`
+
+| Observation | Value |
+| :--- | :--- |
+| Conversations enumerated | **910** (the probe measured 899 at 13:34; +11 over ~4.6 h) |
+| Outcome | 3 exported, **0 failed**, 907 skipped |
+| `enumeration_complete` | `true` |
+| Messages written | 129, all at `schema_version: 5` |
+| `completeness` | `unproven` on all three; `complete` `false` and consistent |
+| Titles in any payload or in the manifest | **none** |
+| `order` contiguous per file | yes |
+| Enumeration time | ~3 min 39 s (910 conversations) |
+| Per conversation | ~60 s (57 s, 63 s measured) |
+
+**Extrapolated: a whole-account run is ~15 hours.** Most of each minute is the
+three 15-second `--load-wait-ms` waits that confirm the panel stopped producing
+history. Lowering that flag is the lever, at the cost of declaring a top the
+panel had not reached — the error `completeness` exists to make visible. Recorded
+for P4 rather than tuned here on one observation.
+
+**One finding recorded, not diagnosed.** `sender: unknown` on 5 of 129 messages
+(3.9%), and `kind: unknown` on the same proportion. Sprint 005 measured 0 unknown
+senders over 513 messages, so this is either chat-dependent or a regression.
+Diagnosing it needs its own probe: `KI-004-A` is precisely about theorising over
+this DOM, and three successive direction hypotheses have already shipped wrong.
 
 ## Conflicts
 
