@@ -1,6 +1,7 @@
 # Platform Hardening — pending controls
 
-**Status**: CI landed 2026-08-30 (Sprint 004). Branch protection **blocked**.
+**Status**: CI landed 2026-08-30 (Sprint 004) and **executes since 2026-09-01**
+(Sprint 008 — evidence below). Branch protection still **blocked**.
 **Blocker**: the repository is private on a free plan, where GitHub does not
 offer branch protection or rulesets:
 
@@ -13,8 +14,8 @@ GET /repos/GstMirabal/WhastApp-Chat-Extractor/branches/main/protection
 This is a plan limitation, not a token scope problem — the operator's token
 carries `repo` and `workflow`.
 
-**Second blocker, found when the CI landed**: Actions jobs cannot start on this
-repository either. All four checks failed in 2 seconds with
+**Second blocker, found when the CI landed — CLEARED 2026-09-01.** Actions jobs
+could not start on this repository: all four checks failed in 2 seconds with
 
 ```
 The job was not started because recent account payments have failed
@@ -22,7 +23,47 @@ or your spending limit needs to be increased.
 ```
 
 Actions consumes billed minutes on private repositories; on public ones they are
-free. Making the repository public therefore clears both blockers at once.
+free.
+
+### The billing block is gone — measured, Sprint 008
+
+Re-checked on 2026-09-01 with `gh run list`. CI now executes for real:
+
+| Run | Branch | Event | Conclusion | Duration |
+| :--- | :--- | :--- | :--- | :--- |
+| `33477613266` | `main` | push | **success** | 23 s |
+| `33477552793` | `main` | push | **success** | 20 s |
+| `33477448158` | `ai-sprint/007` | pull_request | **success** | 25 s |
+| `33360762207` | `main` | push | failure | 4 s |
+| `33360697068` | `main` | push | failure | 5 s |
+
+The last two are the old billing signature; the first three are real. Job-level
+evidence for `33477613266`, which is what distinguishes a genuine pass from the
+2-second failures — these jobs ran **steps**:
+
+| Job | Steps executed | Conclusion |
+| :--- | :--- | :--- |
+| `ruff` | 7, including `Install ruff` and `Lint` | success |
+| `pytest (3.11)` | 8, including `Install package and test dependencies` and `Run tests` | success |
+| `pytest (3.13)` | 8, same | success |
+| `no exported chats committed` | 5, including `Refuse any tracked file under data/` | success |
+
+Reproduce: `gh run view 33477613266 --json jobs`.
+
+**What this changes.** Four releases were merged past `ci_gate.py` under
+explicit human authorization because no independent infrastructure could run
+this code. That is no longer true: `main` has passing CI. What has **not**
+changed is the first blocker — branch protection and rulesets still return
+`403`, so `ci_gate.py` still cannot read what `main` requires and will still
+refuse. Green checks now exist; the gate still cannot see a rule saying they are
+mandatory.
+
+**Correction to the record.** `docs/active_state.json` describes the `ci_gate.py`
+`403` as *"the token lacks scope"*. That is wrong, and this document had it right
+from the start: it is a plan limitation. Re-confirmed 2026-09-01 — the API
+returns *"Upgrade to GitHub Pro or make this repository public to enable this
+feature"*, which no token scope can satisfy. The anchor is corrected in the same
+sprint that measured this.
 
 ## Deviation on record — v0.4.0 merged without CI
 
@@ -154,6 +195,15 @@ written to that standard already.
 
 ## Still open (not blocked by the plan)
 
-| Gap | Owner |
-| :--- | :--- |
-| `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, `NOTICE` absent at the host root | `/agents:harden` |
+| Gap | Owner | Re-checked |
+| :--- | :--- | :--- |
+| `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, `NOTICE.md` absent at the host root | `/agents:harden` | 2026-09-01 — all four still absent; `LICENSE` is present |
+| `ci_gate.py` cannot read `main`'s requirements, so a green CI still does not satisfy the deployment gate | repository owner (make public, or GitHub Pro) | 2026-09-01 — `403` unchanged |
+
+## Controls not applied by this sprint, and why
+
+Sprint 008's D1 ran the platform **probe** only. Every write in *"What unlocks
+when the repository becomes public"* above is still unapplied, because each one
+either returns `403` on this plan or changes the repository's public posture —
+an outward-facing change that belongs to the repository owner, not to a sprint
+executing an approved code plan. The probe is read-only by design.
