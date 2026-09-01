@@ -8,6 +8,62 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · Versioning: [SemVer](
 
 ## [Unreleased]
 
+### Fixed
+
+- **The chat-list enumeration no longer loses conversations in silence.** A
+  single sweep advances the pane one viewport per pass and dedupes by digest, so
+  a list that reorders mid-sweep — one arriving message does it — drops
+  conversations below the sweep position and never renders them into any pass.
+  Measured against the real geometry (899 conversations, 70-row window, 76px
+  rows): **882 of 899** found at one reorder per 5 reads, **856 of 899** at one
+  per 2, no duplicates. `sweep_until_stable` repeats the sweep from the head and
+  unions by digest until two consecutive sweeps contribute nothing new, and
+  recovers **899 of 899 at both rates** in 4 sweeps; a quiet list converges in 3.
+  `sweep_chat_list` is unchanged and remains the single-pass primitive, its limit
+  still pinned by the test that found it. #008
+
+### Added
+
+- **`ADR-0005`: enumeration completeness is three values, not a boolean.** The
+  manifest's `enumeration_complete` was set from whether the pane reached its
+  foot — true of the pane, and not the claim its name made: it reported `true`
+  for a run that had lost 43 of 899 conversations. Replaced by `enumeration`
+  (`converged` \| `unconverged` \| `truncated`) plus a `sweeps` counter, failing
+  closed — `converged` requires a positive demonstration of both conditions.
+  Deliberately offers no `proven`: unlike `ADR-0004`, no future signal could ever
+  make it reachable, and a permanently dead value invites branching on an
+  impossible case. #008
+- **`scripts/probe_unknown_rows.py`** — operator-run probe capturing the DOM
+  signature of every row whose `sender` or `kind` is `unknown` (3.9% and 9.6% in
+  the #007 live run). Records which known selectors were tried and missed, plus
+  attribute **names**, class tokens and shape — never values, since `aria-label`
+  and `data-pre-plain-text` both carry the sender's real name. Two tests assert
+  no name and no message body can reach a signature. It classifies nothing:
+  `KI-004-A` forbids theorising over this DOM without data. #008
+
+### Changed
+
+- **Manifest schema v1 → v2.** `enumeration_complete` is **removed**, not
+  derived. The export file's schema is untouched at v5 — the two version
+  independently. #008
+
+### Known open
+
+- The unknown-row probe has **not been run**: it needs an authenticated WhatsApp
+  Web session no agent can start. The instrument ships; the measurement and the
+  classification it unblocks belong to Sprint 009. #008
+- Five complexity-rule violations in `export_one.py` and `__main__.py`, all
+  pre-existing on `main`, surfaced by this sprint's gate-evidence experiment and
+  deliberately not fixed — outside the approved scope. Sprint 009. #008
+- **CI now executes** (three runs green with real steps on 2026-09-01, after
+  five occurrences of the 2-second billing failure), but branch protection and
+  rulesets still return `403` on a private free-plan repository, so `ci_gate.py`
+  still cannot read what `main` requires. Green checks exist; no rule says they
+  are mandatory. #008
+- Ten upstream framework findings are drafted under `docs/audits/`; the nucleus
+  pull request is a separate act in a separate clone and is not this sprint's.
+  #008
+
 ## [0.7.0] - 2026-09-01
 
 ### Added
