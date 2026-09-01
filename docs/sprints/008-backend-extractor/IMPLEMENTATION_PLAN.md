@@ -268,8 +268,16 @@ merges without a declared, verifiable invoker, or a typed exception in
 | :--- | :--- | :--- |
 | Delegation | `native` | `docs/active_state.json` `delegation_mode` |
 | Work units | 19 | Count of rows in Work tables |
-| Subagents dispatched | Decidido por A1; techo declarado **6** | `docs/sprints/008-backend-extractor/GATE_CHANNEL_DIAGNOSIS.md` |
+| Subagents dispatched | **1 hasta ahora** (A1, 40 711 tokens, 10 llamadas, 2.2 min); techo declarado **6** | `docs/sprints/008-backend-extractor/GATE_CHANNEL_DIAGNOSIS.md` |
 | Prior session ratio | **23.6** (peor de 7 ciclos: 12.2 · 14.1 · 15.0 · 15.9 · 19.5 · 21.3 · 23.6) | `python3 .agents/scripts/session_cost.py --from-anchor --json` |
+| **Ratio de esta sesión** | **9.4** (1 ciclo, pico 202 983) medido al cerrar el Bloque B | `python3 .agents/scripts/session_cost.py --session 38645bb6-ca00-46a0-9639-4b0aba470461 --json` |
+
+**Actualización obligada por el umbral blando (5x).** Medido 9.4x al terminar el
+Bloque B, con el Bloque A parcialmente hecho. Por debajo del aborto de 15x, así
+que el sprint continúa; queda registrado aquí porque `rules/token_economy.md
+§3.1` exige actualizar esta sección antes de seguir, no al cerrar. El Bloque B
+—el trabajo con mayor densidad de código— consumió menos de dos tercios del
+presupuesto hasta el umbral duro, y los Bloques C y D son más ligeros.
 
 La sesión previa superó el límite duro de 15x en cuatro ciclos. Este plan agrupa
 19 unidades, más que el Sprint 007. Mitigación declarada por adelantado: el orden
