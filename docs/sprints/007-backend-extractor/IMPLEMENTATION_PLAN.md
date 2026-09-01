@@ -229,7 +229,8 @@ integra sin un invocador declarado y verificable, o una excepción tipada en
 | Delegation | `native` | `docs/active_state.json` `delegation_mode` |
 | Work units | 15 | Conteo de filas en las cuatro tablas de Work |
 | Subagents dispatched | 2 previstos (`qa_agent`, `tester_agent` en Fase 7) | Los gates corren en contexto fresco bajo ambas herramientas; la autoría va secuencial en el padre |
-| Prior session ratio | pendiente de medición | `python3 .agents/scripts/session_cost.py --from-anchor --json` |
+| Prior session ratio | n/a al abrir (sin transcript previo bajo esta herramienta) | `python3 .agents/scripts/session_cost.py --from-anchor --json` |
+| **Ratio de ESTA sesión (medido al cierre)** | **22,4× en el ciclo 7 — por encima del umbral duro de 15×** | `python3 .agents/scripts/session_cost.py --session dfadf1f8-34d8-4608-8f38-cb3d85f64cdf` |
 
 **Corrección de arnés.** Esta sección decía `sequential` / `0 subagentes` /
 «Cursor sin transcript». El ancla se reclamó como `cursor` porque
@@ -246,9 +247,24 @@ prohíben lanzar subagentes sin que el humano lo pida. La autoría corre secuenc
 en el agente padre y esto queda **reportado, no absorbido**; el fan-out está
 disponible a petición.
 
-Los umbrales blando (5×) y duro (15×) fuerzan actualizar esta sección antes de
-continuar. El control efectivo sigue siendo el tamaño del sprint: 15 unidades es
-grande, y por eso los bloques A–D se ordenan como tramos (§Approval).
+**El umbral duro se superó, y esta sección se actualiza porque `rules/token_economy.md`
+§3.1 lo exige.** Medido al cierre: 482 turnos, 7 ciclos de contexto, **cuatro de
+ellos por encima de 15×** (15,0× · 15,9× · 19,5× · 21,3× · 22,4×), con 123,9 M de
+lectura de caché. El coste es el área bajo el diente de sierra, y la compactación
+reinicia el eje sin reducirla.
+
+Causas, en orden de contribución y sin adornos:
+
+| Causa | Evidencia |
+| :--- | :--- |
+| El sprint se planificó grande y se ejecutó entero en una sesión | 15 units planificados + 6 añadidos, bloques A–D seguidos |
+| Tres corridas de sonda con dos defectos corregidos entre ellas | Cada ciclo de corrección fue leer, parchear, testear y re-registrar |
+| **Dos subagentes de gate que consumieron ~430 k tokens y no entregaron hallazgos** | `af56a8f` 3 invocaciones · `a90db59` 2; la reverificación hubo que hacerla igualmente |
+| Verificación posterior a los gates que encontró el defecto de subcuenta | Trabajo necesario, pero fuera del presupuesto planificado |
+
+Lo que habría contenido el coste, para el 008: cerrar tras el Bloque A y abrir un
+sprint aparte para P3b. El tamaño se marcó como riesgo en esta misma sección al
+planificar («15 unidades es grande») y no se actuó sobre esa marca.
 
 ---
 
