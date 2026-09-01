@@ -165,6 +165,33 @@ def test_no_attribute_value_reaches_a_signature() -> None:
     assert signature["shape"]["aria_label_ends_with_colon"] is True
 
 
+def test_the_shape_query_returns_no_value_bearing_field() -> None:
+    """Guards the real JS, which the two tests above cannot reach.
+
+    `FakeRow.evaluate` returns a dict that structurally *cannot* carry a value,
+    so those tests prove the fake is safe rather than that `structural_shape` is.
+    This reads the query itself: the key set is closed, and adding a key that
+    returns an attribute's contents — `aria_label`, `pre_plain_text`, `text` —
+    fails here. Found at the Phase 7 gate while auditing the sprint's own
+    evidence.
+    """
+    source = probe.structural_shape.__doc__ or ""
+    assert "never by value" in source
+
+    import inspect
+    js = inspect.getsource(probe.structural_shape)
+    returned = {
+        "attributes", "classes", "has_aria_label", "has_pre_plain_text",
+        "aria_label_ends_with_colon", "child_count",
+    }
+    for key in returned:
+        assert f"{key}:" in js, f"{key} is documented as returned but is not in the query"
+    # `label` is read into a local to test it; it must never be returned.
+    assert "label," not in js.replace("const label", "")
+    assert "textContent" not in js
+    assert "innerText" not in js
+
+
 def test_no_message_body_reaches_a_signature() -> None:
     row = FakeRow(body="my bank card is 4111 1111 1111 1111")
     signature = probe.signature_for(row, chat_title=REAL_NAME)

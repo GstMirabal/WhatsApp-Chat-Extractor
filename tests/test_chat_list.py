@@ -12,6 +12,8 @@ exactly that, found by the operator rather than by the code.
 
 from __future__ import annotations
 
+import random
+
 import pytest
 
 from whatsapp_chat_extractor.chat_list import (
@@ -436,6 +438,51 @@ def test_a_budget_that_runs_out_while_still_finding_chats_is_unconverged() -> No
     result = sweep_until_stable(pane, max_passes=4000, settle_ms=0, max_sweeps=2)
     assert result["enumeration"] == ENUMERATION_UNCONVERGED
     assert result["sweeps"] == 2
+
+
+class RandomReorderPane(FakePane):
+    """A harder list: moves a **random** conversation to the top, not the last.
+
+    `ReorderingPane` rotates the tail to the head, which is a favourable shape
+    for a converging sweep — a rotation eventually walks every conversation past
+    the window on its own. This moves an arbitrary conversation instead, so
+    recovery cannot be an artifact of the fixture's regularity.
+
+    Added at the Phase 7 gate, after the committed evidence was found to rest on
+    the friendlier fixture alone.
+    """
+
+    def __init__(
+        self, *args: object, every: int = 5, seed: int = 0, **kwargs: object
+    ) -> None:
+        super().__init__(*args, **kwargs)
+        self._every = every
+        self._reads = 0
+        self._rng = random.Random(seed)
+
+    def query_selector_all(self, selector: str) -> list[FakeRow]:
+        self._reads += 1
+        if self._reads % self._every == 0 and len(self.titles) > 1:
+            self.titles.insert(0, self.titles.pop(self._rng.randrange(len(self.titles))))
+        return super().query_selector_all(selector)
+
+
+@pytest.mark.parametrize("every", [5, 2])
+@pytest.mark.parametrize("seed", [0, 1, 2])
+def test_recovery_survives_an_irregular_reordering(every: int, seed: int) -> None:
+    """The fix must not depend on the reordering being a tidy rotation."""
+    single = sweep_chat_list(
+        RandomReorderPane(titles(899), every=every, seed=seed, **MEASURED),
+        max_passes=4000, settle_ms=0,
+    )
+    assert len(single) < 899, "the single-pass sweep must still lose conversations here"
+
+    result = sweep_until_stable(
+        RandomReorderPane(titles(899), every=every, seed=seed, **MEASURED),
+        max_passes=4000, settle_ms=0,
+    )
+    assert len({ref["chat_id"] for ref in result["refs"]}) == 899
+    assert result["enumeration"] == ENUMERATION_CONVERGED
 
 
 def test_the_classifier_never_reports_converged_without_the_foot() -> None:
