@@ -2,7 +2,7 @@
 
 **Canonical path**: `docs/sprints/008-backend-extractor/IMPLEMENTATION_PLAN.md`
 **Branch**: `ai-sprint/008` · **Base**: `main` at `ac6ddd9`
-**Status**: `DRAFT` → `APPROVED` → `EXECUTING` → `CLOSED`
+**Status**: ~~`DRAFT`~~ → **`APPROVED`** → `EXECUTING` → `CLOSED`
 
 > Authored at Phase 1 (Planning) by `principal_agent`, extracted to this path at
 > Phase 3, and **committed before Phase 5 approves it**: `agents.md §2 triple_lock`
@@ -380,9 +380,9 @@ despachan subagentes cuyo veredicto ya se sabe que llega sin evidencia.
 
 | Field | Value |
 | :--- | :--- |
-| **Approved by** | _pendiente_ |
-| **Date** | _pendiente_ |
-| **Plan commit at approval** | _pendiente_ |
+| **Approved by** | GstMirabal (human, attended, in-session) |
+| **Date** | 2026-09-01 |
+| **Plan commit at approval** | `50b8f83` |
 | **Remaining locks** | Active Sprint · QA + Tester verdicts · Human OK at close |
 
 *Phase 5 is a single attended human authorization. It MUST NOT be wrapped inside an
