@@ -2,9 +2,9 @@
 **File**: `docs/architecture/EXTRACTOR_BLUEPRINT.md`
 **Status**: `RATIFIED`
 **Sprint of origin**: #003
-**Last Audit Sprint**: #004
-**Last Audit Date**: 2026-08-30
-**Last Audit Commit SHA**: `b090ed3`
+**Last Audit Sprint**: #008
+**Last Audit Date**: 2026-09-01
+**Last Audit Commit SHA**: `d30a1b5`
 
 ---
 
@@ -50,8 +50,10 @@ Data model (schema v5, #007):
   `complete`, `completeness`, `stopped_reason`, `messages[]`
 - **MessageRecord**: `sender`, `timestamp`, `body`, `kind`, `order` — every
   message, whatever medium it carried
-- **RunManifest** (`manifest.py`, #007): `schema_version`, `started_at`,
-  `finished_at`, `chats_enumerated`, `enumeration_complete`, `counts`, `chats[]`
+- **RunManifest** (`manifest.py`, manifest schema v2, #008): `schema_version`,
+  `started_at`, `finished_at`, `chats_enumerated`, `enumeration`, `sweeps`,
+  `counts`, `chats[]`. The manifest versions independently of `ChatExport`:
+  it is at v2 while the export file is at v5
 - **ChatOutcome**: `chat_id`, `index`, `outcome`, `reason`, `completeness`,
   `message_count`, `file` — one per conversation the sweep found
 
@@ -143,6 +145,35 @@ This is **pseudonymization, not anonymization**, and the blueprint says so
 rather than implying more: the digest is unsalted, so a holder of the contact
 list can confirm a match by hashing a candidate name. Message bodies are
 untouched and may name people on their own.
+
+### Enumeration contract (ADR-0005, manifest schema v2, #008)
+
+`enumeration` states how far the run can vouch for having seen the whole chat
+list, in three values. It **replaces** the boolean `enumeration_complete`, which
+was set from whether the pane reached its foot — a true statement about the
+pane, and not the one its name made. A list that reorders mid-sweep drops
+conversations below the sweep position and they are never rendered into any
+pass: 882 of 899 found at one reorder per 5 reads, 856 at one per 2, zero
+duplicates, and the boolean reported `true` throughout.
+
+| `enumeration` | Condition | Meaning |
+| :--- | :--- | :--- |
+| `converged` | Pane foot reached **and** the final two sweeps contributed nothing new | Evidence the list was seen whole. Never proof — a conversation can evade any finite number of sweeps |
+| `unconverged` | Pane foot reached, sweeps still contributing when the budget ran out | The list was still yielding conversations when enumeration stopped |
+| `truncated` | Pane foot never reached | The pass cap ended the sweep |
+
+Fails closed: `converged` requires a positive demonstration of both conditions.
+`sweeps` carries the count, so the claim is auditable from the file. The
+mitigation is `sweep_until_stable`, which repeats `sweep_chat_list` from the
+head and unions by digest; measured recovery is 899 of 899 at both reorder rates
+in 4 sweeps, against 3 for a quiet list. `sweep_chat_list` is unchanged and
+remains the single-pass primitive, with its measured limit still pinned by
+`tests/test_chat_list.py::test_a_reordering_list_makes_the_sweep_UNDERCOUNT_silently`.
+
+Unlike `completeness`, this value set does **not** offer a `proven`. There, a
+future WhatsApp Web start marker would make `proven` reachable; here no
+observation of a virtualized list can ever establish that nothing moved behind
+the reader, so a permanently dead value is not defined.
 
 ### Completeness contract (ADR-0004, schema v5, #007)
 
