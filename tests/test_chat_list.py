@@ -16,15 +16,20 @@ import pytest
 
 from whatsapp_chat_extractor.chat_list import (
     CHAT_ROW_SELECTOR,
+    ENUMERATION_CONVERGED,
+    ENUMERATION_TRUNCATED,
+    ENUMERATION_UNCONVERGED,
     TITLE_SELECTORS,
     ChatRef,
     at_pane_bottom,
+    classify_enumeration,
     find_row,
     open_chat_by_digest,
     row_digests,
     row_title,
     seek_scroll_top,
     sweep_chat_list,
+    sweep_until_stable,
 )
 from whatsapp_chat_extractor.writers import pseudonymous_chat_id
 
@@ -374,3 +379,73 @@ def test_a_reordering_list_makes_the_sweep_UNDERCOUNT_silently() -> None:
     ids = [ref["chat_id"] for ref in refs]
     assert len(ids) == len(set(ids)), "no conversation may be enumerated twice"
     assert len(refs) < 899, "this test exists to pin an undercount that is real"
+
+
+# --- converging enumeration (ADR-0005) --------------------------------------
+#
+# The four tests above document `sweep_chat_list`, the single-pass primitive,
+# and remain true of it: Sprint 008 did not change that function. What follows
+# covers `sweep_until_stable`, which repeats it and unions the results.
+
+
+def test_repeated_sweeping_recovers_what_a_reordering_list_hid() -> None:
+    """The defect above, at the same reorder rate, against the converging sweep."""
+    pane = ReorderingPane(titles(899), every=5, **MEASURED)
+    result = sweep_until_stable(pane, max_passes=4000, settle_ms=0)
+    ids = [ref["chat_id"] for ref in result["refs"]]
+    assert len(ids) == 899, "a single sweep found 882 of these"
+    assert len(set(ids)) == 899
+    assert result["enumeration"] == ENUMERATION_CONVERGED
+
+
+def test_the_worst_measured_reorder_rate_also_recovers_everything() -> None:
+    """One reorder every two reads — where a single sweep found 856 of 899."""
+    pane = ReorderingPane(titles(899), every=2, **MEASURED)
+    result = sweep_until_stable(pane, max_passes=4000, settle_ms=0)
+    assert len({ref["chat_id"] for ref in result["refs"]}) == 899
+    assert result["enumeration"] == ENUMERATION_CONVERGED
+
+
+def test_a_quiet_list_converges_on_the_minimum_number_of_sweeps() -> None:
+    """Three: one to discover, two to agree. The cost of the fix, pinned."""
+    pane = FakePane(titles(899), **MEASURED)
+    result = sweep_until_stable(pane, max_passes=4000, settle_ms=0)
+    assert len(result["refs"]) == 899
+    assert result["sweeps"] == 3
+    assert result["enumeration"] == ENUMERATION_CONVERGED
+
+
+def test_the_union_is_reindexed_contiguously_in_discovery_order() -> None:
+    """`index` is a seek hint, so it must span the union with no holes."""
+    pane = ReorderingPane(titles(899), every=5, **MEASURED)
+    result = sweep_until_stable(pane, max_passes=4000, settle_ms=0)
+    assert [ref["index"] for ref in result["refs"]] == list(range(899))
+
+
+def test_a_sweep_that_never_reaches_the_foot_is_truncated_not_converged() -> None:
+    """The pass cap ended it, so nothing may be claimed about the whole list."""
+    pane = FakePane(titles(899), **MEASURED)
+    result = sweep_until_stable(pane, max_passes=2, settle_ms=0, max_sweeps=3)
+    assert result["enumeration"] == ENUMERATION_TRUNCATED
+    assert len(result["refs"]) < 899
+
+
+def test_a_budget_that_runs_out_while_still_finding_chats_is_unconverged() -> None:
+    """The foot was reached, but the sweeps had not stopped contributing."""
+    pane = ReorderingPane(titles(899), every=2, **MEASURED)
+    result = sweep_until_stable(pane, max_passes=4000, settle_ms=0, max_sweeps=2)
+    assert result["enumeration"] == ENUMERATION_UNCONVERGED
+    assert result["sweeps"] == 2
+
+
+def test_the_classifier_never_reports_converged_without_the_foot() -> None:
+    """Fail-closed: trailing agreement alone is not enough, in either direction."""
+    assert classify_enumeration(reached_bottom=False, stable_sweeps=99) == (
+        ENUMERATION_TRUNCATED
+    )
+    assert classify_enumeration(reached_bottom=True, stable_sweeps=0) == (
+        ENUMERATION_UNCONVERGED
+    )
+    assert classify_enumeration(reached_bottom=True, stable_sweeps=2) == (
+        ENUMERATION_CONVERGED
+    )
