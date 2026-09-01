@@ -24,7 +24,7 @@ def test_build_export_sets_fields() -> None:
     export = build_export(
         chat_title="Cliente Demo",
         messages=messages,
-        complete=True,
+        completeness="proven",
         stopped_reason="chat_start",
     )
     assert export["exported_at"].endswith("Z")
@@ -39,11 +39,12 @@ def test_build_export_declares_schema_and_completeness() -> None:
         messages=[
             {"sender": "me", "timestamp": "10:00, 27/8/2026", "body": "hola", "kind": "text", "order": 0},
         ],
-        complete=False,
+        completeness="truncated",
         stopped_reason="max_passes",
     )
     assert export["schema_version"] == SCHEMA_VERSION
     assert export["message_count"] == 1
+    assert export["completeness"] == "truncated"
     assert export["complete"] is False
     assert export["stopped_reason"] == "max_passes"
 
@@ -52,7 +53,7 @@ def test_message_count_tracks_the_message_list() -> None:
     export = build_export(
         chat_title="Cliente Demo",
         messages=[],
-        complete=False,
+        completeness="unproven",
         stopped_reason="stalled",
     )
     assert export["message_count"] == 0
@@ -63,7 +64,7 @@ def test_the_chat_name_never_reaches_the_payload() -> None:
     export = build_export(
         chat_title=REAL_NAME,
         messages=[],
-        complete=False,
+        completeness="unproven",
         stopped_reason="stalled",
     )
     assert "title" not in export
@@ -77,7 +78,7 @@ def test_the_chat_name_never_reaches_the_filename(tmp_path: Path) -> None:
     export = build_export(
         chat_title=REAL_NAME,
         messages=[],
-        complete=False,
+        completeness="unproven",
         stopped_reason="stalled",
     )
     path = write_chat_export(export, data_dir=tmp_path)
@@ -98,7 +99,7 @@ def test_write_chat_export_creates_json(tmp_path: Path) -> None:
         messages=[
             {"sender": "me", "timestamp": "10:00, 27/8/2026", "body": "hola", "kind": "text", "order": 0},
         ],
-        complete=True,
+        completeness="proven",
         stopped_reason="chat_start",
     )
     path = write_chat_export(export, data_dir=tmp_path)
@@ -114,24 +115,31 @@ def test_written_json_carries_the_completeness_fields(tmp_path: Path) -> None:
     export = build_export(
         chat_title="Cliente Demo",
         messages=[],
-        complete=False,
+        completeness="truncated",
         stopped_reason="max_passes",
     )
     payload = json.loads(
         write_chat_export(export, data_dir=tmp_path).read_text(encoding="utf-8")
     )
     assert payload["schema_version"] == SCHEMA_VERSION
+    assert payload["completeness"] == "truncated"
     assert payload["complete"] is False
     assert payload["stopped_reason"] == "max_passes"
     assert payload["message_count"] == 0
 
 
-# --- schema v4: every message states its medium (ADR-0003) ------------------
+# --- schema v5: completeness has three values (ADR-0004) --------------------
 
 
-def test_the_schema_version_is_four() -> None:
-    """v3 files carry no `kind`, so the version is what tells a reader apart."""
-    assert SCHEMA_VERSION == 4
+def test_the_schema_version_is_five() -> None:
+    """The version is what tells a reader which contract a file was written to.
+
+    v3 carries no `kind`; v4 carries `kind` and a boolean `complete` that is
+    always False; v5 carries `completeness`. A consumer cannot infer any of this
+    from the payload alone, which is why the number is asserted rather than
+    assumed.
+    """
+    assert SCHEMA_VERSION == 5
 
 
 def test_a_media_message_is_exported_with_an_empty_body_and_its_kind() -> None:
@@ -151,7 +159,7 @@ def test_a_media_message_is_exported_with_an_empty_body_and_its_kind() -> None:
     export = build_export(
         chat_title="Cliente Demo",
         messages=messages,
-        complete=True,
+        completeness="proven",
         stopped_reason="chat_start",
     )
     assert export["message_count"] == 3
@@ -170,7 +178,7 @@ def test_message_count_counts_every_medium_not_only_text() -> None:
     export = build_export(
         chat_title="Cliente Demo",
         messages=messages,
-        complete=False,
+        completeness="truncated",
         stopped_reason="max_passes",
     )
     assert export["message_count"] == 2
@@ -185,7 +193,7 @@ def test_no_media_url_or_binary_reaches_the_written_file(tmp_path: Path) -> None
     export = build_export(
         chat_title=REAL_NAME,
         messages=messages,
-        complete=True,
+        completeness="proven",
         stopped_reason="chat_start",
     )
     path = write_chat_export(export, data_dir=tmp_path)

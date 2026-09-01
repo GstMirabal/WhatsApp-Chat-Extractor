@@ -1,6 +1,6 @@
 {
-  "last_update": "2026-08-31",
-  "sprint_id": "006",
+  "last_update": "2026-09-01",
+  "sprint_id": "007",
   "entries": [
     {
       "id": "KI-001-A",
@@ -139,6 +139,48 @@
       "sprint": "006",
       "routing_class": "host",
       "lesson": "Measure the tool against a real browser before pointing it at real data: exercising the probe on a synthetic DOM found a defect that would have made the sprint answer H2 from missing evidence."
+    },
+    {
+      "id": "KI-007-A",
+      "summary": "audit_plan.py ships inside the token-saver-auditor skill (.agents/skills/token-saver-auditor/scripts/audit_plan.py), never at .agents/scripts/; cite the skill path, which pipeline_workflow.md Phase 1 already does.",
+      "routing_class": "host",
+      "sprint": "007"
+    },
+    {
+      "id": "KI-007-B",
+      "summary": "After sync_agents_pin.py bumps the pin mid-session, re-read any harness-sensitive slash command before trusting a flag copied out of it: the /agents:start text can be rendered from the pre-bump mirror and claim the anchor as the wrong tool.",
+      "routing_class": "host",
+      "sprint": "007"
+    },
+    {
+      "id": "KI-007-C",
+      "summary": "Phase 4.3 shipped three Work rows with no paired test row (four occurrences across two sprints); hooks/on_commit.py only guards fix( commits. Proposal: check_task_scope.py should reject a create/modify row on a source path with no test row in the same table.",
+      "routing_class": "nucleus",
+      "sprint": "007"
+    },
+    {
+      "id": "KI-007-D",
+      "summary": "A sweep over a scrollable region must prove it reached the region's end before claiming anything about the whole of it; consecutive quiet passes are evidence of a render buffer, not of exhaustion.",
+      "routing_class": "host",
+      "sprint": "007"
+    },
+    {
+      "id": "KI-007-E",
+      "summary": "Two readings compared for change MUST be taken at the same anchor and the anchor recorded in the report; a comparison whose two sides disagree about their own row count is comparing different windows.",
+      "routing_class": "host",
+      "sprint": "007"
+    },
+    {
+      "id": "KI-007-F",
+      "summary": "Where a probe's verdict decides a design, run it at least twice and diff the outputs before acting: every defect this sprint found was exposed by the next measurement, never by review.",
+      "routing_class": "host",
+      "sprint": "007"
+    },
+    {
+      "id": "KI-007-G",
+      "summary": "Run the max_lines_per_func cap over the whole tree (src/ and scripts/), not over the files just edited; a check scoped to what you remember touching measures your memory.",
+      "routing_class": "host",
+      "sprint": "007"
     }
   ]
 }

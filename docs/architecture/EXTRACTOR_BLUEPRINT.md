@@ -34,20 +34,26 @@ an invalid one.
 | Aspect | Value |
 | :--- | :--- |
 | **Owns** | `src/whatsapp_chat_extractor/`, `tests/`, `pyproject.toml`, writes under `data/` |
-| **Must not touch** | Sentiment/bot code; all-chats dump (P3); `.agents/` internals |
+| **Must not touch** | Sentiment/bot code; `.agents/` internals |
 
 | Interface | Type | Defined in |
 | :--- | :--- | :--- |
 | `wa-extract login` | CLI | `src/whatsapp_chat_extractor/__main__.py` |
 | `wa-extract export-one` | CLI | `src/whatsapp_chat_extractor/__main__.py` |
+| `wa-extract export-all` | CLI | `src/whatsapp_chat_extractor/__main__.py` (#007) |
 | `ChatExport` JSON | file schema | `writers.ChatExport` / this blueprint §3 |
+| `RunManifest` JSON | file schema | `manifest.RunManifest` / this blueprint §3 (#007) |
 | `/wa-export <chat>` | slash command | `.claude/commands/wa-export.md`, `.cursor/commands/wa-export.md` |
 
-Data model (schema v4, #005):
+Data model (schema v5, #007):
 - **ChatExport**: `schema_version`, `chat_id`, `exported_at`, `message_count`,
-  `complete`, `stopped_reason`, `messages[]`
+  `complete`, `completeness`, `stopped_reason`, `messages[]`
 - **MessageRecord**: `sender`, `timestamp`, `body`, `kind`, `order` — every
   message, whatever medium it carried
+- **RunManifest** (`manifest.py`, #007): `schema_version`, `started_at`,
+  `finished_at`, `chats_enumerated`, `enumeration_complete`, `counts`, `chats[]`
+- **ChatOutcome**: `chat_id`, `index`, `outcome`, `reason`, `completeness`,
+  `message_count`, `file` — one per conversation the sweep found
 
 ### Kind contract (ADR-0003, #005)
 
@@ -84,15 +90,29 @@ the sequence.
 
 ### Identity contract
 
-No personal identifier is written to disk.
+No personal identifier is written to disk **by default**. One file is the
+exception and is named for it: `data/chat_index_<stamp>.json`, written only when
+the operator passes `export-all --write-index`, maps `chat_id` back to the real
+conversation name. It is a separate file from the run manifest so it can be
+deleted without losing the record of what a run did, and the manifest itself
+never carries a title.
 
 | Field | Rule |
 | :--- | :--- |
-| `chat_id` | `chat_` + first 12 hex of `sha256(chat title)`. Stable across exports |
+| `chat_id` | `chat_` + first 12 hex of `sha256(chat title)`. Stable across exports **while the title is unchanged** — see below |
 | filename | `<chat_id>_<stamp>.json` — a directory listing shows no name |
 | `title` | Removed in v3. The title is hashed in `build_export` and dropped |
 | `sender` | A role — `me`, `contact`, `unknown` — never a name |
 | `timestamp` | The bracketed part of `data-pre-plain-text`; the name after it is discarded in the same expression. A row without that attribute falls back to the meta clock, which carries no date |
+
+**The digest follows the title, so identity is not permanent (#007).** Two
+enumeration sweeps 2.5 hours apart both counted 899 conversations and shared
+**898** of them: one digest changed, because a conversation was renamed or a bare
+number acquired a saved contact name. Within a run the digest is a sound key —
+zero title collisions in 7 100 row observations across a 899-chat list — but a
+renamed conversation becomes a **new** `chat_id`, and its later exports will not
+link to its earlier ones. `pseudonymous_chat_id` documents itself as stable
+across exports; that promise holds only while the title does.
 
 ### Direction contract
 
@@ -124,17 +144,28 @@ rather than implying more: the digest is unsalted, so a holder of the contact
 list can confirm a match by hashing a candidate name. Message bodies are
 untouched and may name people on their own.
 
-### Completeness contract
+### Completeness contract (ADR-0004, schema v5, #007)
 
-`complete` is `true` only when the harvest reached the beginning of the chat.
-`stopped_reason` keeps a proven start distinguishable from an inferred one,
-because WhatsApp Web does not always render a start marker:
+`completeness` states how far back a harvest can prove it reached, in three
+values. `complete` survives as a boolean **derived** from it — never set
+independently, so the two cannot disagree — because schema v4 files exist and a
+reader of the boolean must not break on a v5 file.
 
-| `stopped_reason` | `complete` | Meaning |
-| :--- | :--- | :--- |
-| `chat_start` | `true` | A start-of-conversation marker was found |
-| `stalled` | `false` | The panel stopped loading; the top is inferred, not proven |
-| `max_passes` | `false` | The hard cap ended the run; history remains above |
+| `completeness` | `complete` | Condition | Meaning |
+| :--- | :--- | :--- | :--- |
+| `proven` | `true` | `stopped_reason == "chat_start"` | The beginning was **observed** |
+| `unproven` | `false` | `stalled`, panel quiet | The panel stopped producing history and nothing indicated more was coming. An inference, named as one |
+| `truncated` | `false` | `max_passes`, or `stalled` while loading | The harvest ended before the conversation did |
+
+`classify_completeness` **fails closed**: a stop reason it does not recognise is
+`truncated`, never `proven`. An unknown reason is not evidence of having arrived.
+
+The `stalled`-while-loading pairing is defensive rather than reachable, and
+deliberately kept: `decide_stop` suppresses the stall verdict while the panel is
+fetching, so the harvest loop no longer produces it. It is exactly what Sprint
+006's probe run 3 recorded before that fix — 175 passes with a `loading-spinner`
+still on screen — and classifying it as `unproven` would reinstate the error the
+fix removed.
 
 `stalled` counted as complete until the first live run, which exported 217
 messages of a longer conversation and marked them complete. Only the marker is
@@ -150,19 +181,47 @@ reason — rather than claiming a top. Measured: one conversation was declared
 `stalled` after 175 passes with a spinner on screen, and ran 255 with the panel
 genuinely quiet once corrected.
 
-**`complete: true` has never been produced, and Sprint 006 established it is
-unreachable in practice.** Across five real conversations and two runs, with the
-stall defect corrected, `COMPLETE_REASONS` did not fire once and no start marker
-appeared in any panel — `data-icon` was empty in every chrome inventory taken.
-The narrower statement is the honest one: no harvest reached a *provable*
-beginning, so "the marker does not exist" remains an inference. Either way the
-consequence for this contract is the same and is the reason `ADR-0004` is owed —
-**a field that is always `false` cannot distinguish a complete history from a
-truncated one**, which is the single thing it exists to do in a training corpus.
-Evidence: `docs/sprints/006-backend-extractor/DOM_PROBE_NOTES.md`.
+**`proven` has never been produced, and Sprint 006 established it is unreachable
+in practice.** Across five real conversations and two runs, with the stall defect
+corrected, `COMPLETE_REASONS` did not fire once and no start marker appeared in
+any panel — `data-icon` was empty in every chrome inventory taken. The narrower
+statement is the honest one: no harvest reached a *provable* beginning, so "the
+marker does not exist" remains an inference. Evidence:
+`docs/sprints/006-backend-extractor/DOM_PROBE_NOTES.md`.
 
-`wa-extract export-one` exits `3` on `complete: false`, so a caller detects a
-truncated corpus without parsing the file.
+That measurement is what `ADR-0004` decided against: a field that is always
+`false` cannot distinguish a complete history from a truncated one, which is the
+single thing it exists to do in a training corpus. `proven` is nonetheless kept
+in the value set, because the day WhatsApp Web renders a start marker the export
+must be able to say so without another schema change.
+
+**Only `truncated` is a failure.** `export-one` exits `3` on `truncated` and `0`
+otherwise. It previously exited `3` whenever `complete` was false, which — since
+`complete` was never true — meant **every export ever produced reported failure**
+and advised raising a `--max-passes` cap that was not the cause.
+
+### Enumeration contract (#007)
+
+Measured before written, over three probe runs
+(`docs/sprints/007-backend-extractor/CHAT_LIST_PROBE_NOTES.md`):
+
+| Property | Measurement |
+| :--- | :--- |
+| The chat pane **virtualizes** | 899 conversations seen while the DOM never held more than 70 rows at once |
+| Position is **stable across a sweep** | 0 of 69 positions changed between two readings anchored at the pane head, two minutes apart |
+| Titles are **unique within a run** | 0 collisions in 7 100 row observations |
+| The working title selector is `span[title]` | The two `cell-frame-title` candidates match nothing in this build |
+
+Consequences, and they are not interchangeable:
+
+| Rule | Why |
+| :--- | :--- |
+| Enumeration is a **sweep that merges by identity**, never one `query_selector_all` | A single read returns 70 of 910 and reports success |
+| A sweep stops only once the pane foot is reached **and** three passes add nothing | Quiet passes before the foot mean the sweep is inside the render buffer, not that the list ended. Probe run 1 confounded them and named a whole list from 3.3% of it |
+| `index` is a **hint** for where to look; `chat_id` is the identity | Position is proven stable over a two-minute sweep and unproven over a run of hours |
+| Every open is **verified**: the opened title must hash to the requested `chat_id`, or the run refuses that chat | H-001 shipped a wrong-chat export because a click was trusted without checking what it opened |
+| A conversation that fails is recorded and the run **continues**; losing the session aborts it | A run of hundreds that dies on the third wastes the manual login and every export already made. A lost session, by contrast, makes every later attempt fail identically |
+| A conversation beyond `--limit` is recorded as `skipped`, never omitted | An omitted conversation is indistinguishable from one that never existed |
 
 ## 4. Runtime View
 
@@ -213,6 +272,8 @@ truncated corpus without parsing the file.
 
 - `docs/decisions/ADR-0001-product-scope-whatsapp-web.md`: Web + text JSON + Cursor/scripts split
 - `docs/decisions/ADR-0002-delivery-program-and-layout.md`: P1 spike layout + exit criterion
+- `docs/decisions/ADR-0003-media-placeholders-in-export.md`: media messages are placeholders, never dropped (schema v4)
+- `docs/decisions/ADR-0004-completeness-criterion.md`: `completeness` has three values; `complete` is derived (schema v5)
 - Sprint #004 brought full history forward from P3: a corpus truncated by a
   scroll count does not serve the stated consumer
   (`docs/sprints/004-backend-extractor/IMPLEMENTATION_PLAN.md`)
