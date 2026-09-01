@@ -8,6 +8,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · Versioning: [SemVer](
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-09-01
+
 ### Added
 
 - **Sprint 007 (`backend-extractor` / P3b «all chats»)** — `wa-extract export-all`
