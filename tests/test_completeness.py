@@ -145,16 +145,26 @@ def test_panel_loading_defaults_to_not_loading() -> None:
 # --- the export payload ---------------------------------------------------
 
 
-def test_export_is_schema_v5_and_states_completeness() -> None:
+def test_export_is_schema_v6_and_states_completeness() -> None:
+    """The completeness contract is unchanged by v6; only the version moved.
+
+    `ADR-0007` is additive: `completeness`, `complete` and `stopped_reason`
+    carry exactly what `ADR-0004` gave them. This case exists to prove that a
+    schema bump did **not** quietly alter the three-valued verdict — which is
+    also why it asserts the literal, not `SCHEMA_VERSION == SCHEMA_VERSION`
+    (`KI-008-F`).
+    """
     export = build_export(
         chat_title="Some Contact",
         messages=[],
         completeness=COMPLETENESS_UNPROVEN,
         stopped_reason=STOP_STALLED,
     )
-    assert export["schema_version"] == 5
-    assert SCHEMA_VERSION == 5
+    assert export["schema_version"] == 6
+    assert SCHEMA_VERSION == 6
     assert export["completeness"] == COMPLETENESS_UNPROVEN
+    assert export["complete"] is False
+    assert export["stopped_reason"] == STOP_STALLED
 
 
 def test_export_derives_complete_from_completeness() -> None:
