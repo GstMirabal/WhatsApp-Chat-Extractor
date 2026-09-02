@@ -56,6 +56,18 @@ and the work the units were given.
 for titles, threading `run_id` into the batched writer made every pass of one
 run truncate the same file, and that fold-in is the repair.
 
+**Both are carried to Sprint 010 by human decision at session #16**, taken with
+the gaps described as they are above. Neither is closed in Sprint 009, and
+neither plan text is amended to match the code — `§D5` and `§D6` stand as
+written, with this log recording that the sprint did not reach them. Phase 8
+carries both into `docs/roadmaps/docs/extractor/002-delivery-program.md` under
+`RA-05`:
+
+| Carried | What Sprint 010 must decide |
+| :--- | :--- |
+| `§D5` | Whether the title index becomes the append-only `chat_index_<run_id>.ndjson` the note specifies, and whether `_titles_for_index` is then withdrawn as redundant |
+| `§D6` | Whether the run orchestration leaves `__main__.py` for a module of its own, and what line ceiling the file is held to afterwards |
+
 **Unit `C1` deviated from its row in five places**, each because the file
 disagreed with the plan, and each recorded in the commit body of `b068d1a`
 rather than left to be inferred from the diff. Four are corrections the row
