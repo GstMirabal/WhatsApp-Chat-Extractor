@@ -5,8 +5,8 @@
 
 This is the **Documentation Entry Point**. `agents.md §0 (Entry Point)` requires every session to read this file before anything else. It is intentionally short — for the full component inventory, see `.agents/docs/architecture/topology_map.md`.
 
-**Decisions:** [ADR-0001](decisions/ADR-0001-product-scope-whatsapp-web.md) (product) · [ADR-0002](decisions/ADR-0002-delivery-program-and-layout.md) (delivery + layout) · [ADR-0003](decisions/ADR-0003-media-placeholders-in-export.md) (media placeholders) · [ADR-0004](decisions/ADR-0004-completeness-criterion.md) (completeness) · [ADR-0005](decisions/ADR-0005-enumeration-completeness.md) (enumeration)  
-**Released:** `v0.7.0` — whole-account `export-all` with a run manifest. **In flight:** Sprint 008 on `ai-sprint/008` — the silent enumeration undercount, and a probe for the `sender`/`kind` unknown rates  
+**Decisions:** [ADR-0001](decisions/ADR-0001-product-scope-whatsapp-web.md) (product) · [ADR-0002](decisions/ADR-0002-delivery-program-and-layout.md) (delivery + layout) · [ADR-0003](decisions/ADR-0003-media-placeholders-in-export.md) (media placeholders) · [ADR-0004](decisions/ADR-0004-completeness-criterion.md) (completeness) · [ADR-0005](decisions/ADR-0005-enumeration-completeness.md) (enumeration) · [ADR-0006](decisions/ADR-0006-run-journal-and-resume.md) (run journal + resume) · [ADR-0007](decisions/ADR-0007-corpus-contract-v6.md) (corpus contract v6)  
+**Released:** `v0.8.1` — whole-account `export-all` with convergent enumeration (`ADR-0005`) and a run manifest. **In flight:** Sprint 009 on `ai-sprint/009` — an append-only run journal for resume, and corpus contract v6 (`message_id`, `timestamp_iso`, pinned locale/timezone, `passes_used`)  
 **Blueprint:** [EXTRACTOR_BLUEPRINT.md](architecture/EXTRACTOR_BLUEPRINT.md)  
 **Program roadmap:** [docs/roadmaps/docs/extractor/002-delivery-program.md](roadmaps/docs/extractor/002-delivery-program.md)
 
@@ -88,6 +88,8 @@ Run `/agents:start`. It will:
 | `src/whatsapp_chat_extractor/` | Playwright/Web export package | Present (#003) |
 | `src/whatsapp_chat_extractor/chat_list.py` | Chat-list enumeration; opens a chat by verified identity | Present (#007) |
 | `src/whatsapp_chat_extractor/manifest.py` | Run manifest; opt-in `chat_id` → name index | Present (#007) |
+| `src/whatsapp_chat_extractor/journal.py` | Append-only NDJSON run journal, `fsync` per record; recovery via `read_journal`, resume via `exported_chat_ids` | Present (#009) |
+| `src/whatsapp_chat_extractor/timestamps.py` | Locale-aware timestamp parsing (`parse_rendered` → ISO-8601); `undated_count` gap accounting | Present (#009) |
 | `scripts/probe_chat_start.py` | Start-marker probe (operator-run) | Present (#006) |
 | `scripts/probe_chat_list.py` | Chat-list virtualization / index-stability probe (operator-run) | Present (#007) |
 | `scripts/probe_unknown_rows.py` | DOM signatures of rows whose `sender` or `kind` is `unknown` (operator-run) | Present (#008) |
@@ -99,6 +101,8 @@ Run `/agents:start`. It will:
 | `docs/decisions/ADR-0003-*.md` | Media placeholders (supersedes ADR-0001 coverage) | Present (#005) |
 | `docs/decisions/ADR-0004-*.md` | Completeness as three values (supersedes ADR-0001 «full history») | Present (#007) |
 | `docs/decisions/ADR-0005-*.md` | Enumeration completeness as three values (supersedes `enumeration_complete`) | Present (#008) |
+| `docs/decisions/ADR-0006-run-journal-and-resume.md` | Append-only run journal and `--resume` contract | Present (#009) |
+| `docs/decisions/ADR-0007-corpus-contract-v6.md` | Corpus contract v6: `message_id`, `timestamp_iso`, pinned locale + resolved timezone, `passes_used` | Present (#009) |
 | `.github/workflows/ci.yml` | ruff, pytest, no-committed-chats guard | Present (#004), not executing — billing |
 | `docs/PLATFORM_HARDENING.md` | Controls pending a public repository | Present (#004) |
 | `docs/` / `.agents/` | Docs + framework | Present |
