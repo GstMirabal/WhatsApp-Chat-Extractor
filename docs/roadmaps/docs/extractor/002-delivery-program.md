@@ -1,5 +1,9 @@
 # Roadmap: WhatsApp Chat Extractor — delivery program
 
+**Last Audit Sprint**: #008
+**Last Audit Date**: 2026-09-02
+**Last Audit Commit SHA**: `e0e1a4f` (`v0.8.0`)
+
 Program authority: [ADR-0001](../../decisions/ADR-0001-product-scope-whatsapp-web.md),
 [ADR-0002](../../decisions/ADR-0002-delivery-program-and-layout.md),
 [ADR-0003](../../decisions/ADR-0003-media-placeholders-in-export.md).
@@ -12,8 +16,14 @@ Program authority: [ADR-0001](../../decisions/ADR-0001-product-scope-whatsapp-we
 | P2.5 | 005 | CLOSED | Corpus fidelity + operator surface: media placeholders, Cursor entry, README, LICENSE |
 | P3a | 006 | **CLOSED (partial)** | Completeness criterion. **Measured**: `complete: true` is unreachable — `COMPLETE_REASONS` never fired across 5 conversations with the harvester's stall defect corrected. The goal as originally worded ("`chat_start` verified") turned out to be unachievable, which is the finding. `ADR-0004` and the schema change it governs were gate-withheld and carry into 007 |
 | P3b | **007** | **CLOSED** | All chats: `export-all` enumerates the whole list, exports each and writes a run manifest. **Measured**: the chat list virtualizes (899 conversations behind a 70-row window), position is stable across a sweep and no two chats share a title, so the digest is the enumerator's key. `ADR-0004` decided completeness as three values and schema v5 carries it. Live-verified with `--limit 3`: 3 exported, 0 failed, 907 skipped of 910. **A whole-account run is ~15 hours**, which P4 should address before it is routine |
-| P4 | 008 | GATED | Platform hardening — blocked until the repository is public |
+| P4 | **008** | **CLOSED (partial)** | Platform hardening, plus an unplanned defect fix that took the sprint's centre. **Measured**: the single-pass enumeration silently lost conversations whenever the chat list reordered (882 of 899 at one reorder per 5 reads, 856 at one per 2, no duplicates) while `enumeration_complete` reported `true`. `sweep_until_stable` recovers **899 of 899** at both rates; `ADR-0005` replaces the boolean with three values and manifest schema v2 carries it. Platform: the Actions **billing block cleared** and CI now executes for real, so `v0.8.0` is the first release with independent verification behind it — but branch protection still returns `403` on a private free-plan repository, so `ci_gate.py` still refuses. Released as `v0.8.0` |
+| P5 | 009 | **PROPOSED** | Corpus confidence and run resilience — see below. Not a capability gap: `export-all` already satisfies `ADR-0001` |
 | — | — | OUT OF REPO | AI analysis (solicitudes, sentimiento), learning server, bot |
+
+**The product scope is complete.** P0 through P3b are closed and `wa-extract
+export-all` does what `ADR-0001` asked: one invocation exports every
+conversation and the manifest states the outcome of each. What P5 proposes is
+confidence in the corpus and survivability of a long run, not new capability.
 
 Restructured 2026-08-30 after Sprint 004 closed. P3 was one undifferentiated
 "harden" row; splitting it separates a risk that must be retired alone (does a
@@ -73,18 +83,55 @@ Only meaningful once one chat is proven to finish.
 Exit criterion: one invocation exports every chat, and the manifest states the
 outcome of each.
 
-## Sprint 008 — P4 Platform hardening (GATED)
+## Sprint 008 — P4 Platform hardening, and the defect that displaced it
 
-Blocked by plan limits, not by engineering. See
-[docs/PLATFORM_HARDENING.md](../../PLATFORM_HARDENING.md).
+Planned as platform work. What the sprint actually turned on was an open defect
+carried out of Sprint 007's own review: the enumerator lost conversations in
+silence. That took the centre, and the platform row was re-probed rather than
+applied.
 
-| # | Deliverable | Blocker |
+| # | Deliverable | Outcome |
 | :--- | :--- | :--- |
-| 1 | CI actually executing | Actions minutes are billed on private repositories |
-| 2 | Branch protection with the four required checks | Needs a public repository or GitHub Pro |
-| 3 | `/agents:harden`: secret scanning, Dependabot alerts, private vulnerability reporting | Same |
-| 4 | `SECURITY.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `NOTICE` | None — can be done any time |
-| 5 | Nucleus PRs for `UPSTREAM_FINDING_004` and `_005` | None — needs a separate `.agents` clone |
+| 1 | CI actually executing | **DONE** — the billing block cleared 2026-09-01. Run `33598297247` passed four jobs with real steps (5–23 s, 5–8 steps each) against the old 2–5 s zero-step failures |
+| 2 | Branch protection with the four required checks | **STILL BLOCKED** — `403`, *"Upgrade to GitHub Pro or make this repository public"*. A plan limitation, **not** a token scope problem, which the state anchor had recorded wrongly for four sprints |
+| 3 | `/agents:harden`: secret scanning, Dependabot alerts, private vulnerability reporting | **NOT APPLIED** — read-only probe only. Each write either returns `403` on this plan or changes the repository's public posture, which is the owner's decision |
+| 4 | `SECURITY.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `NOTICE.md` | **NOT DONE** — all four still absent; `LICENSE` is present. Unblocked, and still owed |
+| 5 | Nucleus PRs for the upstream findings | **DRAFTED, NOT SUBMITTED** — eleven drafts now on disk (`_003`–`_013`); six written this sprint. The PR is a separate act in a separate clone (`§3 jurisdiction`) |
+
+### Unplanned, and the reason the sprint mattered
+
+| # | Delivered | Evidence |
+| :--- | :--- | :--- |
+| 1 | `sweep_until_stable` — repeat the sweep from the head, union by digest, stop when two consecutive sweeps add nothing | 899/899 at `every=5` **and** `every=2`, in 4 sweeps; confirmed again against an irregular fixture, not just the rotating one |
+| 2 | `ADR-0005` — `enumeration` is `converged` \| `unconverged` \| `truncated`, failing closed | Deliberately offers no `proven`: unlike `ADR-0004`, no future signal could make it reachable |
+| 3 | Manifest schema v1 → v2 | `enumeration_complete` removed, not derived |
+| 4 | `scripts/probe_unknown_rows.py` | Built and tested; the **live run was not taken** — it needs an authenticated session |
+| 5 | The Phase 7 gate-evidence deadlock diagnosed | `UPSTREAM_FINDING_013`: a `SubagentStop` hook demanded a `SPRINT_LOG` row the gate agents hold no tool to write, and the forced continuation overwrote ~178k tokens of evidence |
+
+**Before making the repository public**: no exported conversation is committed
+(`data/` gitignored since Sprint 003, and the CI job proves no file under it is
+tracked), but contact names remain in the commit history and in Sprint 003/004
+records. That review is a person's job and is a prerequisite, not a formality.
+
+## Sprint 009 — P5 Corpus confidence and run resilience (PROPOSED)
+
+Not yet planned or approved. Two units, and the ordering matters: the first
+produces the data the second does not need, so they are independent and either
+can be dropped.
+
+| # | Deliverable | Why now |
+| :--- | :--- | :--- |
+| 1 | Run `scripts/probe_unknown_rows.py` live, then classify | `sender: unknown` at 3.9% (5 of 129) and `kind: unknown` at 9.6% (30 of 311) in the #007 live run, causes unmeasured. `KI-004-A` forbids classifying without the data; the instrument exists and is operator-gated |
+| 2 | Resume after a mid-run failure | Sprint 006's deliverable 3, never implemented. `manifest.py` says so in its own docstring: the data model allows it, the code does not do it. A whole-account run is **~15 hours**, and the manifest is written only at the end — so a crash at hour 12 leaves the exported files orphaned with no record of which is which |
+
+Carried, not scheduled: test gaps `F-4` (`cmd_export_all` exit condition, needs
+a Playwright harness) and `F-6`; five pre-existing complexity violations in
+`export_one.py` and `__main__.py`; the nucleus PR.
+
+**What no sprint will fix.** `ADR-0004` established that `complete: true` is
+unreachable — no conversation can demonstrate it reached its beginning. That is
+a property of WhatsApp Web's DOM, not an outstanding task, and `ADR-0005`
+extends the same honesty to enumeration: convergence is evidence, never proof.
 
 **Before making the repository public**: no exported conversation is committed
 (`data/` gitignored since Sprint 003, verified by `git log --all --diff-filter=A -- data/`),
@@ -103,4 +150,14 @@ That review is a person's job and is a prerequisite, not a formality.
 | P2.5 | Media placeholders, Cursor entry, packaging metadata | Any change to the harvest loop |
 | P3a | Proving one chat completes; recovery | Enumerating chats |
 | P3b | All chats; manifest; failure policy | Downstream AI products |
-| P4 | Platform controls and upstream contributions | Product features |
+| P4 | Platform controls and upstream contributions | Product features — **the sprint departed from this** |
+| P5 | Measuring the `unknown` rates; surviving a 15-hour run | New capability; anything `ADR-0001` did not ask for |
+
+**P4's exclusion did not hold, and saying so is the point.** The row reads *"Out:
+Product features"*, and Sprint 008 shipped `sweep_until_stable`, `ADR-0005` and
+a manifest schema break — product work by any reading. It was the right call: an
+enumerator that loses conversations in silence invalidates the corpus the whole
+program exists to produce, and deferring it to hold a phase boundary would have
+protected the boundary at the expense of the product. Recorded as a deliberate
+departure rather than quietly reworded, because a phase table edited to match
+whatever happened stops constraining anything.
