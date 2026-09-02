@@ -42,11 +42,11 @@ is a judgment recorded so it can be argued with.
 | E1 | `src/whatsapp_chat_extractor/session.py` | modify | medium | `implementer_agent` | sonnet | medium | ✅ 1e49aef |
 | E2 | `src/whatsapp_chat_extractor/timestamps.py` | create | medium | `implementer_agent` | sonnet | medium | ✅ ef12083 |
 | E3 | `tests/test_timestamps.py` | create | low | `implementer_agent` | sonnet | medium | ✅ 495a371 |
-| E4 | `src/whatsapp_chat_extractor/history.py` | modify | medium | `implementer_agent` | sonnet | medium | ⏳ |
+| E4 | `src/whatsapp_chat_extractor/history.py` | modify | medium | `implementer_agent` | sonnet | medium | ✅ 2badc79 + 6c3b00c |
 | E5 | `src/whatsapp_chat_extractor/writers.py` | modify | high | `implementer_agent` (escalated) | opus | high | ✅ 7fdae2b |
-| E6 | `tests/test_history.py` | modify | low | `implementer_agent` | sonnet | medium | ⏳ |
-| E7 | `tests/test_writers.py` | modify | low | `implementer_agent` | sonnet | medium | ⏳ |
-| E8 | `tests/test_completeness.py` | modify | low | `implementer_agent` | sonnet | medium | ⏳ |
+| E6 | `tests/test_history.py` | modify | low | `implementer_agent` | sonnet | medium | ✅ 19b73d2 |
+| E7 | `tests/test_writers.py` | modify | low | `implementer_agent` | sonnet | medium | ✅ cd9dd0e |
+| E8 | `tests/test_completeness.py` | modify | low | `implementer_agent` | sonnet | medium | ✅ 9d1633a |
 | D1 | `docs/decisions/ADR-0006-run-journal-and-resume.md` | create | low | `doc_orchestrator` | sonnet | medium | ⏳ |
 | D2 | `docs/decisions/ADR-0007-corpus-contract-v6.md` | create | low | `doc_orchestrator` | sonnet | medium | ⏳ |
 | D3 | `docs/architecture/EXTRACTOR_BLUEPRINT.md` | modify | low | `doc_orchestrator` | sonnet | medium | ⏳ |
