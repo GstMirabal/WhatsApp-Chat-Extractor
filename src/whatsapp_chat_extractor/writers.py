@@ -135,6 +135,86 @@ def pseudonymous_chat_id(title: str) -> str:
     return f"chat_{digest[:CHAT_ID_LENGTH]}"
 
 
+def _derive_computed_fields(
+    messages: list[MessageRecord], completeness: str
+) -> tuple[int, bool]:
+    """Derive the fields ``build_export`` never accepts as arguments.
+
+    Kept separate from payload assembly so the derivation rule for each field
+    lives in exactly one place: ``undated_messages`` from the messages
+    themselves (ADR-0007), ``complete`` from ``completeness`` (ADR-0004).
+    Neither field may be supplied independently by a caller of either
+    function — a count or a boolean passed in could disagree with the data
+    beside it.
+
+    Args:
+        messages: Ordered messages, whose ``timestamp_iso`` values decide how
+            many rows WhatsApp rendered with a clock and no date.
+        completeness: ``proven``, ``unproven`` or ``truncated``, as
+            ``history.classify_completeness`` decided it.
+
+    Returns:
+        tuple[int, bool]: ``undated_messages`` and ``complete``, in that
+        order.
+    """
+    undated_messages = undated_count(
+        [message.get("timestamp_iso", "") for message in messages]
+    )
+    complete = completeness == COMPLETENESS_PROVEN
+    return undated_messages, complete
+
+
+def _assemble_export_payload(
+    *,
+    chat_title: str,
+    messages: list[MessageRecord],
+    completeness: str,
+    stopped_reason: str,
+    passes_used: int,
+    source_locale: str,
+    source_timezone: str,
+    undated_messages: int,
+    complete: bool,
+) -> ChatExport:
+    """Assemble the payload dict from fields already validated or derived.
+
+    Private to this module: ``undated_messages`` and ``complete`` are only
+    ever supplied here by ``build_export``, right after deriving them via
+    ``_derive_computed_fields``. Nothing else calls this helper, so
+    ``build_export`` — whose signature has no ``complete`` or
+    ``undated_messages`` parameter — is still the only public entry point
+    (ADR-0004, ADR-0007).
+
+    Args:
+        chat_title: Chat title from WhatsApp Web. Hashed, never written.
+        messages: Ordered messages of every kind.
+        completeness: ``proven``, ``unproven`` or ``truncated``.
+        stopped_reason: Which stop condition ended the harvest.
+        passes_used: Scroll passes the harvest spent.
+        source_locale: Locale the page rendered under.
+        source_timezone: IANA zone the clocks were rendered in.
+        undated_messages: Count from ``_derive_computed_fields``.
+        complete: Boolean from ``_derive_computed_fields``.
+
+    Returns:
+        ChatExport ready for JSON serialization.
+    """
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "chat_id": pseudonymous_chat_id(chat_title),
+        "exported_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "message_count": len(messages),
+        "undated_messages": undated_messages,
+        "complete": complete,
+        "completeness": completeness,
+        "stopped_reason": stopped_reason,
+        "passes_used": passes_used,
+        "source_locale": source_locale,
+        "source_timezone": source_timezone,
+        "messages": messages,
+    }
+
+
 def build_export(
     *,
     chat_title: str,
@@ -152,48 +232,36 @@ def build_export(
     is deliberate — an id parameter is a way for a name to be passed straight
     through into the file.
 
-    ``complete`` is derived here rather than accepted as an argument, so the
-    boolean and the three-valued field cannot be given disagreeing values by a
-    caller (ADR-0004). ``undated_messages`` is derived for the same reason: a
-    count supplied by a caller can disagree with the messages beside it.
+    ``complete`` and ``undated_messages`` are derived by
+    ``_derive_computed_fields`` rather than accepted as arguments, so neither
+    can be given a value that disagrees with the data it is derived from
+    (ADR-0004, ADR-0007). See that helper and ``_assemble_export_payload`` for
+    per-field documentation.
 
     Args:
         chat_title: Chat title from WhatsApp Web. Hashed, never written.
-        messages: Ordered messages of every kind, so `message_count` counts the
-            conversation rather than the text subset of it.
-        completeness: ``proven``, ``unproven`` or ``truncated``, as
-            ``history.classify_completeness`` decided it.
-        stopped_reason: Which stop condition ended the harvest, so a proven
-            start stays distinguishable from an inferred one.
-        passes_used: Scroll passes the harvest spent, from
-            ``history.HarvestResult``. It is the context ``completeness`` is
-            read in.
-        source_locale: Locale the page rendered under, from
-            ``session.DEFAULT_LOCALE``. Empty means unrecorded, which is what
-            every file before v6 effectively is.
-        source_timezone: IANA zone the clocks were rendered in, as
-            ``session.resolve_timezone`` read it. Empty when the page could not
-            answer.
+        messages: Ordered messages of every kind.
+        completeness: ``proven``, ``unproven`` or ``truncated``.
+        stopped_reason: Which stop condition ended the harvest.
+        passes_used: Scroll passes the harvest spent.
+        source_locale: Locale the page rendered under.
+        source_timezone: IANA zone the clocks were rendered in.
 
     Returns:
         ChatExport ready for JSON serialization.
     """
-    return {
-        "schema_version": SCHEMA_VERSION,
-        "chat_id": pseudonymous_chat_id(chat_title),
-        "exported_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "message_count": len(messages),
-        "undated_messages": undated_count(
-            [message.get("timestamp_iso", "") for message in messages]
-        ),
-        "complete": completeness == COMPLETENESS_PROVEN,
-        "completeness": completeness,
-        "stopped_reason": stopped_reason,
-        "passes_used": passes_used,
-        "source_locale": source_locale,
-        "source_timezone": source_timezone,
-        "messages": messages,
-    }
+    undated_messages, complete = _derive_computed_fields(messages, completeness)
+    return _assemble_export_payload(
+        chat_title=chat_title,
+        messages=messages,
+        completeness=completeness,
+        stopped_reason=stopped_reason,
+        passes_used=passes_used,
+        source_locale=source_locale,
+        source_timezone=source_timezone,
+        undated_messages=undated_messages,
+        complete=complete,
+    )
 
 
 def write_chat_export(
