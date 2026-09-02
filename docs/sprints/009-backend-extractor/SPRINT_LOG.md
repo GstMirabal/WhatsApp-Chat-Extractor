@@ -113,8 +113,42 @@ Gates emit; the Orchestrator transcribes (`config/artifact_registry.json`).
 
 | Gate | Round | Verdict | Class | Notes |
 | :--- | :--- | :--- | :--- | :--- |
-| QA (structural) | — | *pending* | — | Not yet run — Phase 7 |
-| Tester (functional) | — | *pending* | — | Not yet run — Phase 7 |
+| QA (structural) | 1 | `REJECTED` | `charter` | `manifest.py::manifest_from_journal` 54 lines against `max_lines_per_func` 50, new this sprint and undisclosed. **Scan covered three files and returned a verdict as if it had covered the sprint** |
+| QA (structural) | 2 | `REJECTED` | `charter` | `tests/test_resume.py` test function 51 lines. Scan widened to all modules and all touched tests |
+| QA (structural) | 3 | `APPROVED` | `charter` | 470 functions across 25 files, both axes of the rule. Zero sprint-introduced violations; the three remediations verified as pure extractions |
+| Tester (functional) | — | *pending* | — | Dispatched after gate 1 approved |
+
+**Model tier deviation.** `task_scope.md` records the gate tier as `opus`/`high`.
+The first `opus` attempt was killed mid-run by an API session limit, and every
+gate round after it ran on `sonnet`. Recorded rather than left to be inferred
+from a timestamp: a gate that ran below its declared tier is a fact about the
+certification, not about the code. Each round stated that no finding it made
+required escalated-tier judgment — all reduced to AST measurement, signature
+inspection or a diff against `d0cdbb4`.
+
+**Three violations of one rule, and what found them.** All three were
+`max_lines_per_func`, which `ruff` cannot catch because this project arms no
+function-length rule — the check lives on the gate for exactly that reason.
+
+| # | Function | Lines | Introduced by | Remediation |
+| :--- | :--- | :--- | :--- | :--- |
+| 1 | `manifest.py::manifest_from_journal` | 54 | `B1`, this session | `1f82981` — extracted `_with_reconstructed_skips`; 44 |
+| 2 | `writers.py::build_export` | 59 | `E5`, session #15 | `ab8454a` — extracted `_derive_computed_fields` and `_assemble_export_payload`; 47 |
+| 3 | `tests/test_resume.py` resume case | 51 | `C3`, this session | `68c550d` — extracted a `browserless_run` fixture; 25 |
+
+**Number 2 is the one worth remembering.** It was not found by a gate. Round 1
+scanned `manifest.py`, `__main__.py` and `export_one.py`, and `writers.py` was
+not among them; the Orchestrator found it while verifying round 1's finding and
+widening the scan. `build_export` was 40 lines at `d0cdbb4` and reached 59 when
+`E5` added the v6 fields, so the violation had already survived a block close, a
+diff review and one gate. **A verdict over an undeclared subset is worse than no
+verdict, because it reads as if it covered everything.** Rounds 2 and 3 were
+required to enumerate the files they scanned; round 3 scanned 25 and listed all
+25.
+
+No remediation weakened anything to satisfy a line count. Both source fixes were
+pure extractions with the suite unchanged at 277 / 1, and the test fix kept all
+six of its assertions — the one way that repair could have gone wrong.
 
 `RA-17`: each row emits `APPROVED` | `REJECTED` | `RECORD` with class
 `charter` / `instructing` / `testifying`. `RECORD` does not count toward the
