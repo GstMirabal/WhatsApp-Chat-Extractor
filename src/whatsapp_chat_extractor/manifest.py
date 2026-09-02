@@ -206,6 +206,43 @@ def build_manifest(
     }
 
 
+def _with_reconstructed_skips(
+    outcomes: list[ChatOutcome],
+    enumerated_refs: list[ChatRef],
+) -> list[ChatOutcome]:
+    """Append a `skipped` entry for every enumerated chat the journal missed.
+
+    The journal's own `outcomes` come first, unchanged and in the order they
+    were written. Reconstructed skips are appended after them, in
+    `enumerated_refs` enumeration order — not interleaved at each gap's
+    position. That ordering is a deliberate, recorded caveat (`KI-009-F`),
+    not an oversight: changing it is a behaviour change, not a cleanup.
+
+    Args:
+        outcomes: Outcomes already in the journal, in the order they were
+            written.
+        enumerated_refs: Every conversation the run's enumeration found, in
+            enumeration order.
+
+    Returns:
+        list[ChatOutcome]: The journal's outcomes followed by a `skipped`
+            entry, reason `run ended before this conversation`, for every
+            enumerated `chat_id` absent from `outcomes`.
+    """
+    recorded_ids = {outcome["chat_id"] for outcome in outcomes}
+    reconstructed = list(outcomes)
+    for ref in enumerated_refs:
+        if ref["chat_id"] not in recorded_ids:
+            reconstructed.append(
+                skipped(
+                    ref["chat_id"],
+                    index=ref["index"],
+                    reason="run ended before this conversation",
+                )
+            )
+    return reconstructed
+
+
 def manifest_from_journal(
     header: JournalHeader | None,
     outcomes: list[ChatOutcome],
@@ -242,17 +279,7 @@ def manifest_from_journal(
             "cannot reconstruct a manifest without a journal header: "
             "started_at, enumeration and sweeps are unknown"
         )
-    recorded_ids = {outcome["chat_id"] for outcome in outcomes}
-    reconstructed = list(outcomes)
-    for ref in enumerated_refs:
-        if ref["chat_id"] not in recorded_ids:
-            reconstructed.append(
-                skipped(
-                    ref["chat_id"],
-                    index=ref["index"],
-                    reason="run ended before this conversation",
-                )
-            )
+    reconstructed = _with_reconstructed_skips(outcomes, enumerated_refs)
     return build_manifest(
         reconstructed,
         started_at=header["started_at"],
