@@ -29,7 +29,7 @@ from whatsapp_chat_extractor.journal import (
     open_journal,
     write_header,
 )
-from whatsapp_chat_extractor.manifest import exported, now
+from whatsapp_chat_extractor.manifest import exported, failed, now
 from whatsapp_chat_extractor.writers import pseudonymous_chat_id
 
 RUN_ID = "20260101T000000Z"
@@ -78,6 +78,38 @@ def write_prior_pass(tmp_path: Path, titles: list[str]) -> Path:
                 pseudonymous_chat_id(title), index=position,
                 completeness="unproven", message_count=3, file=f"{title}.json",
             ))
+    finally:
+        handle.close()
+    return journal_path(RUN_ID, data_dir=tmp_path)
+
+
+def write_prior_pass_with_a_failure_pending_retry(tmp_path: Path, titles: list[str]) -> Path:
+    """Write a journal as if an earlier pass exported one chat and failed the next.
+
+    Args:
+        tmp_path: Where the journal lives.
+        titles: The three conversations, in enumeration order. The first is
+            recorded `exported`; the second is recorded `failed`, with no
+            `exported` line for it yet, as if the earlier pass attempted it
+            and lost. The third was never reached.
+
+    Returns:
+        Path: The journal file written.
+    """
+    handle = open_journal(RUN_ID, data_dir=tmp_path)
+    try:
+        write_header(
+            handle, run_id=RUN_ID, started_at=now(),
+            chats_enumerated=len(titles), enumeration="converged", sweeps=1,
+        )
+        append_outcome(handle, exported(
+            pseudonymous_chat_id(titles[0]), index=0,
+            completeness="unproven", message_count=3, file=f"{titles[0]}.json",
+        ))
+        append_outcome(handle, failed(
+            pseudonymous_chat_id(titles[1]), index=1,
+            reason="synthetic transient timeout",
+        ))
     finally:
         handle.close()
     return journal_path(RUN_ID, data_dir=tmp_path)
@@ -149,4 +181,38 @@ def test_resume_reopens_only_the_unexported_chat_and_the_manifest_carries_all_th
     }
     assert manifest["counts"]["exported"] == 3
     assert manifest["chats_enumerated"] == 3
+    assert exit_code == 0
+
+
+def test_resume_retries_a_failed_chat_and_the_manifest_counts_it_once_as_exported(
+    tmp_path: Path, browserless_run: list[str],
+) -> None:
+    """T-1: a conversation retried after failing must not be double counted.
+
+    The journal accumulates, in write order, `exported` for the first
+    conversation, `failed` for the second (from the pass this run resumes),
+    and then — because this resumed pass reopens the second conversation and
+    exports it successfully — a later `exported` line for that same second
+    conversation. `_manifest_from_journal_file` must fold those two lines for
+    the second conversation into one `exported` entry, so the manifest names
+    it once, `counts["failed"]` reads `0`, and the run exits `0`. Replacing
+    `_latest_per_chat` with the identity function would keep both lines, so
+    the manifest would carry the second conversation twice — once `failed`,
+    once `exported` — and misreport a run that succeeded on retry as one that
+    still has a failure in it.
+    """
+    write_prior_pass_with_a_failure_pending_retry(tmp_path, TITLES)
+
+    exit_code = cli.cmd_export_all(an_args(resume=RUN_ID, data_dir=tmp_path))
+
+    assert browserless_run == [
+        pseudonymous_chat_id("Beto"), pseudonymous_chat_id("Caro"),
+    ]
+    manifest_files = list(tmp_path.glob("run_manifest_*.json"))
+    manifest = json.loads(manifest_files[0].read_text(encoding="utf-8"))
+    beto_id = pseudonymous_chat_id("Beto")
+    beto_entries = [c for c in manifest["chats"] if c["chat_id"] == beto_id]
+    assert len(beto_entries) == 1
+    assert beto_entries[0]["outcome"] == "exported"
+    assert manifest["counts"]["failed"] == 0
     assert exit_code == 0
