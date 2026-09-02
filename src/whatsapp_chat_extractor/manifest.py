@@ -18,11 +18,17 @@ file behind an explicit flag rather than a column in the manifest:
 Both live under gitignored `data/`. They are separate so the operator can delete
 the index without losing the record of what the run did.
 
-**Resume is not implemented here, and the manifest is built to allow it.** Every
-entry carries the identity, the outcome and the file, so a later sprint can skip
-what already succeeded. `IMPLEMENTATION_PLAN.md` §D3 keeps retries out of this
-sprint: retrying without having measured why a conversation fails is guessing at
-how many times to guess.
+**Resume rebuilds the manifest from the journal; it is no longer unbuilt.**
+`journal.py` records each conversation's outcome durably as a run goes, so a
+run that dies before reaching this module's own output still leaves something
+to rebuild from. `manifest_from_journal` replays a journal's header and
+outcomes against the conversations a later enumeration found, and marks every
+enumerated `chat_id` the journal never reached `skipped`, with reason `run
+ended before this conversation` — distinguishable from a skip produced by
+`--limit`, and honest about a run that was interrupted rather than finished.
+`run_id`, minted once when a run starts, threads through `write_manifest` and
+`write_chat_index` so every file one run produces shares that identity instead
+of each deriving its own timestamp.
 """
 
 from __future__ import annotations
@@ -31,9 +37,13 @@ import json
 import logging
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, TypedDict
+from typing import TYPE_CHECKING, Any, TypedDict
 
 from whatsapp_chat_extractor.writers import DEFAULT_DATA_DIR
+
+if TYPE_CHECKING:
+    from whatsapp_chat_extractor.chat_list import ChatRef
+    from whatsapp_chat_extractor.journal import JournalHeader
 
 logger = logging.getLogger(__name__)
 
@@ -196,12 +206,73 @@ def build_manifest(
     }
 
 
-def write_manifest(manifest: RunManifest, data_dir: Path | None = None) -> Path:
+def manifest_from_journal(
+    header: JournalHeader | None,
+    outcomes: list[ChatOutcome],
+    enumerated_refs: list[ChatRef],
+) -> RunManifest:
+    """Rebuild a run manifest from its journal, without rerunning the export.
+
+    Every conversation `enumerated_refs` names that the journal's own
+    `outcomes` never reached is recorded as `skipped`, with reason `run ended
+    before this conversation` — distinct from a skip produced by `--limit`,
+    which the journal would already carry as an outcome.
+
+    Args:
+        header: The journal's header record, from :func:`journal.read_journal`.
+        outcomes: Outcomes already in the journal, in the order they were
+            written.
+        enumerated_refs: Every conversation the run's enumeration found, in
+            enumeration order.
+
+    Returns:
+        RunManifest: Reconstructed from the journal's own `started_at`,
+            `chats_enumerated`, `enumeration` and `sweeps`, with the journal's
+            outcomes followed by a `skipped` entry for every enumerated
+            `chat_id` the journal has no outcome for.
+
+    Raises:
+        ValueError: If `header` is `None`. Without it, `started_at`,
+            `chats_enumerated`, `enumeration` and `sweeps` are unknown, and
+            fabricating them would misstate a run this module has no record
+            of ever starting.
+    """
+    if header is None:
+        raise ValueError(
+            "cannot reconstruct a manifest without a journal header: "
+            "started_at, enumeration and sweeps are unknown"
+        )
+    recorded_ids = {outcome["chat_id"] for outcome in outcomes}
+    reconstructed = list(outcomes)
+    for ref in enumerated_refs:
+        if ref["chat_id"] not in recorded_ids:
+            reconstructed.append(
+                skipped(
+                    ref["chat_id"],
+                    index=ref["index"],
+                    reason="run ended before this conversation",
+                )
+            )
+    return build_manifest(
+        reconstructed,
+        started_at=header["started_at"],
+        chats_enumerated=header["chats_enumerated"],
+        enumeration=header["enumeration"],
+        sweeps=header["sweeps"],
+    )
+
+
+def write_manifest(
+    manifest: RunManifest, data_dir: Path | None = None, *, run_id: str | None = None
+) -> Path:
     """Write the run manifest and return its path.
 
     Args:
         manifest: Payload from :func:`build_manifest`.
         data_dir: Destination root (default ``data/``).
+        run_id: Identity minted once at the start of the run (`journal.py`),
+            so this file's name matches the journal it was built from. Falls
+            back to a fresh UTC timestamp when the caller has none.
 
     Returns:
         Path: The file written.
@@ -211,7 +282,7 @@ def write_manifest(manifest: RunManifest, data_dir: Path | None = None) -> Path:
     """
     root = data_dir or DEFAULT_DATA_DIR
     root.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    stamp = run_id or datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     path = root / f"run_manifest_{stamp}.json"
     payload: dict[str, Any] = dict(manifest)
     path.write_text(
@@ -226,7 +297,9 @@ def write_manifest(manifest: RunManifest, data_dir: Path | None = None) -> Path:
     return path
 
 
-def write_chat_index(index: dict[str, str], data_dir: Path | None = None) -> Path:
+def write_chat_index(
+    index: dict[str, str], data_dir: Path | None = None, *, run_id: str | None = None
+) -> Path:
     """Write the `chat_id` → title map and return its path.
 
     **This is the only file this project writes that contains real names.** It
@@ -239,6 +312,9 @@ def write_chat_index(index: dict[str, str], data_dir: Path | None = None) -> Pat
     Args:
         index: Digest to title, as read during the run.
         data_dir: Destination root (default ``data/``).
+        run_id: Identity minted once at the start of the run (`journal.py`),
+            so this file's name matches the run's manifest. Falls back to a
+            fresh UTC timestamp when the caller has none.
 
     Returns:
         Path: The file written.
@@ -248,7 +324,7 @@ def write_chat_index(index: dict[str, str], data_dir: Path | None = None) -> Pat
     """
     root = data_dir or DEFAULT_DATA_DIR
     root.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    stamp = run_id or datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     path = root / f"chat_index_{stamp}.json"
     path.write_text(
         json.dumps(index, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
