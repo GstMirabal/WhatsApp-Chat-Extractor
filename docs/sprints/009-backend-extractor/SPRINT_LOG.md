@@ -116,7 +116,37 @@ Gates emit; the Orchestrator transcribes (`config/artifact_registry.json`).
 | QA (structural) | 1 | `REJECTED` | `charter` | `manifest.py::manifest_from_journal` 54 lines against `max_lines_per_func` 50, new this sprint and undisclosed. **Scan covered three files and returned a verdict as if it had covered the sprint** |
 | QA (structural) | 2 | `REJECTED` | `charter` | `tests/test_resume.py` test function 51 lines. Scan widened to all modules and all touched tests |
 | QA (structural) | 3 | `APPROVED` | `charter` | 470 functions across 25 files, both axes of the rule. Zero sprint-introduced violations; the three remediations verified as pure extractions |
-| Tester (functional) | — | *pending* | — | Dispatched after gate 1 approved |
+| Tester (functional) | 1 | `RECORD` | `testifying` | 277 / 1 with zero regression against `d0cdbb4`; `recover`-without-Playwright and all four exit-code cases reproduced independently. Two coverage gaps recorded, neither bouncing a green suite |
+
+**The tester verified rather than read.** It shadowed `playwright` with a module
+raising `ImportError`, confirmed the real package is installed and importable
+first, and only then ran `recover` under the shadowed path — so "no browser
+needed" is an observation, not an inference from where an import statement
+sits. It called `_run_exit_code` directly with four constructed manifests. And
+it checked the 11 removed test lines one hunk at a time to confirm each was
+replaced by an equal or stronger assertion, since a loosened test is a
+regression the suite cannot report.
+
+### Gate 2 findings — two coverage gaps
+
+| # | Mechanism | Consequence if it breaks |
+| :--- | :--- | :--- |
+| `T-1` | `__main__.py::_latest_per_chat` (lines 440-458) — no test references it | **Proven by mutation.** A journal holding `exported(Ana)`, `failed(Beto)`, `exported(Beto)` — a conversation that failed and then succeeded on retry — collapses correctly to 2 chats, 0 failed, exit `0`. Replacing `_latest_per_chat` with the identity function yields 3 chats, 1 failed, **exit `3`**: a run that succeeded reports as failed, and nothing in the suite notices |
+| `T-2` | `__main__.py::_request_timezone` and `_confirm_timezone` (371-408) | A broken mismatch comparison, or a failure to set `os.environ["TZ"]`, passes the full suite. Both are as mockable as `sweep_until_stable` already is in `tests/test_resume.py` |
+
+`T-1` is the sprint's headline capability left unexercised: retrying a
+conversation that failed is the reason `--resume` exists, and the one path that
+distinguishes a resumed run from a fresh one is the path no test walks.
+
+**`KI-009-F` was examined and found inert, not merely accepted.** The tester
+checked whether the skip-ordering caveat has a reachable consequence and
+established it does not: outcomes are written by a single sequential walk over
+`enumerated_refs` in index order, so the only reachable gap is a trailing one,
+where append-at-end and append-at-gap are the same list; and `read_journal`
+raises rather than continuing past a corrupted mid-file line, so corruption
+cannot manufacture a middle gap either. `KI-009-G` was likewise confirmed to
+fail closed — `recover --run-id nonexistent_run` exits `1` with a clear message
+rather than crashing or reporting false success.
 
 **Model tier deviation.** `task_scope.md` records the gate tier as `opus`/`high`.
 The first `opus` attempt was killed mid-run by an API session limit, and every
