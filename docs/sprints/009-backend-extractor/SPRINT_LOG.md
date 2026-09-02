@@ -32,11 +32,20 @@ the wrong anchor. The host anchor was claimed directly with
 
 | Block | Units | Subject | Status |
 | :--- | :--- | :--- | :--- |
-| A | A1–A2 | Append-only NDJSON run journal with `fsync` | ⏳ |
+| A | A1–A2 | Append-only NDJSON run journal with `fsync` | ✅ |
+| E | E1–E8 | Corpus contract v6: `message_id`, `timestamp_iso`, pinned locale, recorded timezone, `passes_used`, `undated_messages` | ✅ |
 | B | B1–B2 | Manifest reconstruction from a journal; `run_id` threading | ⏳ |
 | C | C1–C3 | `--resume`, the `recover` subcommand, and the crash-to-journal orchestration | ⏳ |
-| E | E1–E7 | Corpus contract v6: `message_id`, `timestamp_iso`, pinned locale, recorded timezone, `passes_used` | ⏳ |
 | D | D1–D4 | `ADR-0006`, `ADR-0007`, Blueprint, System Overview | ⏳ |
+
+**10 of 19 units landed.** Suite 266 passed / 1 skipped, from a 224/1 baseline
+(`+42`, none removed); `ruff check .` exit `0`.
+
+Execution paused at the block E boundary with the context ratio at `12.9`, below
+the `15×` hard threshold rather than after it (`rules/token_economy.md` §3). The
+reasoning is in `IMPLEMENTATION_PLAN.md` § Cost: `C1` is the sprint's only
+high-risk resume unit, and writing it across the hard threshold is the one place
+degradation would cost most.
 
 Unit-level state lives in [`task_scope.md`](task_scope.md); a row moves to
 `✅ <sha>` as its commit lands.

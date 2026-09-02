@@ -337,6 +337,7 @@ invocadas por el CLI que las contiene.
 | Subagents dispatched | 0 planned at Phase 1 | Phase 4.1 `agent_assignment.md` is the authority |
 | Ratio at Phase 1 open | 4.1 | `python3 .agents/scripts/session_cost.py --from-anchor --json` |
 | **Ratio at Phase 3 close** | **7.8** (peak 192.467) | idem, tras los commits de Fase 3 |
+| **Ratio at block E close** | **12.9** (peak 317.030, 342 mensajes) | idem, con 10 de 19 unidades aterrizadas |
 
 **Umbral blando de 5× cruzado durante la Fase 1, y actualizado aquí antes de
 continuar** (`rules/token_economy.md` §3). El umbral duro de 15× no está
@@ -354,6 +355,22 @@ Consecuencia operativa para la Fase 6: las 19 unidades se despachan en contexto
 fresco por unidad (`jurisdictional_lock` ya lo exige por fichero), y **no** se
 reabre el alcance dentro de la ejecución. Una tercera ampliación de este sprint
 se rechaza y va al Sprint 010.
+
+**Parada en el cierre del bloque E, a 12.9× — decidida antes de cruzar el
+umbral duro, no después.** Quedan 9 unidades, entre ellas `C1`, la única de
+riesgo alto del bloque de reanudación. Cruzar 15× a mitad de `C1` dejaría la
+unidad más delicada del sprint escrita bajo la degradación que el umbral existe
+para evitar; parar en un límite de bloque no cuesta nada, porque el estado del
+sprint es durable en disco y no vive en esta conversación:
+
+| Dónde continúa una sesión nueva | Qué le dice |
+| :--- | :--- |
+| `docs/active_state.json` | Sprint 009 `IN_PROGRESS`, rama `ai-sprint/009` |
+| `task_scope.md` | Qué unidad aterrizó y con qué sha; qué queda en `⏳` |
+| `IMPLEMENTATION_PLAN.md` | El diseño aprobado y esta tabla |
+| `git log --oneline main..ai-sprint/009` | El trabajo real |
+
+Este es el diseño Zero-Memory del framework funcionando, no una interrupción.
 
 ---
 
