@@ -41,3 +41,8 @@ docs/active_state.json
 
 # Ephemeral session telemetry (agents.md §4)
 /memory/
+
+
+# .agents Claude/Cursor bridge + graphify output (regenerated locally, never commit)
+/.claude/commands/
+/.cursor/commands/

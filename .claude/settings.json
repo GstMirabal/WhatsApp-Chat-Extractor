@@ -75,6 +75,15 @@
             "command": "if [ -f .agents/hooks/on_commit.py ]; then python3 .agents/hooks/on_commit.py 1>&2; code=$?; if [ \"$code\" -eq 0 ]; then printf '%s\\n' '{\"permission\":\"allow\"}'; else printf '%s\\n' '{\"permission\":\"deny\",\"agent_message\":\"Blocked by on_commit gate\"}'; exit 2; fi; else printf '%s\\n' '{\"permission\":\"allow\"}'; fi"
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ -f .agents/hooks/on_commit.py ]; then python3 .agents/hooks/on_commit.py; fi"
+          }
+        ]
       }
     ],
     "Stop": [
