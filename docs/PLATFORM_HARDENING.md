@@ -224,3 +224,32 @@ when the repository becomes public"* above is still unapplied, because each one
 either returns `403` on this plan or changes the repository's public posture —
 an outward-facing change that belongs to the repository owner, not to a sprint
 executing an approved code plan. The probe is read-only by design.
+
+## Deployment attempt — Sprint 008, PR #9 (2026-09-02)
+
+`deployment_workflow.md` Phase 1 `pr_flow` ran and **stopped**. `RA-13` requires
+`ci_gate.py` to be observed at exit `0` before `gh pr merge --squash` is issued:
+
+```
+$ python3 .agents/scripts/ci_gate.py 9
+CI_GATE_EXIT=2
+❌ What `main` requires could not be determined … branch protection: forbidden; rulesets: forbidden
+```
+
+**The distinction that matters, and that the four earlier deviations did not
+have**: the checks are green. Run `33598297247` on the sealed tip `df61678`
+passed all four with real steps — `pytest (3.11)` 19 s, `pytest (3.13)` 23 s,
+`ruff` 10 s, `no exported chats committed` 5 s.
+
+| | Releases `v0.4.0` – `v0.7.0` | PR `#9` |
+| :--- | :--- | :--- |
+| Checks reported | failure in 2–5 s | **pass** in 5–23 s |
+| Steps executed | **zero** | 5–8 per job |
+| Independent verification | none | **full** |
+| `ci_gate.py` | exit `2` | exit `2` |
+
+The gate refuses for a different reason now. Before, there was nothing to
+verify; now the verification exists and no *rule* declares it mandatory, so the
+gate cannot read a requirement to confirm. Merging would be the fifth
+authorization past this gate and the first with real evidence behind it — a
+different decision from the previous four, and still the repository owner's.
