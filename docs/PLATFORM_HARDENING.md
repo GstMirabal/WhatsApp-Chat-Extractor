@@ -50,9 +50,26 @@ evidence for `33477613266`, which is what distinguishes a genuine pass from the
 
 Reproduce: `gh run view 33477613266 --json jobs`.
 
+**First sprint verified by CI, not by the operator's Mac.** PR
+[`#9`](https://github.com/GstMirabal/WhastApp-Chat-Extractor/pull/9) (Sprint
+008) triggered run `33597073031` on `pull_request`, and all four jobs passed
+with real work behind them:
+
+| Job | Steps | Duration | Conclusion |
+| :--- | :--- | :--- | :--- |
+| `pytest (3.11)` | 8 | 19 s | success |
+| `pytest (3.13)` | 8 | 18 s | success |
+| `ruff` | 8 | 14 s | success |
+| `no exported chats committed` | 5 | 7 s | success |
+
+The step counts and durations are the evidence, not the green tick: the billing
+failures concluded in 2–5 seconds having executed **zero** steps. Reproduce with
+`gh run view 33597073031 --json jobs`.
+
 **What this changes.** Four releases were merged past `ci_gate.py` under
 explicit human authorization because no independent infrastructure could run
-this code. That is no longer true: `main` has passing CI. What has **not**
+this code. That is no longer true: `main` has passing CI, and as of PR `#9` a
+sprint branch does too, before any merge. What has **not**
 changed is the first blocker — branch protection and rulesets still return
 `403`, so `ci_gate.py` still cannot read what `main` requires and will still
 refuse. Green checks now exist; the gate still cannot see a rule saying they are
