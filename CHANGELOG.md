@@ -8,6 +8,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · Versioning: [SemVer](
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-09-02
+
 ### Fixed
 
 - **The Global Roadmap was never updated at the Sprint 008 close** (`H-002`). It
