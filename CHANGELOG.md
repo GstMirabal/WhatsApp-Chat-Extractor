@@ -47,6 +47,22 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · Versioning: [SemVer](
   derived. The export file's schema is untouched at v5 — the two version
   independently. #008
 
+### Fixed (framework interaction)
+
+- **The Double-Gate stopped losing its own evidence.** Both Phase 7 gates
+  returned a verdict and no findings — the same failure Sprint 007 recorded
+  twice and attributed to the result channel. The cause is a deadlock: the
+  `SubagentStop` hook runs `check_role_artifact.py --from-hook`, which exits `2`
+  unless `SPRINT_LOG.md` already holds that gate's row — a row the gate profiles
+  hold no `Write` tool to produce. Exit `2` forces a continuation, and the
+  continuation overwrites the report. Roughly 178k subagent tokens came back as
+  two lines. Worked around by transcribing both rows before dispatch; routed
+  upstream as `UPSTREAM_FINDING_013`. #008
+- Gate 2's mutation analysis (18 mutants, 13 killed) found three coverage gaps
+  in this sprint's own tests, all now closed: the manifest schema version was
+  unpinned, the union's discovery order was untested though `index` is a live
+  seek hint, and half the sweep stop condition could be deleted unnoticed. #008
+
 ### Known open
 
 - The unknown-row probe has **not been run**: it needs an authenticated WhatsApp
