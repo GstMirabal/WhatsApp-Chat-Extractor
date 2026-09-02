@@ -43,19 +43,29 @@ an invalid one.
 | `wa-extract export-all` | CLI | `src/whatsapp_chat_extractor/__main__.py` (#007) |
 | `ChatExport` JSON | file schema | `writers.ChatExport` / this blueprint §3 |
 | `RunManifest` JSON | file schema | `manifest.RunManifest` / this blueprint §3 (#007) |
+| `wa-extract recover` | CLI | `src/whatsapp_chat_extractor/__main__.py` (#009) |
+| Run journal NDJSON | file schema | `journal.JournalHeader` / this blueprint §3 (#009) |
+| `timestamps.parse_rendered` | function | `src/whatsapp_chat_extractor/timestamps.py` (#009) |
 | `/wa-export <chat>` | slash command | `.claude/commands/wa-export.md`, `.cursor/commands/wa-export.md` |
 
-Data model (schema v5, #007):
+Data model (schema v6, #009):
 - **ChatExport**: `schema_version`, `chat_id`, `exported_at`, `message_count`,
-  `complete`, `completeness`, `stopped_reason`, `messages[]`
-- **MessageRecord**: `sender`, `timestamp`, `body`, `kind`, `order` — every
-  message, whatever medium it carried
-- **RunManifest** (`manifest.py`, manifest schema v2, #008): `schema_version`,
-  `started_at`, `finished_at`, `chats_enumerated`, `enumeration`, `sweeps`,
-  `counts`, `chats[]`. The manifest versions independently of `ChatExport`:
-  it is at v2 while the export file is at v5
+  `undated_messages`, `complete`, `completeness`, `stopped_reason`,
+  `passes_used`, `source_locale`, `source_timezone`, `messages[]`
+- **MessageRecord**: `message_id`, `sender`, `timestamp`, `timestamp_iso`,
+  `body`, `kind`, `order` — every message, whatever medium it carried
+- **RunManifest** (`src/whatsapp_chat_extractor/manifest.py`, manifest schema
+  v2, #008): `schema_version`, `started_at`, `finished_at`,
+  `chats_enumerated`, `enumeration`, `sweeps`, `counts`, `chats[]`. The
+  manifest versions independently of `ChatExport`: it is at v2 while the
+  export file is at v6
 - **ChatOutcome**: `chat_id`, `index`, `outcome`, `reason`, `completeness`,
   `message_count`, `file` — one per conversation the sweep found
+- **JournalHeader** (`src/whatsapp_chat_extractor/journal.py`, journal schema
+  v1, #009): `record`, `schema_version`, `run_id`, `started_at`,
+  `chats_enumerated`, `enumeration`, `sweeps` — written once, the moment
+  enumeration returns. The journal versions independently of both
+  `ChatExport` and `RunManifest`: it is at v1
 
 ### Kind contract (ADR-0003, #005)
 
@@ -254,6 +264,28 @@ Consequences, and they are not interchangeable:
 | A conversation that fails is recorded and the run **continues**; losing the session aborts it | A run of hundreds that dies on the third wastes the manual login and every export already made. A lost session, by contrast, makes every later attempt fail identically |
 | A conversation beyond `--limit` is recorded as `skipped`, never omitted | An omitted conversation is indistinguishable from one that never existed |
 
+### Corpus contract v6 (ADR-0007, schema v6, #009)
+
+Every v6 field is additive — no v5 field changes name, meaning, or type.
+Rationale is `docs/decisions/ADR-0007-corpus-contract-v6.md`; this table
+states the fields that resulted, verified against `writers.MessageRecord` and
+`writers.ChatExport`.
+
+| Field | On | Type | Source |
+| :--- | :--- | :--- | :--- |
+| `message_id` | `MessageRecord` | `str` | Identity already computed by `history.HarvestedRow` for pass-to-pass deduplication, carried through to the written record instead of being dropped at that boundary |
+| `timestamp_iso` | `MessageRecord` | `str` | `timestamps.parse_rendered` of the row's rendered `timestamp`. `""` for a row WhatsApp rendered with a clock and no date — never a date inferred from anything outside that row |
+| `passes_used` | `ChatExport` | `int` | `history.HarvestResult.passes_used`, the scroll-pass count the harvest reached `completeness` in |
+| `source_locale` | `ChatExport` | `str` | The browser locale pinned by `session.launch_context`, e.g. `es-ES` |
+| `source_timezone` | `ChatExport` | `str` | The IANA zone `session.resolve_timezone` reads from the page — the zone the page actually rendered in, never the `--timezone` request |
+| `undated_messages` | `ChatExport` | `int` | `timestamps.undated_count` over every message's `timestamp_iso` in the export |
+
+`timestamp_iso` sits **beside** `timestamp`, never in place of it: the
+rendered string stays the evidence, so a parse later found wrong can be redone
+against files already on disk without reopening WhatsApp Web. Only the
+locales in `timestamps.LOCALE_DATE_ORDER` are parsed — an unrecognised locale
+yields `""` rather than a guessed day/month order.
+
 ## 4. Runtime View
 
 1. Operator runs `wa-extract login` → Chromium persistent profile → QR if needed → chat list ready.
@@ -277,6 +309,30 @@ Consequences, and they are not interchangeable:
    why the wrapper id is consulted first (#005).
 6. Pytest exercises `writers`, the pure half of `history`, and row-field
    extraction with stub rows — no live WhatsApp.
+
+### Run journal and resume (ADR-0006, #009)
+
+`wa-extract export-all` records what it did as the run makes progress, not
+only once the whole sweep returns: a run over hundreds of conversations takes
+hours, so a crash must not erase the record of what was already exported.
+Rationale is `docs/decisions/ADR-0006-run-journal-and-resume.md`; this table
+states the sequence.
+
+| Step | Event | Function |
+| :--- | :--- | :--- |
+| 1 | `run_id` minted once, before anything is written | `__main__.mint_run_id` |
+| 2 | Journal opened for append at `data/run_journal_<run_id>.ndjson` | `journal.open_journal` |
+| 3 | Header written the moment enumeration returns — not before, because `chats_enumerated` is unknown until then, and not after the first conversation, because a run that dies on it would leave no header at all | `journal.write_header`, called from `__main__._record_header` |
+| 4 | One outcome appended per conversation, as the run makes it, `fsync`ed to disk before the next chat opens | `journal.append_outcome`, called from `__main__._record_outcome` |
+| 5 | Manifest rebuilt from the journal's header and outcomes; every enumerated `chat_id` the journal never reached is recorded `skipped`, reason `run ended before this conversation` | `manifest.manifest_from_journal` |
+| 6a | Rebuild at the end of a live run, against the enumeration that same run just produced | `__main__.cmd_export_all` |
+| 6b | Rebuild later, from the journal alone, with no enumeration and no browser opened | `__main__.cmd_recover` |
+
+`export-all --resume <run_id>` reopens that same journal in append mode and
+steps over the conversations `journal.exported_chat_ids` already found
+`exported`; the chat list is enumerated again from scratch, never read back
+from the journal. A `failed` or `skipped` outcome does not count as done, so a
+resumed run retries it.
 
 ## 5. Crosscutting Concepts
 
@@ -305,6 +361,9 @@ Consequences, and they are not interchangeable:
 - `docs/decisions/ADR-0002-delivery-program-and-layout.md`: P1 spike layout + exit criterion
 - `docs/decisions/ADR-0003-media-placeholders-in-export.md`: media messages are placeholders, never dropped (schema v4)
 - `docs/decisions/ADR-0004-completeness-criterion.md`: `completeness` has three values; `complete` is derived (schema v5)
+- `docs/decisions/ADR-0005-enumeration-completeness.md`: `enumeration` states enumeration completeness in three values, replacing a boolean the pane could satisfy while the list moved underneath it (manifest schema v2)
+- `docs/decisions/ADR-0006-run-journal-and-resume.md`: append-only NDJSON run journal, `fsync`ed per line, enabling `--resume` and a browserless `recover` (journal schema v1)
+- `docs/decisions/ADR-0007-corpus-contract-v6.md`: message identity and a parsed timestamp beside the raw string, pinned locale with resolved timezone recorded, `passes_used`, `undated_messages` (schema v6)
 - Sprint #004 brought full history forward from P3: a corpus truncated by a
   scroll count does not serve the stated consumer
   (`docs/sprints/004-backend-extractor/IMPLEMENTATION_PLAN.md`)
