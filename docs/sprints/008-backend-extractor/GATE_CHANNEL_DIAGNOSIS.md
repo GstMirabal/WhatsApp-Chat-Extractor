@@ -1,7 +1,11 @@
 # Gate Evidence Channel — Diagnosis (Sprint 008, unit A1)
 
-**Verdict**: `profile` — the request contract, not the transport.
-**Date**: 2026-09-01
+**Verdict**: ~~`profile` — the request contract, not the transport.~~
+**SUPERSEDED by §7 below.** The real cause is an unsatisfiable `SubagentStop`
+hook. The A1 experiment was sound and its conclusion was wrong, for a reason A1
+could not have seen: it ran while the state anchor still pointed at Sprint 007,
+whose `SPRINT_LOG.md` already carried the row the hook demands.
+**Date**: 2026-09-01, superseded 2026-09-02
 **Decides**: whether Phase 7 of this sprint dispatches its gates as subagents.
 
 ---
@@ -120,3 +124,80 @@ Not fixed here: they are outside the approved scope, and widening a sprint to
 absorb whatever an audit finds is how a scope stops meaning anything. Destination
 is Sprint 009, and `docs/active_state.json` carries them so they do not depend on
 this file being reread.
+
+---
+
+## 7. What actually caused it — written after Phase 7, superseding §4
+
+A1's conclusion did not survive contact with the real gates. Both Phase 7
+dispatches used exactly the prompt shape §5 prescribes — named deliverable,
+verdict-only declared a failure, method and tool-count required — and both
+returned **one line**:
+
+| Dispatch | Tokens | Tool calls | Duration | Reply |
+| :--- | :--- | :--- | :--- | :--- |
+| A1 (`qa-agent`) | 40,711 | 10 | 2.2 min | full report |
+| Gate 1 (`qa-agent`) | 89,516 | 24 | 8.0 min | verdict line only |
+| Gate 2 (`tester-agent`) | 88,682 | 35 | 10.4 min | verdict line only |
+
+The obvious reading — that loss scales with reply length — was wrong too. The
+cause is a **deadlock between a hook and a role restriction**, and it reproduces
+on demand.
+
+### The mechanism
+
+`.claude/settings.json` registers a `SubagentStop` hook running
+`.agents/scripts/check_role_artifact.py --from-hook`. For a Double-Gate role it
+exits `2` unless `SPRINT_LOG.md` already holds that gate's row:
+
+```
+$ echo '{"agent_type":"qa-agent"}' | python3 .agents/scripts/check_role_artifact.py --from-hook
+❌ [ROLE-ARTIFACT] role='QA Agent' missing: 'QA' row in SPRINT_LOG.md
+HOOK_EXIT=2
+```
+
+Under `RA-11`, exit `2` **blocks the stop** and feeds stderr back to the agent,
+forcing a continuation. The agent cannot satisfy it: `artifact_registry.json`
+names the **Orchestrator** as `SPRINT_LOG.md`'s owner, the `qa_agent` and
+`tester_agent` profiles are read-only by design (`F-026-A1`), and both agents
+said so explicitly rather than attempting the write. Each forced continuation
+replaces the last message, and only the last message reaches the parent — so the
+report is overwritten by the terse continuation that follows it.
+
+Gate 2 named the same mechanism independently, from inside it, as its `F-8`.
+
+### Why A1 escaped, and why that is the proof
+
+The hook resolves the sprint directory from `docs/active_state.json`. A1 ran
+**before** unit A2 repointed the anchor from Sprint 007 to Sprint 008, and
+Sprint 007's `SPRINT_LOG.md` already carries `QA Agent` and `Tester Agent` rows.
+So the hook exited `0` and A1's reply was never interrupted.
+
+Demonstrated by flipping only the anchor's `current_sprint.id`:
+
+| Anchor points at | Hook exit | Reason |
+| :--- | :--- | :--- |
+| Sprint 7 (log has both rows) | `0` | `required artifacts present` |
+| Sprint 8 (log said `_pending_`) | `2` | `missing: 'QA' row in SPRINT_LOG.md` |
+
+**A2 — this sprint's own anchor update — is what armed the trap between A1 and
+the gates.** That is also why Sprint 007 recorded the same symptom twice and
+never diagnosed it: by the time anyone looked, its log had rows and the hook was
+quiet again.
+
+### The fix that unblocked it
+
+Transcribing both gate rows into `SPRINT_LOG.md` before the follow-up requests.
+Both hooks then exited `0`, and both agents delivered their full evidence — Gate
+2's arriving with an 18-mutant analysis that produced three real coverage gaps.
+
+### Corrected posture
+
+Gates **are** dispatchable, and §5's prompt requirements remain worth keeping —
+they are why the recovered reports were usable. But they were never the binding
+constraint. The binding constraint is: **`SPRINT_LOG.md` must already hold a row
+for each gate before that gate is dispatched.** Write the row with a `_pending_`
+verdict first and fill it in on return, or the hook eats the evidence.
+
+Routed upstream as `UPSTREAM_FINDING_013`: a host must not have to pre-write a
+verdict row to receive the evidence that determines it.
