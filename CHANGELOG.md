@@ -8,6 +8,19 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · Versioning: [SemVer](
 
 ## [Unreleased]
 
+### Fixed
+
+- **The Global Roadmap was never updated at the Sprint 008 close** (`H-002`). It
+  still declared Sprint 008 as `GATED` platform hardening while that sprint was
+  closed, merged and released as `v0.8.0`, so a reader planning Sprint 009 from
+  it would have concluded the enumeration defect was still open and platform
+  hardening was the outstanding work. `RA-05` names four mandatory closeout
+  artifacts and the close's gates measure three: the roadmap is
+  repository-scoped and carried no freshness stamp, so `docs_freshness_check`
+  passed clean over a document six days stale. Now corrected, stamped, and
+  carrying a proposed Sprint 009. Routed upstream as `UPSTREAM_FINDING_014`.
+  #H002
+
 ## [0.8.0] - 2026-09-02
 
 ### Fixed
