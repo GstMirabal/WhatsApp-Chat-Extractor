@@ -148,3 +148,43 @@ def test_a_partial_enumeration_is_carried_out_of_the_run(
     _, enumerated, _ = cli._export_every_chat(object(), an_args())
     assert enumerated["enumeration"] == "truncated"
     assert enumerated["sweeps"] == 1
+
+
+def test_a_run_ending_exception_reconstructs_as_one_export_and_two_skips(
+    three_chats: list[str], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """An exception `_export_one_ref` does not catch must end the run rather
+    than be recorded as a `failed` outcome (`§D3`): the third conversation is
+    never attempted. Read back from a journal this run actually wrote, not
+    asserted against a list held in memory, so `_record_header` and
+    `_record_outcome` are exercised for real rather than driven with
+    ``journal=None`` as every other test in this file does.
+    """
+    def dies_on_beto(page: object, ref: dict, **kw: object) -> str:
+        if ref["chat_id"] == pseudonymous_chat_id("Beto"):
+            raise ConnectionError("WhatsApp Web session was lost")
+        return open_all(page, ref, **kw)
+
+    monkeypatch.setattr(cli, "open_chat_by_digest", dies_on_beto)
+
+    run_id = "20260902T090000Z"
+    handle = cli.open_journal(run_id, data_dir=tmp_path)
+    journal = cli.RunJournal(handle, run_id, cli.now(), frozenset())
+    try:
+        with pytest.raises(ConnectionError, match="session was lost"):
+            cli._export_every_chat(object(), an_args(), journal=journal)
+    finally:
+        handle.close()
+
+    path = cli.journal_path(run_id, data_dir=tmp_path)
+    header, outcomes = cli.read_journal(path)
+    manifest = cli.manifest_from_journal(
+        header, outcomes, refs_for(["Ana", "Beto", "Caro"])
+    )
+
+    assert manifest["counts"][OUTCOME_EXPORTED] == 1
+    assert manifest["counts"][OUTCOME_SKIPPED] == 2
+    skipped_reasons = [
+        chat["reason"] for chat in manifest["chats"] if chat["outcome"] == OUTCOME_SKIPPED
+    ]
+    assert skipped_reasons == ["run ended before this conversation"] * 2
