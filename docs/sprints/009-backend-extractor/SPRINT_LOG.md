@@ -12,10 +12,10 @@
 | :--- | :--- |
 | Session tool | `claude-code` |
 | Delegation mode | `native` |
-| Anchor session | `20260902T085030Z-72792` (session #15) |
+| Anchor session | `20260902T085030Z-72792` (session #15, block A+E) · `20260902T114129Z-26951` (session #16, resumed at the block B boundary) |
 | Context ratio | `4.1` at Phase 1 open → `7.8` at Phase 3 close (peak 192.467) |
 | Baseline suite at branch point | 224 passed, 1 skipped, `ruff check .` exit `0` |
-| Boot | `session_start.py --boot` refused again (`UPSTREAM_FINDING_004` / `_008`, third and fourth instance). Binding steps run individually from the host root |
+| Boot | `session_start.py --boot` refused again (`UPSTREAM_FINDING_004` / `_008`, third and fourth instance at session #15; fifth at session #16, same dead nucleus lock `20260827T154222Z-45916`). Binding steps run individually from the host root, both times |
 
 **Boot detail.** `--boot` refused with a session lock held by
 `20260827T154222Z-45916`, a Cursor session **in the nucleus checkout** dated
@@ -86,5 +86,6 @@ Indexed into `memory_index.json` at the close, each carrying a `routing_class`.
 | `KI-009-B` | `UPSTREAM_FINDING_003` and `_004` were observed against pin `v4.23.0` and persist under `v4.24.0`; a pin bump is not evidence a finding was addressed | `nucleus` | Recurrence line appended to both existing drafts |
 | `KI-009-C` | A field computed for internal use and discarded at the serialization boundary is invisible to every reviewer who reads only the payload type (`message_id`, `history.py:166-179`) | `host` | `memory_index.json` |
 | `KI-009-D` | Renegotiating scope after the plan is written costs more than planning the wider scope once: ratio 4.1 → 7.8 in a single phase | `host` | `memory_index.json` |
+| `KI-009-E` | `detect_drift.py` exits `2` on every resume of an in-flight sprint: it splits `last_close_commit..HEAD` against **sealing tags** only, and a sprint's own commits are uncovered by construction until Phase 8 writes the ledger entry and deployment seals it. Observed at session #16 start — 19 commits, all `#009`, all on `ai-sprint/009`, all recorded in this log, reported as "outside the protocol". The verdict is structurally unreachable in the healthy mid-sprint case, which is the state `session_state.py claim` calls `SUSPENDED` and resumes | `nucleus` | New upstream finding draft at `extract` |
 
 *Rows are candidates recorded as they are found; the harvest closes at Phase 8.*
