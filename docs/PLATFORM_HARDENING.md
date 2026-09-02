@@ -253,3 +253,36 @@ verify; now the verification exists and no *rule* declares it mandatory, so the
 gate cannot read a requirement to confirm. Merging would be the fifth
 authorization past this gate and the first with real evidence behind it — a
 different decision from the previous four, and still the repository owner's.
+
+## Deviation on record — v0.8.0 merged without a readable gate (fifth occurrence)
+
+Sprint 008, PR `#9`, squash-merged `a2413bb` on 2026-09-02 under explicit
+authorization from the repository owner, after `ci_gate.py 9` exited `2` for the
+fifth consecutive release.
+
+**This deviation is not the same as the previous four, and the difference is the
+whole reason this entry exists.** Those four shipped with *no* independent
+verification: the checks reported failure in 2–5 seconds having executed zero
+steps, so the gate's refusal and the absence of evidence were the same fact.
+Here the evidence exists:
+
+| Signal | `v0.4.0`–`v0.7.0` | `v0.8.0` |
+| :--- | :--- | :--- |
+| Checks on the merged tip | failure, 2–5 s | **pass**, 5–23 s |
+| Steps executed | zero | 5–8 per job |
+| Run | — | `33598297247` on `df61678` |
+| `ci_gate.py` | exit `2` | exit `2` |
+| Reason for the refusal | nothing had run | no rule declares the checks required |
+
+`ci_gate.py` treats *"a branch declaring no required check"* as a failure by
+design, because an unprotected repository is not a verified one. That judgement
+is correct and is not being argued with: what was merged is a tip whose four
+checks genuinely passed, on a base branch that cannot express a requirement.
+
+Post-merge verification on the integrated `main` tip `a2413bb`: `ruff check .`
+exit `0`, **225 passed**.
+
+The exception is removed, not repeated, by making the repository public or
+moving to GitHub Pro and then applying the branch protection in *"What unlocks
+when the repository becomes public"* above. Until then every release here still
+carries the owner's authorization rather than a gate's.

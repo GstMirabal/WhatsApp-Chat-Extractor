@@ -8,6 +8,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · Versioning: [SemVer](
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-09-02
+
 ### Fixed
 
 - **The chat-list enumeration no longer loses conversations in silence.** A
