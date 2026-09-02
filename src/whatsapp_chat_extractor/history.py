@@ -18,6 +18,8 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, TypedDict
 
+from whatsapp_chat_extractor.session import DEFAULT_LOCALE
+from whatsapp_chat_extractor.timestamps import parse_rendered
 from whatsapp_chat_extractor.writers import MessageRecord
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -157,8 +159,18 @@ class MessageAccumulator:
             self._blocks.append(block)
         return len(block)
 
-    def consolidate(self) -> list[MessageRecord]:
+    def consolidate(self, *, locale: str = DEFAULT_LOCALE) -> list[MessageRecord]:
         """Flatten the blocks oldest-first and assign ``order``.
+
+        ``message_id`` reaches the record from v6 on. It was always computed —
+        it is the key `_seen` dedupes on, three lines above — and until now this
+        method dropped it, so no message in the corpus was recognisable across
+        two exports (ADR-0007).
+
+        Args:
+            locale: Locale the page was rendered under, used to read each row's
+                timestamp. Defaults to the pinned one so a caller that does not
+                know it still parses the format the harvest actually produces.
 
         Returns:
             list[MessageRecord]: Messages in conversation order.
@@ -166,18 +178,35 @@ class MessageAccumulator:
         records: list[MessageRecord] = []
         for block in reversed(self._blocks):
             for row in block:
-                records.append(
-                    {
-                        "sender": row["sender"],
-                        "timestamp": row["timestamp"],
-                        "body": row["body"],
-                        # `text` for a row harvested before `kind` existed, so a
-                        # replayed v3 fixture consolidates without a KeyError.
-                        "kind": row.get("kind", "text"),
-                        "order": len(records),
-                    }
-                )
+                records.append(self._as_record(row, len(records), locale))
         return records
+
+    @staticmethod
+    def _as_record(row: HarvestedRow, order: int, locale: str) -> MessageRecord:
+        """One harvested row as the record that gets written.
+
+        Args:
+            row: The row as read from the DOM.
+            order: Its position in conversation order.
+            locale: Locale the page was rendered under.
+
+        Returns:
+            MessageRecord: Schema v6 shape.
+        """
+        rendered = row["timestamp"]
+        return {
+            # Absent only on a fixture predating v6; a real row always has one,
+            # because `add_pass` deduped on it to get here.
+            "message_id": row.get("message_id", ""),
+            "sender": row["sender"],
+            "timestamp": rendered,
+            "timestamp_iso": parse_rendered(rendered, locale=locale),
+            "body": row["body"],
+            # `text` for a row harvested before `kind` existed, so a
+            # replayed v3 fixture consolidates without a KeyError.
+            "kind": row.get("kind", "text"),
+            "order": order,
+        }
 
     def __len__(self) -> int:
         return len(self._seen)
