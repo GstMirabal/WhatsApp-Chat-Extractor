@@ -485,6 +485,63 @@ def test_recovery_survives_an_irregular_reordering(every: int, seed: int) -> Non
     assert result["enumeration"] == ENUMERATION_CONVERGED
 
 
+def test_the_union_keeps_first_discovery_order() -> None:
+    """`index` is a live-pane seek hint, so the order is load-bearing, not cosmetic.
+
+    Contiguity alone does not pin it: reversing the union keeps `index` a clean
+    `range` while sending every seek to the opposite end of the pane. Gap F-3,
+    found by mutation at the Phase 7 gate.
+    """
+    pane = FakePane(titles(30), window=4)
+    result = sweep_until_stable(pane, max_passes=4000, settle_ms=0)
+    expected = [pseudonymous_chat_id(title) for title in titles(30)]
+    assert [ref["chat_id"] for ref in result["refs"]] == expected
+
+
+def test_the_loop_does_not_stop_on_quiet_sweeps_alone() -> None:
+    """Both halves of the break condition must be load-bearing.
+
+    A pane that goes quiet *before* the foot must not end the enumeration:
+    dropping `reached_bottom and` from the stop test leaves the suite green
+    otherwise. Gap F-5, found by mutation at the Phase 7 gate.
+    """
+    class LateRevealingPane(FakePane):
+        """Withholds most of the list, and never reports its foot until it yields.
+
+        Sweeps 1-3 see only the head and add nothing after the first, so two
+        consecutive quiet sweeps accumulate while the pane is demonstrably not
+        at its foot. A stop test that ignores `reached_bottom` ends here, with
+        most of the account unseen.
+        """
+
+        REAL_TOTAL = 120
+        HELD_BACK_UNTIL_SWEEP = 4
+
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            super().__init__(*args, **kwargs)
+            self._sweeps = 0
+
+        def evaluate(self, js: str, arg: object = None) -> object:
+            if isinstance(arg, list):
+                if int(arg[1]) == 0:
+                    self._sweeps += 1
+                return super().evaluate(js, arg)
+            metrics = super().evaluate(js, arg)
+            # Always taller than what is rendered, so the foot is never reached.
+            metrics["scroll_height"] = self.REAL_TOTAL * self.row_height * 2
+            return metrics
+
+        def query_selector_all(self, selector: str) -> list[FakeRow]:
+            if self._sweeps < self.HELD_BACK_UNTIL_SWEEP:
+                return [FakeRow(title) for title in self.titles[:5]]
+            return super().query_selector_all(selector)
+
+    pane = LateRevealingPane(titles(120), window=10, row_height=10, client_height=20)
+    result = sweep_until_stable(pane, max_passes=200, settle_ms=0, max_sweeps=8)
+    assert len(result["refs"]) == 120, "a quiet stretch above the foot is not the end"
+    assert result["enumeration"] == ENUMERATION_TRUNCATED, "the foot was never reached"
+
+
 def test_the_classifier_never_reports_converged_without_the_foot() -> None:
     """Fail-closed: trailing agreement alone is not enough, in either direction."""
     assert classify_enumeration(reached_bottom=False, stable_sweeps=99) == (

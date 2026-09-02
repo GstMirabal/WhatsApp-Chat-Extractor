@@ -102,7 +102,8 @@ def test_every_key_is_present_even_at_zero() -> None:
 def test_a_partial_enumeration_is_visible_in_the_manifest() -> None:
     """899 of 899 and 70 of 899 must not produce the same-looking record."""
     partial = build_manifest(
-        a_run(), started_at=now(), chats_enumerated=70, enumeration="truncated", sweeps=1
+        a_run(), started_at=now(), chats_enumerated=70,
+        enumeration="truncated", sweeps=1,
     )
     assert partial["enumeration"] == "truncated"
     assert partial["sweeps"] == 1
@@ -114,6 +115,10 @@ def test_the_manifest_declares_its_schema() -> None:
         a_run(), started_at=now(), chats_enumerated=3, enumeration="converged", sweeps=3
     )
     assert manifest["schema_version"] == MANIFEST_SCHEMA_VERSION
+    # Compared to the literal as well, following tests/test_writers.py: against
+    # the constant alone, changing the constant changes the test with it and the
+    # bump goes unnoticed. Gap F-2, found by mutation at the Phase 7 gate.
+    assert manifest["schema_version"] == 2
 
 
 def test_written_manifest_round_trips(tmp_path: Path) -> None:

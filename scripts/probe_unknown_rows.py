@@ -24,6 +24,13 @@ recorded — an attribute's name, never its content — because the values are t
 conversation. Chat titles are hashed through ``pseudonymous_chat_id`` exactly as
 ``writers.py`` treats them.
 
+**Why this imports private helpers.** `_row_body`, `_row_kind` and `_row_sender`
+are underscored and imported anyway, unlike `probe_chat_list.py`, which uses
+only public names. They are the subject: this probe exists to characterise the
+rows those three give up on, so reimplementing their fallback logic here would
+measure a copy rather than the code that ships. Recorded as a deliberate
+exception at the Sprint 008 Phase 7 gate, not an oversight.
+
 invoked_by: docs/sprints/008-backend-extractor/PROBE_UNKNOWN_ROWS_RUN.md
 (operator, manually — it needs a real login and real conversations)
 
@@ -101,7 +108,8 @@ def selector_hits(row: object, selectors: dict[str, str]) -> dict[str, bool]:
     hits: dict[str, bool] = {}
     for name, selector in selectors.items():
         try:
-            hits[name] = row.query_selector(selector) is not None  # type: ignore[attr-defined]
+            found = row.query_selector(selector)  # type: ignore[attr-defined]
+            hits[name] = found is not None
         except Exception as exc:  # noqa: BLE001 - a bad selector must not end the probe
             logger.warning("Selector %s failed on a row: %s", name, exc)
             hits[name] = False
@@ -324,6 +332,9 @@ def _run_probe(args: argparse.Namespace) -> dict[str, Any]:
 
 def main(argv: list[str] | None = None) -> int:
     """Run the probe and report where the evidence landed.
+
+    Args:
+        argv: Command line, or None to read ``sys.argv``.
 
     Returns:
         int: ``0`` when at least one unknown row was captured, ``3`` when none
