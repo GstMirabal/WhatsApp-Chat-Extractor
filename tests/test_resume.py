@@ -33,6 +33,7 @@ from whatsapp_chat_extractor.manifest import exported, now
 from whatsapp_chat_extractor.writers import pseudonymous_chat_id
 
 RUN_ID = "20260101T000000Z"
+TITLES = ["Ana", "Beto", "Caro"]
 
 
 def refs_for(titles: list[str]) -> list[dict]:
@@ -82,24 +83,25 @@ def write_prior_pass(tmp_path: Path, titles: list[str]) -> Path:
     return journal_path(RUN_ID, data_dir=tmp_path)
 
 
-def test_resume_reopens_only_the_unexported_chat_and_the_manifest_carries_all_three(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """C3: 2 of 3 already `exported` on disk; the resumed pass must not re-open them.
+@pytest.fixture
+def browserless_run(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """Stand up a browserless `cmd_export_all` world over `TITLES`.
 
-    `open_chat_by_digest` is called exactly once — for the third conversation —
-    and the rebuilt manifest still names all three, because it is read back
-    from the journal file rather than assembled only from what this pass
-    attempted. The sweep still runs and still finds all three (`§D3`): the
-    resume skips *opening* two chats, never the re-enumeration itself.
+    Installs `sweep_until_stable`, `_export_open_chat`, `open_chat_by_digest`
+    and `_export_all_session` stand-ins following the `monkeypatch` pattern of
+    `tests/test_export_all.py`.
+
+    Args:
+        monkeypatch: The pytest fixture used to install the stand-ins.
+
+    Returns:
+        list[str]: The `chat_id`s passed to `open_chat_by_digest`, in call
+        order, updated live as `cmd_export_all` runs against this fixture.
     """
-    titles = ["Ana", "Beto", "Caro"]
-    write_prior_pass(tmp_path, titles)
-
     monkeypatch.setattr(
         cli, "sweep_until_stable",
         lambda page, **kw: {
-            "refs": refs_for(titles), "enumeration": "converged", "sweeps": 3,
+            "refs": refs_for(TITLES), "enumeration": "converged", "sweeps": 3,
         },
     )
     monkeypatch.setattr(
@@ -113,22 +115,37 @@ def test_resume_reopens_only_the_unexported_chat_and_the_manifest_carries_all_th
 
     def counting_open(page: object, ref: dict, **kw: object) -> str:
         opened.append(ref["chat_id"])
-        return {pseudonymous_chat_id(t): t for t in titles}[ref["chat_id"]]
+        return {pseudonymous_chat_id(t): t for t in TITLES}[ref["chat_id"]]
 
     monkeypatch.setattr(cli, "open_chat_by_digest", counting_open)
     monkeypatch.setattr(
         cli, "_export_all_session",
         lambda args, journal: cli._export_every_chat(object(), args, journal=journal),
     )
+    return opened
+
+
+def test_resume_reopens_only_the_unexported_chat_and_the_manifest_carries_all_three(
+    tmp_path: Path, browserless_run: list[str],
+) -> None:
+    """C3: 2 of 3 already `exported` on disk; the resumed pass must not re-open them.
+
+    `open_chat_by_digest` is called exactly once — for the third conversation —
+    and the rebuilt manifest still names all three, because it is read back
+    from the journal file rather than assembled only from what this pass
+    attempted. The sweep still runs and still finds all three (`§D3`): the
+    resume skips *opening* two chats, never the re-enumeration itself.
+    """
+    write_prior_pass(tmp_path, TITLES)
 
     exit_code = cli.cmd_export_all(an_args(resume=RUN_ID, data_dir=tmp_path))
 
-    assert opened == [pseudonymous_chat_id("Caro")]
+    assert browserless_run == [pseudonymous_chat_id("Caro")]
     manifest_files = list(tmp_path.glob("run_manifest_*.json"))
     assert len(manifest_files) == 1
     manifest = json.loads(manifest_files[0].read_text(encoding="utf-8"))
     assert {chat["chat_id"] for chat in manifest["chats"]} == {
-        pseudonymous_chat_id(title) for title in titles
+        pseudonymous_chat_id(title) for title in TITLES
     }
     assert manifest["counts"]["exported"] == 3
     assert manifest["chats_enumerated"] == 3
