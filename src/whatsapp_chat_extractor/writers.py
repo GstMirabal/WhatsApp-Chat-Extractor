@@ -9,10 +9,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, TypedDict
 
+from whatsapp_chat_extractor.timestamps import undated_count
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_DATA_DIR = Path("data")
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 CHAT_ID_LENGTH = 12
 
 # Mirrored from `history.COMPLETENESS_PROVEN`. Duplicated rather than imported
@@ -27,22 +29,54 @@ class MessageRecord(TypedDict):
     `kind` is mandatory rather than optional: a field present only on media
     messages would make a v3 file and a v4 file indistinguishable for text, and
     a reader could not tell an absent `kind` from a message predating the field.
+
+    v6 adds `message_id` and `timestamp_iso` (ADR-0007), both additive.
+
+    `message_id` was already being computed — `history.HarvestedRow` carries it
+    and the accumulator dedupes on it — and then dropped at this boundary. A
+    corpus without it cannot recognise the same message across two exports, so
+    no export can be repeated, merged, or corrected incrementally.
+
+    `timestamp_iso` sits **beside** `timestamp`, never in place of it. The
+    rendered string is the evidence: if the parse is ever found wrong it can be
+    redone against files already written. It is `""` for a row WhatsApp rendered
+    with a clock and no date; `ChatExport.undated_messages` counts those.
     """
 
+    message_id: str
     sender: str
     timestamp: str
+    timestamp_iso: str
     body: str
     kind: str
     order: int
 
 
 class ChatExport(TypedDict):
-    """Export for one chat (ADR-0001, ADR-0003, ADR-0004), schema v5.
+    """Export for one chat (ADR-0001, ADR-0003, ADR-0004, ADR-0007), schema v6.
 
     The consumer of this file is an agent learning from the conversation, so the
     payload states whether it holds the whole history. A truncated dump that is
     indistinguishable from a complete one is worse than an honest partial: v1
     had no way to say which it was.
+
+    v6 adds what the corpus needed to be analysed rather than only read
+    (ADR-0007). Every addition is additive; no v5 field changes meaning.
+
+    `source_locale` and `source_timezone` say how the timestamps in this file
+    were rendered. Without them the message clocks have no frame at all: the
+    day/month order followed the operator's machine and nothing recorded which
+    it was, so files written before v6 cannot be repaired — the evidence of
+    their own format was never stored. `session.py` now pins the locale and
+    reads the zone so this stops being true going forward.
+
+    `undated_messages` counts the rows WhatsApp rendered with a clock and no
+    date. That fraction has never been measured; carrying the count means the
+    first whole-account run under v6 measures it without a live probe.
+
+    `passes_used` was already in `history.HarvestResult` and stopped at the CLI.
+    It is the context `completeness` is read in: `unproven` after 12 passes and
+    `unproven` after 255 are not the same claim.
 
     v5 replaces that statement with `completeness` — `proven`, `unproven` or
     `truncated` (ADR-0004). The v4 boolean answered the question with a constant:
@@ -69,9 +103,13 @@ class ChatExport(TypedDict):
     chat_id: str
     exported_at: str
     message_count: int
+    undated_messages: int
     complete: bool
     completeness: str
     stopped_reason: str
+    passes_used: int
+    source_locale: str
+    source_timezone: str
     messages: list[MessageRecord]
 
 
@@ -103,6 +141,9 @@ def build_export(
     messages: list[MessageRecord],
     completeness: str,
     stopped_reason: str,
+    passes_used: int = 0,
+    source_locale: str = "",
+    source_timezone: str = "",
 ) -> ChatExport:
     """Build the export payload with a UTC stamp and completeness metadata.
 
@@ -113,7 +154,8 @@ def build_export(
 
     ``complete`` is derived here rather than accepted as an argument, so the
     boolean and the three-valued field cannot be given disagreeing values by a
-    caller (ADR-0004).
+    caller (ADR-0004). ``undated_messages`` is derived for the same reason: a
+    count supplied by a caller can disagree with the messages beside it.
 
     Args:
         chat_title: Chat title from WhatsApp Web. Hashed, never written.
@@ -123,6 +165,15 @@ def build_export(
             ``history.classify_completeness`` decided it.
         stopped_reason: Which stop condition ended the harvest, so a proven
             start stays distinguishable from an inferred one.
+        passes_used: Scroll passes the harvest spent, from
+            ``history.HarvestResult``. It is the context ``completeness`` is
+            read in.
+        source_locale: Locale the page rendered under, from
+            ``session.DEFAULT_LOCALE``. Empty means unrecorded, which is what
+            every file before v6 effectively is.
+        source_timezone: IANA zone the clocks were rendered in, as
+            ``session.resolve_timezone`` read it. Empty when the page could not
+            answer.
 
     Returns:
         ChatExport ready for JSON serialization.
@@ -132,9 +183,15 @@ def build_export(
         "chat_id": pseudonymous_chat_id(chat_title),
         "exported_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "message_count": len(messages),
+        "undated_messages": undated_count(
+            [message.get("timestamp_iso", "") for message in messages]
+        ),
         "complete": completeness == COMPLETENESS_PROVEN,
         "completeness": completeness,
         "stopped_reason": stopped_reason,
+        "passes_used": passes_used,
+        "source_locale": source_locale,
+        "source_timezone": source_timezone,
         "messages": messages,
     }
 
