@@ -34,8 +34,8 @@ is a judgment recorded so it can be argued with.
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | A1 | `src/whatsapp_chat_extractor/journal.py` | create | medium | `implementer_agent` | sonnet | medium | ✅ 3be2542 |
 | A2 | `tests/test_journal.py` | create | low | `implementer_agent` | sonnet | medium | ✅ 530c4b2 |
-| B1 | `src/whatsapp_chat_extractor/manifest.py` | modify | medium | `implementer_agent` | sonnet | medium | ⏳ |
-| B2 | `tests/test_manifest.py` | modify | low | `implementer_agent` | sonnet | medium | ⏳ |
+| B1 | `src/whatsapp_chat_extractor/manifest.py` | modify | medium | `implementer_agent` | sonnet | medium | ✅ 512860d |
+| B2 | `tests/test_manifest.py` | modify | low | `implementer_agent` | sonnet | medium | ✅ 07c3b95 |
 | C1 | `src/whatsapp_chat_extractor/__main__.py` | modify | high | `implementer_agent` (escalated) | opus | high | ⏳ |
 | C2 | `tests/test_export_all.py` | modify | low | `implementer_agent` | sonnet | medium | ⏳ |
 | C3 | `tests/test_resume.py` | create | low | `implementer_agent` | sonnet | medium | ⏳ |

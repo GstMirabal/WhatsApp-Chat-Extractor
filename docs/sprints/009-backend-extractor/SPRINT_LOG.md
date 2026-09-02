@@ -34,12 +34,12 @@ the wrong anchor. The host anchor was claimed directly with
 | :--- | :--- | :--- | :--- |
 | A | A1–A2 | Append-only NDJSON run journal with `fsync` | ✅ |
 | E | E1–E8 | Corpus contract v6: `message_id`, `timestamp_iso`, pinned locale, recorded timezone, `passes_used`, `undated_messages` | ✅ |
-| B | B1–B2 | Manifest reconstruction from a journal; `run_id` threading | ⏳ |
+| B | B1–B2 | Manifest reconstruction from a journal; `run_id` threading | ✅ |
 | C | C1–C3 | `--resume`, the `recover` subcommand, and the crash-to-journal orchestration | ⏳ |
 | D | D1–D4 | `ADR-0006`, `ADR-0007`, Blueprint, System Overview | ⏳ |
 
-**10 of 19 units landed.** Suite 266 passed / 1 skipped, from a 224/1 baseline
-(`+42`, none removed); `ruff check .` exit `0`.
+**12 of 19 units landed.** Suite 275 passed / 1 skipped, from a 224/1 baseline
+(`+51`, none removed); `ruff check .` exit `0`.
 
 Execution paused at the block E boundary with the context ratio at `12.9`, below
 the `15×` hard threshold rather than after it (`rules/token_economy.md` §3). The
@@ -86,6 +86,7 @@ Indexed into `memory_index.json` at the close, each carrying a `routing_class`.
 | `KI-009-B` | `UPSTREAM_FINDING_003` and `_004` were observed against pin `v4.23.0` and persist under `v4.24.0`; a pin bump is not evidence a finding was addressed | `nucleus` | Recurrence line appended to both existing drafts |
 | `KI-009-C` | A field computed for internal use and discarded at the serialization boundary is invisible to every reviewer who reads only the payload type (`message_id`, `history.py:166-179`) | `host` | `memory_index.json` |
 | `KI-009-D` | Renegotiating scope after the plan is written costs more than planning the wider scope once: ratio 4.1 → 7.8 in a single phase | `host` | `memory_index.json` |
+| `KI-009-F` | `manifest_from_journal` appends reconstructed skips in enumeration order **after** the recorded outcomes, not at the position each gap occupies. Identical to insertion order for the trailing gap a crash produces, and only observable if a journal ever held a non-contiguous gap — which `_export_every_chat` appending once per iteration cannot produce unless an append itself failed. Recorded because a later unit may assume the list is in enumeration order and would be wrong for a reason no test covers | `host` | `memory_index.json` |
 | `KI-009-E` | `detect_drift.py` exits `2` on every resume of an in-flight sprint: it splits `last_close_commit..HEAD` against **sealing tags** only, and a sprint's own commits are uncovered by construction until Phase 8 writes the ledger entry and deployment seals it. Observed at session #16 start — 19 commits, all `#009`, all on `ai-sprint/009`, all recorded in this log, reported as "outside the protocol". The verdict is structurally unreachable in the healthy mid-sprint case, which is the state `session_state.py claim` calls `SUSPENDED` and resumes | `nucleus` | New upstream finding draft at `extract` |
 
 *Rows are candidates recorded as they are found; the harvest closes at Phase 8.*
