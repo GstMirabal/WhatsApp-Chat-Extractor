@@ -335,10 +335,25 @@ invocadas por el CLI que las contiene.
 | Delegation | `native` | `docs/active_state.json` `delegation_mode` |
 | Work units | 18 | Count of rows in Work tables (7 + 7 + 4) |
 | Subagents dispatched | 0 planned at Phase 1 | Phase 4.1 `agent_assignment.md` is the authority |
-| Prior session ratio | 4.1 | `python3 .agents/scripts/session_cost.py --from-anchor --json` |
+| Ratio at Phase 1 open | 4.1 | `python3 .agents/scripts/session_cost.py --from-anchor --json` |
+| **Ratio at Phase 3 close** | **7.8** (peak 192.467) | idem, tras los commits de Fase 3 |
 
-Soft (5×) / hard (15×) thresholds force an update to this section before new
-work continues.
+**Umbral blando de 5× cruzado durante la Fase 1, y actualizado aquí antes de
+continuar** (`rules/token_economy.md` §3). El umbral duro de 15× no está
+cruzado.
+
+Qué lo movió, para que la Fase 6 no repita el patrón sin saberlo: el ratio pasó
+de 4.1 a 7.8 en una sola fase porque el alcance se renegoció **después** de
+redactar el plan. El análisis del corpus leyó `writers.py`, `history.py`,
+`session.py` y dos esqueletos AST, y la ampliación a v6 obligó a reescribir el
+documento entero en vez de parchearlo. Fue trabajo útil —descubrió cuatro
+carencias del esquema y el momento correcto para arreglarlas— pero el coste
+pertenece a la renegociación de alcance, no a la planificación.
+
+Consecuencia operativa para la Fase 6: las 18 unidades se despachan en contexto
+fresco por unidad (`jurisdictional_lock` ya lo exige por fichero), y **no** se
+reabre el alcance dentro de la ejecución. Una tercera ampliación de este sprint
+se rechaza y va al Sprint 010.
 
 ---
 
@@ -416,7 +431,8 @@ Read exit codes with `$?` directly; **never through a pipe**.
 | Reparar los ficheros v5 ya exportados | `§D9`: no consta bajo qué locale se renderizaron, así que cualquier reparación sería conjetura. Documentado en `ADR-0007`, no programado |
 | Reintentar automáticamente una conversación fallida | `manifest.py:23-25` lo excluyó en el Sprint 007 con su razón intacta: reintentar sin haber medido por qué falla es adivinar cuántas veces adivinar. Depende del entregable 1 |
 | Las 5 violaciones de complejidad preexistentes en `export_one.py` y `__main__.py` | Arrastradas, no programadas (`002-delivery-program.md:128`). Este sprint se compromete a no añadir ninguna, no a retirar las existentes |
-| Hueco de test `F-4` (condición de salida de `cmd_export_all`) | Exige un arnés de Playwright que este sprint no construye (`002-delivery-program.md:127`) |
+| Hueco de test `F-4` (condición de salida de `cmd_export_all`) | Exige un arnés de Playwright que este sprint no construye (`002-delivery-program.md:127`). La Puerta 2 del Sprint 008 lo arrastró aquí; se vuelve a arrastrar, y esta vez con su razón escrita: `C1` toca `cmd_export_all`, pero el arnés es una unidad de trabajo propia y no un efecto colateral de añadir `--resume` |
+| Hueco de test `F-6` — `enumeration` es un `str` sin validar | Arrastrado a este sprint por la Puerta 2 del Sprint 008 junto a `F-4`. `docs/sprints/008-backend-extractor/PHASE_REGISTER.md:72` lo clasificó: *«el clasificador es su único productor; un validador es una decisión de diseño, no un arreglo»*. La unidad `B1` toca `manifest.py` y podría alojarlo, pero introducir una decisión de diseño no medida en un sprint ya ampliado una vez es exactamente la deriva que `§D9` evita en el otro bloque. Va al Sprint 010 junto al contrato del corpus, **nombrado aquí para que no se pierda una segunda vez** |
 | Renombrar los ficheros `data/chat_<digest>_<stamp>.json` para llevar el `run_id` | Rompería a todo lector existente del corpus y no hace falta: el diario correlaciona por `chat_id` |
 | La contribución al núcleo por el defecto de `session_start.py` en modo submódulo | **Ya registrada**, no pendiente: `docs/audits/UPSTREAM_FINDING_004_SESSION_START_BOOT_ROOT.md` (2026-08-29) y `_008_BOOT_MISROUTE.md`. `agents.md §3 strict_rule` prohíbe corregirlo desde el host. Lo único que este sprint aporta es una línea de recurrencia en esos borradores: ambos se observaron contra el pin `v4.23.0` y persisten en `v4.24.0` |
 | La contribución al núcleo por el `on_commit.py` duplicado en `PreToolUse` | **Ya registrada**: `docs/audits/UPSTREAM_FINDING_003_PRETOOLUSE_ON_COMMIT.md` (2026-08-27), que cita la misma cadena de comando no bloqueante. Misma aportación: recurrencia bajo `v4.24.0` |
