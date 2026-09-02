@@ -195,9 +195,11 @@ class MessageAccumulator:
         """
         rendered = row["timestamp"]
         return {
-            # Absent only on a fixture predating v6; a real row always has one,
-            # because `add_pass` deduped on it to get here.
-            "message_id": row.get("message_id", ""),
+            # Read directly, not defensively: `add_pass` indexes `message_id`
+            # to deduplicate, so a row missing it raises there and can never
+            # arrive here. `kind` below is different — nothing indexes it, so a
+            # replayed v3 fixture does reach this line without one.
+            "message_id": row["message_id"],
             "sender": row["sender"],
             "timestamp": rendered,
             "timestamp_iso": parse_rendered(rendered, locale=locale),
