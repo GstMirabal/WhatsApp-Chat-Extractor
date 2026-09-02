@@ -47,10 +47,10 @@ is a judgment recorded so it can be argued with.
 | E6 | `tests/test_history.py` | modify | low | `implementer_agent` | sonnet | medium | ✅ 19b73d2 |
 | E7 | `tests/test_writers.py` | modify | low | `implementer_agent` | sonnet | medium | ✅ cd9dd0e |
 | E8 | `tests/test_completeness.py` | modify | low | `implementer_agent` | sonnet | medium | ✅ 9d1633a |
-| D1 | `docs/decisions/ADR-0006-run-journal-and-resume.md` | create | low | `doc_orchestrator` | sonnet | medium | ⏳ |
-| D2 | `docs/decisions/ADR-0007-corpus-contract-v6.md` | create | low | `doc_orchestrator` | sonnet | medium | ⏳ |
-| D3 | `docs/architecture/EXTRACTOR_BLUEPRINT.md` | modify | low | `doc_orchestrator` | sonnet | medium | ⏳ |
-| D4 | `docs/0_SYSTEM_OVERVIEW.md` | modify | low | `doc_orchestrator` | sonnet | medium | ⏳ |
+| D1 | `docs/decisions/ADR-0006-run-journal-and-resume.md` | create | low | `doc_orchestrator` | sonnet | medium | ✅ 13dff97 |
+| D2 | `docs/decisions/ADR-0007-corpus-contract-v6.md` | create | low | `doc_orchestrator` | sonnet | medium | ✅ d18d1e0 |
+| D3 | `docs/architecture/EXTRACTOR_BLUEPRINT.md` | modify | low | `doc_orchestrator` | sonnet | medium | ✅ c62ada9 |
+| D4 | `docs/0_SYSTEM_OVERVIEW.md` | modify | low | `doc_orchestrator` | sonnet | medium | ✅ 9d5212d |
 
 A row moves to `✅ <sha>` as its commit lands (`RA-08`: atomic local commits,
 squash only at close).

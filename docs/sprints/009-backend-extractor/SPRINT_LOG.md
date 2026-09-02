@@ -36,10 +36,25 @@ the wrong anchor. The host anchor was claimed directly with
 | E | E1–E8 | Corpus contract v6: `message_id`, `timestamp_iso`, pinned locale, recorded timezone, `passes_used`, `undated_messages` | ✅ |
 | B | B1–B2 | Manifest reconstruction from a journal; `run_id` threading | ✅ |
 | C | C1–C3 | `--resume`, the `recover` subcommand, and the crash-to-journal orchestration | ✅ |
-| D | D1–D4 | `ADR-0006`, `ADR-0007`, Blueprint, System Overview | ⏳ |
+| D | D1–D4 | `ADR-0006`, `ADR-0007`, Blueprint, System Overview | ✅ |
 
-**15 of 19 units landed.** Suite 277 passed / 1 skipped, from a 224/1 baseline
-(`+53`, none removed); `ruff check .` exit `0`. Only block D remains.
+**19 of 19 units landed.** Suite 277 passed / 1 skipped, from a 224/1 baseline
+(`+53`, none removed); `ruff check .` exit `0`. Phase 6 Execution is complete;
+Phase 7 has not run.
+
+**Two parts of the approved plan did not ship, and unit `D1` found both while
+writing the ADR that was supposed to record them.** Neither is a defect in the
+code that landed; both are gaps between the plan the human approved at Phase 5
+and the work the units were given.
+
+| Plan | What §D1-§D10 specified | What shipped |
+| :--- | :--- | :--- |
+| `§D5` | A second append-only journal, `data/chat_index_<run_id>.ndjson`, written under `--write-index` with the same append discipline as the outcomes journal | `manifest.write_chat_index` still writes one batched JSON object at the end of the run. A crash before that call loses the whole pass's titles, not a torn last line. **No work unit was ever given this to build**: `A1`'s row names `open_journal`, `write_header`, `append_outcome` and `read_journal` and no chat-index journal, so the design note had no implementer |
+| `§D6` | The large files "only call" the new modules | `journal.py` and `timestamps.py` exist and `export_one.py` was left untouched as planned, but `__main__.py` grew from 421 to 793 lines. Only the line-level journal I/O moved out; the CLI orchestration landed in the file the note was written to protect |
+
+`C1`'s `_titles_for_index` is a consequence of the first: with no append journal
+for titles, threading `run_id` into the batched writer made every pass of one
+run truncate the same file, and that fold-in is the repair.
 
 **Unit `C1` deviated from its row in five places**, each because the file
 disagreed with the plan, and each recorded in the commit body of `b068d1a`
