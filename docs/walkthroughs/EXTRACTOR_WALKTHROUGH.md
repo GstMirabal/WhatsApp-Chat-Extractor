@@ -43,7 +43,8 @@ WhatsApp Web renders such a marker.
 
 | Item | Marked as | Tracked where |
 | :--- | :--- | :--- |
-| **The enumerator undercounts silently when the chat list reorders mid-sweep** — 882 of 899 found at one reorder per 5 reads. No duplicates; pure loss, while `enumeration_complete` still reports `true` | **open defect** | Sprint 007 `SPRINT_LOG.md` F3; pinned by `tests/test_chat_list.py::test_a_reordering_list_makes_the_sweep_UNDERCOUNT_silently` |
+| The single-pass sweep undercounts silently when the chat list reorders mid-sweep — 882 of 899 at one reorder per 5 reads, 856 at one per 2. No duplicates; pure loss | **mitigated (#008)** | `sweep_until_stable` unions repeated sweeps and recovers 899 of 899 at both rates in 4 sweeps; `enumeration_complete` is replaced by `ADR-0005`'s three values. The primitive's limit is still pinned by `tests/test_chat_list.py::test_a_reordering_list_makes_the_sweep_UNDERCOUNT_silently` |
+| Convergence is evidence, not proof: a conversation can in principle evade any finite number of sweeps, so `converged` never means the list was provably seen whole | measured, by design | ADR-0005 |
 | A whole-account run takes ~15 hours (910 conversations at ~60 s each, mostly `--load-wait-ms` waits) | open risk | Sprint 007 `task_scope.md` live verification |
 | `sender: unknown` on 3.9% of messages (5 of 129) in the #007 live run, against 0 of 513 in #004 — recorded, deliberately not diagnosed | open risk | Sprint 007 `CHANGELOG.md` Known open |
 | `chat_id` is not permanent: the digest follows the title, so a renamed conversation will not link to its earlier exports | `:tech-debt:` | Blueprint §3 identity contract |

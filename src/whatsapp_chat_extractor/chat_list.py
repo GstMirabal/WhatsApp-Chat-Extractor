@@ -59,6 +59,23 @@ BOTTOM_TOLERANCE_PX = 1
 # reported missing. The hint is usually exact; three covers a list that shifted.
 DEFAULT_SEEK_ATTEMPTS = 3
 
+# A single sweep loses conversations when the list reorders under it (882 of 899
+# at one reorder per 5 reads, 856 at one per 2, zero duplicates). `ADR-0005`
+# replaces the boolean that hid this with three values, and repeated sweeping is
+# the mitigation: each sweep meets a different interleaving, and their union
+# recovers what any one of them missed.
+ENUMERATION_CONVERGED = "converged"
+ENUMERATION_UNCONVERGED = "unconverged"
+ENUMERATION_TRUNCATED = "truncated"
+# Consecutive whole sweeps contributing nothing new that end the enumeration.
+# Two, not one: a single quiet sweep is one observation, and the first sweep of
+# any run is quiet by construction only when the list is empty.
+STABLE_SWEEPS_TO_STOP = 2
+# Sweep budget. Convergence needs at least three sweeps (one to discover, two to
+# confirm) and observed runs settle by five; eight leaves margin for a busy list
+# without unbounding a run that never settles.
+DEFAULT_MAX_SWEEPS = 8
+
 
 class ChatRef(TypedDict):
     """One enumerated conversation: what it is, and where it was seen.
@@ -70,6 +87,19 @@ class ChatRef(TypedDict):
 
     chat_id: str
     index: int
+
+
+class EnumerationResult(TypedDict):
+    """Everything a run manifest needs to state about one enumeration.
+
+    `enumeration` is one of `converged`, `unconverged` or `truncated`
+    (`ADR-0005`). It is never a boolean, because the boolean it replaces
+    reported `true` for a run that had lost 43 of 899 conversations.
+    """
+
+    refs: list[ChatRef]
+    enumeration: str
+    sweeps: int
 
 
 def row_title(row: object) -> str:
@@ -253,6 +283,108 @@ def sweep_reached_bottom(page: Page) -> bool:
         bool: True when the sweep can be said to have seen the whole list.
     """
     return at_pane_bottom(pane_metrics(page))
+
+
+def classify_enumeration(*, reached_bottom: bool, stable_sweeps: int) -> str:
+    """Which of `ADR-0005`'s three values describes a finished enumeration.
+
+    Fails closed: `converged` is returned only on a positive demonstration of
+    **both** conditions. Every other state degrades to a value that does not
+    claim the list was seen whole, because the defect this replaces was a field
+    that claimed exactly that while 43 conversations were missing.
+
+    Args:
+        reached_bottom: Whether the pane foot was reached on the final sweep.
+        stable_sweeps: Consecutive trailing sweeps that contributed no
+            conversation not already seen.
+
+    Returns:
+        str: `truncated` when the foot was never reached, `converged` when it
+            was and the trailing sweeps agreed, `unconverged` when the foot was
+            reached while sweeps were still contributing.
+    """
+    if not reached_bottom:
+        return ENUMERATION_TRUNCATED
+    if stable_sweeps >= STABLE_SWEEPS_TO_STOP:
+        return ENUMERATION_CONVERGED
+    return ENUMERATION_UNCONVERGED
+
+
+def _accumulate_one_sweep(
+    page: Page,
+    seen: dict[str, None],
+    *,
+    max_passes: int,
+    settle_ms: int,
+) -> tuple[bool, int]:
+    """Sweep once from the head and merge what it found into ``seen``.
+
+    Args:
+        page: WhatsApp Web page showing the chat list.
+        seen: Digests already discovered, in first-discovery order. Mutated in
+            place, so the union survives across sweeps.
+        max_passes: Hard cap on scroll passes within this sweep.
+        settle_ms: Wait after each scroll.
+
+    Returns:
+        tuple[bool, int]: Whether the pane foot was reached, and how many
+            conversations this sweep contributed that were not already known.
+    """
+    scroll_pane_to(page, 0, settle_ms=settle_ms)
+    found = sweep_chat_list(page, max_passes=max_passes, settle_ms=settle_ms)
+    reached_bottom = sweep_reached_bottom(page)
+    added = [ref["chat_id"] for ref in found if ref["chat_id"] not in seen]
+    seen.update(dict.fromkeys(added))
+    return reached_bottom, len(added)
+
+
+def sweep_until_stable(
+    page: Page,
+    *,
+    max_passes: int = DEFAULT_MAX_PASSES,
+    settle_ms: int = DEFAULT_SETTLE_MS,
+    max_sweeps: int = DEFAULT_MAX_SWEEPS,
+) -> EnumerationResult:
+    """Enumerate the chat list by repeated sweeps, and say how sure the result is.
+
+    :func:`sweep_chat_list` reads a list that can move underneath it. This runs
+    it from the head repeatedly, unions the results by digest, and stops once
+    two consecutive sweeps contribute nothing new — evidence, never proof, which
+    is why the verdict is a three-valued field and not a boolean (`ADR-0005`).
+
+    Args:
+        page: WhatsApp Web page showing the chat list.
+        max_passes: Hard cap on scroll passes within one sweep.
+        settle_ms: Wait after each scroll.
+        max_sweeps: Hard cap on sweeps; guarantees termination.
+
+    Returns:
+        EnumerationResult: The union of every sweep in first-discovery order
+            with `index` reassigned over that union, the `ADR-0005` verdict, and
+            how many sweeps were performed.
+    """
+    seen: dict[str, None] = {}
+    stable_sweeps = 0
+    sweeps = 0
+    reached_bottom = False
+    for _ in range(max(1, max_sweeps)):
+        reached_bottom, added = _accumulate_one_sweep(
+            page, seen, max_passes=max_passes, settle_ms=settle_ms
+        )
+        sweeps += 1
+        stable_sweeps = stable_sweeps + 1 if not added else 0
+        if reached_bottom and stable_sweeps >= STABLE_SWEEPS_TO_STOP:
+            break
+    verdict = classify_enumeration(
+        reached_bottom=reached_bottom, stable_sweeps=stable_sweeps
+    )
+    logger.info(
+        "Enumerated %s conversations over %s sweeps (%s)", len(seen), sweeps, verdict
+    )
+    refs: list[ChatRef] = [
+        {"chat_id": chat_id, "index": index} for index, chat_id in enumerate(seen)
+    ]
+    return {"refs": refs, "enumeration": verdict, "sweeps": sweeps}
 
 
 def open_chat_by_digest(

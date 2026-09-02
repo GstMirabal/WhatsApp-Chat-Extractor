@@ -1,6 +1,7 @@
 # Platform Hardening — pending controls
 
-**Status**: CI landed 2026-08-30 (Sprint 004). Branch protection **blocked**.
+**Status**: CI landed 2026-08-30 (Sprint 004) and **executes since 2026-09-01**
+(Sprint 008 — evidence below). Branch protection still **blocked**.
 **Blocker**: the repository is private on a free plan, where GitHub does not
 offer branch protection or rulesets:
 
@@ -13,8 +14,8 @@ GET /repos/GstMirabal/WhastApp-Chat-Extractor/branches/main/protection
 This is a plan limitation, not a token scope problem — the operator's token
 carries `repo` and `workflow`.
 
-**Second blocker, found when the CI landed**: Actions jobs cannot start on this
-repository either. All four checks failed in 2 seconds with
+**Second blocker, found when the CI landed — CLEARED 2026-09-01.** Actions jobs
+could not start on this repository: all four checks failed in 2 seconds with
 
 ```
 The job was not started because recent account payments have failed
@@ -22,7 +23,64 @@ or your spending limit needs to be increased.
 ```
 
 Actions consumes billed minutes on private repositories; on public ones they are
-free. Making the repository public therefore clears both blockers at once.
+free.
+
+### The billing block is gone — measured, Sprint 008
+
+Re-checked on 2026-09-01 with `gh run list`. CI now executes for real:
+
+| Run | Branch | Event | Conclusion | Duration |
+| :--- | :--- | :--- | :--- | :--- |
+| `33477613266` | `main` | push | **success** | 23 s |
+| `33477552793` | `main` | push | **success** | 20 s |
+| `33477448158` | `ai-sprint/007` | pull_request | **success** | 25 s |
+| `33360762207` | `main` | push | failure | 4 s |
+| `33360697068` | `main` | push | failure | 5 s |
+
+The last two are the old billing signature; the first three are real. Job-level
+evidence for `33477613266`, which is what distinguishes a genuine pass from the
+2-second failures — these jobs ran **steps**:
+
+| Job | Steps executed | Conclusion |
+| :--- | :--- | :--- |
+| `ruff` | 7, including `Install ruff` and `Lint` | success |
+| `pytest (3.11)` | 8, including `Install package and test dependencies` and `Run tests` | success |
+| `pytest (3.13)` | 8, same | success |
+| `no exported chats committed` | 5, including `Refuse any tracked file under data/` | success |
+
+Reproduce: `gh run view 33477613266 --json jobs`.
+
+**First sprint verified by CI, not by the operator's Mac.** PR
+[`#9`](https://github.com/GstMirabal/WhastApp-Chat-Extractor/pull/9) (Sprint
+008) triggered run `33597073031` on `pull_request`, and all four jobs passed
+with real work behind them:
+
+| Job | Steps | Duration | Conclusion |
+| :--- | :--- | :--- | :--- |
+| `pytest (3.11)` | 8 | 19 s | success |
+| `pytest (3.13)` | 8 | 18 s | success |
+| `ruff` | 8 | 14 s | success |
+| `no exported chats committed` | 5 | 7 s | success |
+
+The step counts and durations are the evidence, not the green tick: the billing
+failures concluded in 2–5 seconds having executed **zero** steps. Reproduce with
+`gh run view 33597073031 --json jobs`.
+
+**What this changes.** Four releases were merged past `ci_gate.py` under
+explicit human authorization because no independent infrastructure could run
+this code. That is no longer true: `main` has passing CI, and as of PR `#9` a
+sprint branch does too, before any merge. What has **not**
+changed is the first blocker — branch protection and rulesets still return
+`403`, so `ci_gate.py` still cannot read what `main` requires and will still
+refuse. Green checks now exist; the gate still cannot see a rule saying they are
+mandatory.
+
+**Correction to the record.** `docs/active_state.json` describes the `ci_gate.py`
+`403` as *"the token lacks scope"*. That is wrong, and this document had it right
+from the start: it is a plan limitation. Re-confirmed 2026-09-01 — the API
+returns *"Upgrade to GitHub Pro or make this repository public to enable this
+feature"*, which no token scope can satisfy. The anchor is corrected in the same
+sprint that measured this.
 
 ## Deviation on record — v0.4.0 merged without CI
 
@@ -154,6 +212,44 @@ written to that standard already.
 
 ## Still open (not blocked by the plan)
 
-| Gap | Owner |
-| :--- | :--- |
-| `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, `NOTICE` absent at the host root | `/agents:harden` |
+| Gap | Owner | Re-checked |
+| :--- | :--- | :--- |
+| `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, `NOTICE.md` absent at the host root | `/agents:harden` | 2026-09-01 — all four still absent; `LICENSE` is present |
+| `ci_gate.py` cannot read `main`'s requirements, so a green CI still does not satisfy the deployment gate | repository owner (make public, or GitHub Pro) | 2026-09-01 — `403` unchanged |
+
+## Controls not applied by this sprint, and why
+
+Sprint 008's D1 ran the platform **probe** only. Every write in *"What unlocks
+when the repository becomes public"* above is still unapplied, because each one
+either returns `403` on this plan or changes the repository's public posture —
+an outward-facing change that belongs to the repository owner, not to a sprint
+executing an approved code plan. The probe is read-only by design.
+
+## Deployment attempt — Sprint 008, PR #9 (2026-09-02)
+
+`deployment_workflow.md` Phase 1 `pr_flow` ran and **stopped**. `RA-13` requires
+`ci_gate.py` to be observed at exit `0` before `gh pr merge --squash` is issued:
+
+```
+$ python3 .agents/scripts/ci_gate.py 9
+CI_GATE_EXIT=2
+❌ What `main` requires could not be determined … branch protection: forbidden; rulesets: forbidden
+```
+
+**The distinction that matters, and that the four earlier deviations did not
+have**: the checks are green. Run `33598297247` on the sealed tip `df61678`
+passed all four with real steps — `pytest (3.11)` 19 s, `pytest (3.13)` 23 s,
+`ruff` 10 s, `no exported chats committed` 5 s.
+
+| | Releases `v0.4.0` – `v0.7.0` | PR `#9` |
+| :--- | :--- | :--- |
+| Checks reported | failure in 2–5 s | **pass** in 5–23 s |
+| Steps executed | **zero** | 5–8 per job |
+| Independent verification | none | **full** |
+| `ci_gate.py` | exit `2` | exit `2` |
+
+The gate refuses for a different reason now. Before, there was nothing to
+verify; now the verification exists and no *rule* declares it mandatory, so the
+gate cannot read a requirement to confirm. Merging would be the fifth
+authorization past this gate and the first with real evidence behind it — a
+different decision from the previous four, and still the repository owner's.

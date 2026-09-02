@@ -12,19 +12,26 @@ exactly that, found by the operator rather than by the code.
 
 from __future__ import annotations
 
+import random
+
 import pytest
 
 from whatsapp_chat_extractor.chat_list import (
     CHAT_ROW_SELECTOR,
+    ENUMERATION_CONVERGED,
+    ENUMERATION_TRUNCATED,
+    ENUMERATION_UNCONVERGED,
     TITLE_SELECTORS,
     ChatRef,
     at_pane_bottom,
+    classify_enumeration,
     find_row,
     open_chat_by_digest,
     row_digests,
     row_title,
     seek_scroll_top,
     sweep_chat_list,
+    sweep_until_stable,
 )
 from whatsapp_chat_extractor.writers import pseudonymous_chat_id
 
@@ -374,3 +381,175 @@ def test_a_reordering_list_makes_the_sweep_UNDERCOUNT_silently() -> None:
     ids = [ref["chat_id"] for ref in refs]
     assert len(ids) == len(set(ids)), "no conversation may be enumerated twice"
     assert len(refs) < 899, "this test exists to pin an undercount that is real"
+
+
+# --- converging enumeration (ADR-0005) --------------------------------------
+#
+# The four tests above document `sweep_chat_list`, the single-pass primitive,
+# and remain true of it: Sprint 008 did not change that function. What follows
+# covers `sweep_until_stable`, which repeats it and unions the results.
+
+
+def test_repeated_sweeping_recovers_what_a_reordering_list_hid() -> None:
+    """The defect above, at the same reorder rate, against the converging sweep."""
+    pane = ReorderingPane(titles(899), every=5, **MEASURED)
+    result = sweep_until_stable(pane, max_passes=4000, settle_ms=0)
+    ids = [ref["chat_id"] for ref in result["refs"]]
+    assert len(ids) == 899, "a single sweep found 882 of these"
+    assert len(set(ids)) == 899
+    assert result["enumeration"] == ENUMERATION_CONVERGED
+
+
+def test_the_worst_measured_reorder_rate_also_recovers_everything() -> None:
+    """One reorder every two reads — where a single sweep found 856 of 899."""
+    pane = ReorderingPane(titles(899), every=2, **MEASURED)
+    result = sweep_until_stable(pane, max_passes=4000, settle_ms=0)
+    assert len({ref["chat_id"] for ref in result["refs"]}) == 899
+    assert result["enumeration"] == ENUMERATION_CONVERGED
+
+
+def test_a_quiet_list_converges_on_the_minimum_number_of_sweeps() -> None:
+    """Three: one to discover, two to agree. The cost of the fix, pinned."""
+    pane = FakePane(titles(899), **MEASURED)
+    result = sweep_until_stable(pane, max_passes=4000, settle_ms=0)
+    assert len(result["refs"]) == 899
+    assert result["sweeps"] == 3
+    assert result["enumeration"] == ENUMERATION_CONVERGED
+
+
+def test_the_union_is_reindexed_contiguously_in_discovery_order() -> None:
+    """`index` is a seek hint, so it must span the union with no holes."""
+    pane = ReorderingPane(titles(899), every=5, **MEASURED)
+    result = sweep_until_stable(pane, max_passes=4000, settle_ms=0)
+    assert [ref["index"] for ref in result["refs"]] == list(range(899))
+
+
+def test_a_sweep_that_never_reaches_the_foot_is_truncated_not_converged() -> None:
+    """The pass cap ended it, so nothing may be claimed about the whole list."""
+    pane = FakePane(titles(899), **MEASURED)
+    result = sweep_until_stable(pane, max_passes=2, settle_ms=0, max_sweeps=3)
+    assert result["enumeration"] == ENUMERATION_TRUNCATED
+    assert len(result["refs"]) < 899
+
+
+def test_a_budget_that_runs_out_while_still_finding_chats_is_unconverged() -> None:
+    """The foot was reached, but the sweeps had not stopped contributing."""
+    pane = ReorderingPane(titles(899), every=2, **MEASURED)
+    result = sweep_until_stable(pane, max_passes=4000, settle_ms=0, max_sweeps=2)
+    assert result["enumeration"] == ENUMERATION_UNCONVERGED
+    assert result["sweeps"] == 2
+
+
+class RandomReorderPane(FakePane):
+    """A harder list: moves a **random** conversation to the top, not the last.
+
+    `ReorderingPane` rotates the tail to the head, which is a favourable shape
+    for a converging sweep — a rotation eventually walks every conversation past
+    the window on its own. This moves an arbitrary conversation instead, so
+    recovery cannot be an artifact of the fixture's regularity.
+
+    Added at the Phase 7 gate, after the committed evidence was found to rest on
+    the friendlier fixture alone.
+    """
+
+    def __init__(
+        self, *args: object, every: int = 5, seed: int = 0, **kwargs: object
+    ) -> None:
+        super().__init__(*args, **kwargs)
+        self._every = every
+        self._reads = 0
+        self._rng = random.Random(seed)
+
+    def query_selector_all(self, selector: str) -> list[FakeRow]:
+        self._reads += 1
+        if self._reads % self._every == 0 and len(self.titles) > 1:
+            self.titles.insert(0, self.titles.pop(self._rng.randrange(len(self.titles))))
+        return super().query_selector_all(selector)
+
+
+@pytest.mark.parametrize("every", [5, 2])
+@pytest.mark.parametrize("seed", [0, 1, 2])
+def test_recovery_survives_an_irregular_reordering(every: int, seed: int) -> None:
+    """The fix must not depend on the reordering being a tidy rotation."""
+    single = sweep_chat_list(
+        RandomReorderPane(titles(899), every=every, seed=seed, **MEASURED),
+        max_passes=4000, settle_ms=0,
+    )
+    assert len(single) < 899, "the single-pass sweep must still lose conversations here"
+
+    result = sweep_until_stable(
+        RandomReorderPane(titles(899), every=every, seed=seed, **MEASURED),
+        max_passes=4000, settle_ms=0,
+    )
+    assert len({ref["chat_id"] for ref in result["refs"]}) == 899
+    assert result["enumeration"] == ENUMERATION_CONVERGED
+
+
+def test_the_union_keeps_first_discovery_order() -> None:
+    """`index` is a live-pane seek hint, so the order is load-bearing, not cosmetic.
+
+    Contiguity alone does not pin it: reversing the union keeps `index` a clean
+    `range` while sending every seek to the opposite end of the pane. Gap F-3,
+    found by mutation at the Phase 7 gate.
+    """
+    pane = FakePane(titles(30), window=4)
+    result = sweep_until_stable(pane, max_passes=4000, settle_ms=0)
+    expected = [pseudonymous_chat_id(title) for title in titles(30)]
+    assert [ref["chat_id"] for ref in result["refs"]] == expected
+
+
+def test_the_loop_does_not_stop_on_quiet_sweeps_alone() -> None:
+    """Both halves of the break condition must be load-bearing.
+
+    A pane that goes quiet *before* the foot must not end the enumeration:
+    dropping `reached_bottom and` from the stop test leaves the suite green
+    otherwise. Gap F-5, found by mutation at the Phase 7 gate.
+    """
+    class LateRevealingPane(FakePane):
+        """Withholds most of the list, and never reports its foot until it yields.
+
+        Sweeps 1-3 see only the head and add nothing after the first, so two
+        consecutive quiet sweeps accumulate while the pane is demonstrably not
+        at its foot. A stop test that ignores `reached_bottom` ends here, with
+        most of the account unseen.
+        """
+
+        REAL_TOTAL = 120
+        HELD_BACK_UNTIL_SWEEP = 4
+
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            super().__init__(*args, **kwargs)
+            self._sweeps = 0
+
+        def evaluate(self, js: str, arg: object = None) -> object:
+            if isinstance(arg, list):
+                if int(arg[1]) == 0:
+                    self._sweeps += 1
+                return super().evaluate(js, arg)
+            metrics = super().evaluate(js, arg)
+            # Always taller than what is rendered, so the foot is never reached.
+            metrics["scroll_height"] = self.REAL_TOTAL * self.row_height * 2
+            return metrics
+
+        def query_selector_all(self, selector: str) -> list[FakeRow]:
+            if self._sweeps < self.HELD_BACK_UNTIL_SWEEP:
+                return [FakeRow(title) for title in self.titles[:5]]
+            return super().query_selector_all(selector)
+
+    pane = LateRevealingPane(titles(120), window=10, row_height=10, client_height=20)
+    result = sweep_until_stable(pane, max_passes=200, settle_ms=0, max_sweeps=8)
+    assert len(result["refs"]) == 120, "a quiet stretch above the foot is not the end"
+    assert result["enumeration"] == ENUMERATION_TRUNCATED, "the foot was never reached"
+
+
+def test_the_classifier_never_reports_converged_without_the_foot() -> None:
+    """Fail-closed: trailing agreement alone is not enough, in either direction."""
+    assert classify_enumeration(reached_bottom=False, stable_sweeps=99) == (
+        ENUMERATION_TRUNCATED
+    )
+    assert classify_enumeration(reached_bottom=True, stable_sweeps=0) == (
+        ENUMERATION_UNCONVERGED
+    )
+    assert classify_enumeration(reached_bottom=True, stable_sweeps=2) == (
+        ENUMERATION_CONVERGED
+    )

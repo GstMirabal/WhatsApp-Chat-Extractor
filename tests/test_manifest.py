@@ -102,22 +102,28 @@ def test_every_key_is_present_even_at_zero() -> None:
 def test_a_partial_enumeration_is_visible_in_the_manifest() -> None:
     """899 of 899 and 70 of 899 must not produce the same-looking record."""
     partial = build_manifest(
-        a_run(), started_at=now(), chats_enumerated=70, enumeration_complete=False
+        a_run(), started_at=now(), chats_enumerated=70,
+        enumeration="truncated", sweeps=1,
     )
-    assert partial["enumeration_complete"] is False
+    assert partial["enumeration"] == "truncated"
+    assert partial["sweeps"] == 1
     assert partial["chats_enumerated"] == 70
 
 
 def test_the_manifest_declares_its_schema() -> None:
     manifest = build_manifest(
-        a_run(), started_at=now(), chats_enumerated=3, enumeration_complete=True
+        a_run(), started_at=now(), chats_enumerated=3, enumeration="converged", sweeps=3
     )
     assert manifest["schema_version"] == MANIFEST_SCHEMA_VERSION
+    # Compared to the literal as well, following tests/test_writers.py: against
+    # the constant alone, changing the constant changes the test with it and the
+    # bump goes unnoticed. Gap F-2, found by mutation at the Phase 7 gate.
+    assert manifest["schema_version"] == 2
 
 
 def test_written_manifest_round_trips(tmp_path: Path) -> None:
     manifest = build_manifest(
-        a_run(), started_at=now(), chats_enumerated=3, enumeration_complete=True
+        a_run(), started_at=now(), chats_enumerated=3, enumeration="converged", sweeps=3
     )
     payload = json.loads(
         write_manifest(manifest, data_dir=tmp_path).read_text(encoding="utf-8")
@@ -130,7 +136,7 @@ def test_written_manifest_round_trips(tmp_path: Path) -> None:
 def test_no_conversation_name_reaches_the_manifest(tmp_path: Path) -> None:
     """ADR-0001. The manifest is written on every run, including unattended ones."""
     manifest = build_manifest(
-        a_run(), started_at=now(), chats_enumerated=3, enumeration_complete=True
+        a_run(), started_at=now(), chats_enumerated=3, enumeration="converged", sweeps=3
     )
     text = write_manifest(manifest, data_dir=tmp_path).read_text(encoding="utf-8")
     for name in ("Ana", "Beto", "Caro"):
@@ -140,7 +146,7 @@ def test_no_conversation_name_reaches_the_manifest(tmp_path: Path) -> None:
 
 def test_the_manifest_filename_carries_no_name(tmp_path: Path) -> None:
     manifest = build_manifest([], started_at=now(), chats_enumerated=0,
-                              enumeration_complete=True)
+                              enumeration="converged", sweeps=3)
     assert write_manifest(manifest, data_dir=tmp_path).name.startswith("run_manifest_")
 
 
@@ -157,7 +163,7 @@ def test_the_index_maps_digests_back_to_titles(tmp_path: Path) -> None:
 def test_the_index_is_a_separate_file_from_the_manifest(tmp_path: Path) -> None:
     """Deleting the names must not cost the record of what the run did."""
     manifest = build_manifest(a_run(), started_at=now(), chats_enumerated=3,
-                              enumeration_complete=True)
+                              enumeration="converged", sweeps=3)
     manifest_path = write_manifest(manifest, data_dir=tmp_path)
     index_path = write_chat_index({ANA: "Ana"}, data_dir=tmp_path)
     assert manifest_path != index_path
@@ -169,6 +175,6 @@ def test_the_index_is_a_separate_file_from_the_manifest(tmp_path: Path) -> None:
 def test_writing_no_index_is_the_default_path(tmp_path: Path) -> None:
     """Nothing in building or writing a manifest creates an index."""
     manifest = build_manifest(a_run(), started_at=now(), chats_enumerated=3,
-                              enumeration_complete=True)
+                              enumeration="converged", sweeps=3)
     write_manifest(manifest, data_dir=tmp_path)
     assert not list(tmp_path.glob("chat_index_*.json"))

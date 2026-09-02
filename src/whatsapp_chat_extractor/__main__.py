@@ -11,9 +11,9 @@ from whatsapp_chat_extractor.chat_list import (
     DEFAULT_SETTLE_MS as CHAT_LIST_SETTLE_MS,
 )
 from whatsapp_chat_extractor.chat_list import (
+    ENUMERATION_CONVERGED,
     open_chat_by_digest,
-    sweep_chat_list,
-    sweep_reached_bottom,
+    sweep_until_stable,
 )
 from whatsapp_chat_extractor.export_one import open_chat_by_query
 from whatsapp_chat_extractor.history import (
@@ -208,11 +208,11 @@ def _export_every_chat(page: object, args: argparse.Namespace) -> tuple:
         args: Parsed command line.
 
     Returns:
-        tuple: The outcome entries, the refs enumerated, whether the sweep
-            reached the foot of the pane, and the digest-to-title index.
+        tuple: The outcome entries, the `ADR-0005` enumeration result, and the
+            digest-to-title index.
     """
-    refs = sweep_chat_list(page, settle_ms=args.settle_ms)
-    complete = sweep_reached_bottom(page)
+    enumerated = sweep_until_stable(page, settle_ms=args.settle_ms)
+    refs = enumerated["refs"]
     targets = refs[: args.limit] if args.limit else refs
     outcomes: list[dict] = []
     index: dict[str, str] = {}
@@ -236,7 +236,7 @@ def _export_every_chat(page: object, args: argparse.Namespace) -> tuple:
         skipped(ref["chat_id"], index=ref["index"], reason="beyond --limit")
         for ref in refs[len(targets):]
     )
-    return outcomes, refs, complete, index
+    return outcomes, enumerated, index
 
 
 def cmd_export_all(args: argparse.Namespace) -> int:
@@ -257,23 +257,28 @@ def cmd_export_all(args: argparse.Namespace) -> int:
         try:
             page = open_whatsapp(context)
             wait_until_ready(page, timeout_ms=args.timeout_ms)
-            outcomes, refs, complete, index = _export_every_chat(page, args)
+            outcomes, enumerated, index = _export_every_chat(page, args)
         finally:
             context.close()
 
     manifest = build_manifest(
-        outcomes, started_at=started_at, chats_enumerated=len(refs),
-        enumeration_complete=complete,
+        outcomes, started_at=started_at,
+        chats_enumerated=len(enumerated["refs"]),
+        enumeration=enumerated["enumeration"], sweeps=enumerated["sweeps"],
     )
     print(write_manifest(manifest, data_dir=args.data_dir))
     if args.write_index and index:
         write_chat_index(index, data_dir=args.data_dir)
-    if not complete:
+    if enumerated["enumeration"] != ENUMERATION_CONVERGED:
         logger.error(
-            "The sweep did not reach the foot of the chat list, so this is not "
-            "a whole-account export. Raise --max-passes on the sweep."
+            "Enumeration is %s over %s sweeps, so this is not a whole-account "
+            "export. `truncated` means the sweep never reached the foot of the "
+            "chat list: raise --max-passes. `unconverged` means the list was "
+            "still yielding new conversations when the sweep budget ran out.",
+            enumerated["enumeration"], enumerated["sweeps"],
         )
-    return 0 if complete and not manifest["counts"]["failed"] else EXIT_INCOMPLETE
+    converged = enumerated["enumeration"] == ENUMERATION_CONVERGED
+    return 0 if converged and not manifest["counts"]["failed"] else EXIT_INCOMPLETE
 
 
 def _add_harvest_args(parser: argparse.ArgumentParser) -> None:

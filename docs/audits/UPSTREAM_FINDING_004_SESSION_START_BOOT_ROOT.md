@@ -147,3 +147,34 @@ editing the submodule in place.
 
 Open a nucleus PR from a separate `.agents` clone — do not edit the submodule
 here (`§3 strict_rule`, `§4 feedback_upstream`).
+
+## Third instance, reproduced live at the Sprint 008 close (2026-09-02)
+
+`close_workflow.md` Phase 1 `model_ledger_regen` runs `make model-ledger`. At pin
+v4.24.0, from the host root:
+
+```
+$ make -f .agents/Makefile model-ledger
+cd <host>/.agents && python3 scripts/model_ledger.py
+Wrote docs/audits/MODEL_LEDGER.md (11 sprint rows).
+```
+
+The eleven rows are **this host's sprints**, and the file landed at
+`.agents/docs/audits/MODEL_LEDGER.md` — inside the submodule. The host's own
+`docs/audits/MODEL_LEDGER.md` was left untouched and is now stale by six days.
+
+`scripts/model_ledger.py:188` is `root = agents_root()`, unconditional, with
+`OUT_REL = Path("docs/audits/MODEL_LEDGER.md")` resolved against it and no flag
+to override either. A host has **no way** to regenerate its own ledger with the
+shipped script, while the close workflow requires it to.
+
+`submodule_purity.py` reported **clean** immediately afterwards, because
+`.agents/.gitignore` covers `docs/audits/`. Host content is sitting in the
+framework tree and the check built to catch that cannot see it — the same
+blindness this finding's first instance documents for the state anchor, now
+observed a third time on a third artifact.
+
+**Fix**: `model_ledger.py` is host-scoped by subject — it enumerates the host's
+sprints — so per `scripts/_root.py`'s own two-class rule it must resolve its
+output against the cwd, not `agents_root()`, and declare that in its docstring.
+A `--root` flag would also work and is more explicit.

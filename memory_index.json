@@ -1,6 +1,6 @@
 {
-  "last_update": "2026-09-01",
-  "sprint_id": "007",
+  "last_update": "2026-09-02",
+  "sprint_id": "008",
   "entries": [
     {
       "id": "KI-001-A",
@@ -181,6 +181,54 @@
       "summary": "Run the max_lines_per_func cap over the whole tree (src/ and scripts/), not over the files just edited; a check scoped to what you remember touching measures your memory.",
       "routing_class": "host",
       "sprint": "007"
+    },
+    {
+      "id": "KI-008-A",
+      "summary": "A blocking hook must be satisfiable by the actor it blocks: check_role_artifact.py --from-hook demanded a SPRINT_LOG row from gate subagents that hold no Write tool, and the forced continuation overwrote ~178k tokens of gate evidence.",
+      "routing_class": "nucleus",
+      "sprint": "008"
+    },
+    {
+      "id": "KI-008-B",
+      "summary": "Write both Phase 7 gate rows into SPRINT_LOG.md BEFORE dispatching either gate, or the SubagentStop hook eats the evidence that determines the verdict.",
+      "routing_class": "host",
+      "sprint": "008"
+    },
+    {
+      "id": "KI-008-C",
+      "summary": "A diagnostic that ran before a state change can reach a confident wrong conclusion: unit A1 cleared the gate channel while the anchor still pointed at the previous sprint, so re-verify a diagnostic's preconditions still hold at the moment its finding is applied.",
+      "routing_class": "host",
+      "sprint": "008"
+    },
+    {
+      "id": "KI-008-D",
+      "summary": "A fixture whose perturbation is regular flatters the fix: rotating the tail to the head lets any head-restarting sweep converge, so recovery claims need an irregular fixture before they mean anything.",
+      "routing_class": "host",
+      "sprint": "008"
+    },
+    {
+      "id": "KI-008-E",
+      "summary": "A privacy test over a fake whose return value structurally cannot carry the secret proves the fake is safe, not the code; assert against the real query's own source instead.",
+      "routing_class": "host",
+      "sprint": "008"
+    },
+    {
+      "id": "KI-008-F",
+      "summary": "Assert a schema version against the literal, never only against the constant the implementation reads: changing the constant changes the test with it and the bump goes unnoticed.",
+      "routing_class": "host",
+      "sprint": "008"
+    },
+    {
+      "id": "KI-008-G",
+      "summary": "model_ledger.py resolves its output against agents_root() with no override, so a host regenerating its ledger writes eleven of its own sprint rows inside the submodule while submodule_purity reports clean.",
+      "routing_class": "nucleus",
+      "sprint": "008"
+    },
+    {
+      "id": "KI-008-H",
+      "summary": "Green CI does not imply a satisfiable deployment gate: branch protection returns 403 on a private free-plan repository, which is a plan limitation and not the token scope the anchor claimed for four sprints.",
+      "routing_class": "host",
+      "sprint": "008"
     }
   ]
 }

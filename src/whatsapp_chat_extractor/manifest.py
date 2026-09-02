@@ -37,7 +37,7 @@ from whatsapp_chat_extractor.writers import DEFAULT_DATA_DIR
 
 logger = logging.getLogger(__name__)
 
-MANIFEST_SCHEMA_VERSION = 1
+MANIFEST_SCHEMA_VERSION = 2
 
 OUTCOME_EXPORTED = "exported"
 OUTCOME_FAILED = "failed"
@@ -65,7 +65,8 @@ class RunManifest(TypedDict):
     started_at: str
     finished_at: str
     chats_enumerated: int
-    enumeration_complete: bool
+    enumeration: str
+    sweeps: int
     counts: dict[str, int]
     chats: list[ChatOutcome]
 
@@ -164,17 +165,21 @@ def build_manifest(
     *,
     started_at: str,
     chats_enumerated: int,
-    enumeration_complete: bool,
+    enumeration: str,
+    sweeps: int,
 ) -> RunManifest:
     """Assemble the run record.
 
     Args:
         chats: One entry per conversation the run knows about.
         started_at: When the run began, from :func:`now`.
-        chats_enumerated: How many conversations the sweep found.
-        enumeration_complete: Whether the sweep reached the foot of the pane. A
-            run over a partial enumeration is not a whole-account export, and
-            the difference has to be legible in the file.
+        chats_enumerated: How many conversations the enumeration found.
+        enumeration: `ADR-0005`'s verdict — `converged`, `unconverged` or
+            `truncated`. It replaces a boolean that reported success for a run
+            which had lost 43 of 899 conversations, because the pane foot was
+            reached while the list moved underneath the sweep.
+        sweeps: How many full sweeps ran. It makes `converged` auditable from
+            the file rather than taken on trust.
 
     Returns:
         RunManifest: Ready for JSON serialization.
@@ -184,7 +189,8 @@ def build_manifest(
         "started_at": started_at,
         "finished_at": now(),
         "chats_enumerated": chats_enumerated,
-        "enumeration_complete": enumeration_complete,
+        "enumeration": enumeration,
+        "sweeps": sweeps,
         "counts": summarize(chats),
         "chats": chats,
     }
