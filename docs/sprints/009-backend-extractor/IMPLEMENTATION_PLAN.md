@@ -2,7 +2,7 @@
 
 **Canonical path**: `docs/sprints/009-backend-extractor/IMPLEMENTATION_PLAN.md`
 **Branch**: `ai-sprint/009` · **Base**: `main` at `d0cdbb4`
-**Status**: `DRAFT` → `APPROVED` → `EXECUTING` → `CLOSED`
+**Status**: `DRAFT` → `APPROVED` → **`EXECUTING`** → `CLOSED`
 
 > Authored at Phase 1 (Planning) by `principal_agent`, extracted to this path at
 > Phase 3, and **committed before Phase 5 approves it**: `agents.md §2 triple_lock`
@@ -470,10 +470,12 @@ declarado en `§D8`, medido por `undated_messages`, no un fallo.
 
 | Field | Value |
 | :--- | :--- |
-| **Approved by** | *pendiente — Fase 5* |
-| **Date** | *pendiente — Fase 5* |
-| **Plan commit at approval** | *pendiente — Fase 3 commitea, Fase 5 sella* |
-| **Remaining locks** | Active Sprint · QA + Tester verdicts · Human OK at close |
+| **Approved by** | `GstMirabal` (operator), attended, in session `20260902T085030Z-72792` |
+| **Date** | 2026-09-02 |
+| **Plan commit at approval** | `8203712` |
+| **Gates at approval** | `audit_plan.py` exit `0` · `check_task_scope.py` exit `0` · `check_forge_ladder.py` exit `0` |
+| **Status** | `APPROVED` → Phase 6 Execution |
+| **Remaining locks** | Active Sprint ✅ · QA + Tester verdicts ⏳ Phase 7 · Human OK at close ⏳ Phase 8 |
 
 *Phase 5 is a single attended human authorization. It MUST NOT be wrapped inside an
 unattended `/loop` (`workflows/pipeline_workflow.md`, `rules/loop_governance.md`).
