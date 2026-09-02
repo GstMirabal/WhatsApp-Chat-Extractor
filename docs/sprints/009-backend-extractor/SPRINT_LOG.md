@@ -138,6 +138,19 @@ regression the suite cannot report.
 conversation that failed is the reason `--resume` exists, and the one path that
 distinguishes a resumed run from a fresh one is the path no test walks.
 
+**`T-1` is closed at `998603c`; `T-2` is carried to Sprint 010.** `RECORD` does
+not block, so closing `T-1` was a human decision at session #16 rather than a
+requirement — taken because the sprint's headline capability was untested and a
+whole-account run was about to start on top of it. The new case drives the real
+`cmd_export_all` rather than the private helper, and was verified by mutation
+twice independently: replacing `_latest_per_chat` with the identity fails that
+test alone and leaves the other 277 green. Suite 278 passed / 1 skipped.
+
+`T-2` goes to Sprint 010 with a reason, not by default: it covers the two
+timezone functions that Sprint 010 will rewrite outright when `launch_context`
+gains a `timezone_id` parameter (`§D7`, carried above). Tests written now would
+have a known expiry date.
+
 **`KI-009-F` was examined and found inert, not merely accepted.** The tester
 checked whether the skip-ordering caveat has a reachable consequence and
 established it does not: outcomes are written by a single sequential walk over
