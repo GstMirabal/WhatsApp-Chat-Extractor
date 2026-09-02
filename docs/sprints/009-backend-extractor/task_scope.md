@@ -36,9 +36,9 @@ is a judgment recorded so it can be argued with.
 | A2 | `tests/test_journal.py` | create | low | `implementer_agent` | sonnet | medium | ✅ 530c4b2 |
 | B1 | `src/whatsapp_chat_extractor/manifest.py` | modify | medium | `implementer_agent` | sonnet | medium | ✅ 512860d |
 | B2 | `tests/test_manifest.py` | modify | low | `implementer_agent` | sonnet | medium | ✅ 07c3b95 |
-| C1 | `src/whatsapp_chat_extractor/__main__.py` | modify | high | `implementer_agent` (escalated) | opus | high | ⏳ |
-| C2 | `tests/test_export_all.py` | modify | low | `implementer_agent` | sonnet | medium | ⏳ |
-| C3 | `tests/test_resume.py` | create | low | `implementer_agent` | sonnet | medium | ⏳ |
+| C1 | `src/whatsapp_chat_extractor/__main__.py` | modify | high | `implementer_agent` (escalated) | opus | high | ✅ b068d1a |
+| C2 | `tests/test_export_all.py` | modify | low | `implementer_agent` | sonnet | medium | ✅ e1f3b29 |
+| C3 | `tests/test_resume.py` | create | low | `implementer_agent` | sonnet | medium | ✅ 0383d6b |
 | E1 | `src/whatsapp_chat_extractor/session.py` | modify | medium | `implementer_agent` | sonnet | medium | ✅ 1e49aef |
 | E2 | `src/whatsapp_chat_extractor/timestamps.py` | create | medium | `implementer_agent` | sonnet | medium | ✅ ef12083 |
 | E3 | `tests/test_timestamps.py` | create | low | `implementer_agent` | sonnet | medium | ✅ 495a371 |
