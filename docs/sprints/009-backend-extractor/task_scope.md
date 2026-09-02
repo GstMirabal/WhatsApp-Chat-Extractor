@@ -32,20 +32,21 @@ is a judgment recorded so it can be argued with.
 
 | # | File | Operation | Risk | Assignee | Model | Effort | Status |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| A1 | `src/whatsapp_chat_extractor/journal.py` | create | medium | `implementer_agent` | sonnet | medium | ⏳ |
-| A2 | `tests/test_journal.py` | create | low | `implementer_agent` | sonnet | medium | ⏳ |
+| A1 | `src/whatsapp_chat_extractor/journal.py` | create | medium | `implementer_agent` | sonnet | medium | ✅ 3be2542 |
+| A2 | `tests/test_journal.py` | create | low | `implementer_agent` | sonnet | medium | ✅ 530c4b2 |
 | B1 | `src/whatsapp_chat_extractor/manifest.py` | modify | medium | `implementer_agent` | sonnet | medium | ⏳ |
 | B2 | `tests/test_manifest.py` | modify | low | `implementer_agent` | sonnet | medium | ⏳ |
 | C1 | `src/whatsapp_chat_extractor/__main__.py` | modify | high | `implementer_agent` (escalated) | opus | high | ⏳ |
 | C2 | `tests/test_export_all.py` | modify | low | `implementer_agent` | sonnet | medium | ⏳ |
 | C3 | `tests/test_resume.py` | create | low | `implementer_agent` | sonnet | medium | ⏳ |
-| E1 | `src/whatsapp_chat_extractor/session.py` | modify | medium | `implementer_agent` | sonnet | medium | ⏳ |
-| E2 | `src/whatsapp_chat_extractor/timestamps.py` | create | medium | `implementer_agent` | sonnet | medium | ⏳ |
-| E3 | `tests/test_timestamps.py` | create | low | `implementer_agent` | sonnet | medium | ⏳ |
+| E1 | `src/whatsapp_chat_extractor/session.py` | modify | medium | `implementer_agent` | sonnet | medium | ✅ 1e49aef |
+| E2 | `src/whatsapp_chat_extractor/timestamps.py` | create | medium | `implementer_agent` | sonnet | medium | ✅ ef12083 |
+| E3 | `tests/test_timestamps.py` | create | low | `implementer_agent` | sonnet | medium | ✅ 495a371 |
 | E4 | `src/whatsapp_chat_extractor/history.py` | modify | medium | `implementer_agent` | sonnet | medium | ⏳ |
-| E5 | `src/whatsapp_chat_extractor/writers.py` | modify | high | `implementer_agent` (escalated) | opus | high | ⏳ |
+| E5 | `src/whatsapp_chat_extractor/writers.py` | modify | high | `implementer_agent` (escalated) | opus | high | ✅ 7fdae2b |
 | E6 | `tests/test_history.py` | modify | low | `implementer_agent` | sonnet | medium | ⏳ |
 | E7 | `tests/test_writers.py` | modify | low | `implementer_agent` | sonnet | medium | ⏳ |
+| E8 | `tests/test_completeness.py` | modify | low | `implementer_agent` | sonnet | medium | ⏳ |
 | D1 | `docs/decisions/ADR-0006-run-journal-and-resume.md` | create | low | `doc_orchestrator` | sonnet | medium | ⏳ |
 | D2 | `docs/decisions/ADR-0007-corpus-contract-v6.md` | create | low | `doc_orchestrator` | sonnet | medium | ⏳ |
 | D3 | `docs/architecture/EXTRACTOR_BLUEPRINT.md` | modify | low | `doc_orchestrator` | sonnet | medium | ⏳ |
@@ -76,7 +77,7 @@ prevents an agent holding a file whose dependency has not landed.
 | 1 | A1, E2 | — | New modules with no dependency on the rest. Both are pure and fixture-testable in isolation |
 | 2 | A2, E3 | A1, E2 | A test cannot import a module that does not exist |
 | 3 | E1, E4, E5 | E2 | `E4` calls `timestamps.parse_rendered`; `E5` defines the v6 fields `E4` populates |
-| 4 | E6, E7 | E4, E5 | Assert against the v6 shape |
+| 4 | E6, E7, E8 | E4, E5 | Assert against the v6 shape |
 | 5 | B1 | A1 | `manifest_from_journal` consumes what `journal.read_journal` returns |
 | 6 | B2 | B1 | — |
 | 7 | C1 | A1, B1, E1, E5 | The orchestration point: it is the only unit that touches all four |
@@ -89,9 +90,35 @@ type that does not yet have the fields.
 
 ---
 
+## Amendment during Phase 6 — unit `E8`
+
+`E8` was **not** in the approved table. It was added while executing `E5`, and
+recording why matters more than the row itself.
+
+`E5` raises `SCHEMA_VERSION` to 6. Two tests assert the literal `5`:
+`tests/test_writers.py` (unit `E7`, planned) and `tests/test_completeness.py`
+(**unplanned**). Phase 1 enumerated the test files by reasoning about which
+ones touch the payload and missed the one whose subject is completeness but
+which pins the schema number on the way past. Reproduce the full set:
+
+```
+grep -rln "SCHEMA_VERSION\|schema_version" tests/
+```
+
+This is **not** the third scope widening the plan's Cost section rules out. No
+new capability is added: an approved unit necessarily breaks a file, and the
+sprint cannot end green without it. The honest options were to amend this table
+or to leave the suite red, and a lock file that omits a file the sprint edits is
+the failure `task_scope.md` exists to prevent.
+
+Total is now **19 units**, not 18. Every count in this file reflects that; the
+Implementation Plan's Cost section is amended alongside it.
+
+---
+
 ## File-collision audit (`no_interference`)
 
-18 units, 18 distinct paths, zero shared:
+19 units, 19 distinct paths, zero shared:
 
 ```
 python3 - <<'PY'
@@ -102,7 +129,7 @@ print(len(rows), "rows;", len(set(rows)), "distinct paths")
 PY
 ```
 
-Expected: `18 rows; 18 distinct paths`.
+Expected: `19 rows; 19 distinct paths`.
 
 ---
 
@@ -110,14 +137,14 @@ Expected: `18 rows; 18 distinct paths`.
 
 | Rule | Applies to | Verdict |
 | :--- | :--- | :--- |
-| `jurisdictional_lock` (1 file per subagent task) | All 18 | ✅ Satisfied — one path per row, no path repeated |
-| `no_interference` | All 18 | ✅ Satisfied — see the audit above |
+| `jurisdictional_lock` (1 file per subagent task) | All 19 | ✅ Satisfied — one path per row, no path repeated |
+| `no_interference` | All 19 | ✅ Satisfied — see the audit above |
 | `max_lines_per_func` 50 / `max_indentation` 3 | A1, C1, E2, E4, E5 | ⚠️ **Binding constraint, not a check.** `C1` is the risk: the plan forbids adding any function over 50 lines to a file that already violates it. Enforced at the Quality Gate |
 | `ephemeral` (no `TODO`/`FIXME`) | All source units | ⚠️ Enforced at the Quality Gate — `ruff` does not reject these by itself |
-| `code_logic` — strictly English | All 18 | ⚠️ The Implementation Plan is Spanish by permission (`§1 user_chat`); **every unit's code, docstring, log line and commit message is English** |
+| `code_logic` — strictly English | All 19 | ⚠️ The Implementation Plan is Spanish by permission (`§1 user_chat`); **every unit's code, docstring, log line and commit message is English** |
 | `path_type` — relative only | A1, B1, E1 | ⚠️ `journal.py` and `session.py` both build paths under `data/`. `DEFAULT_DATA_DIR = Path("data")` is already relative; no absolute path may be introduced |
-| `secret_sovereignty` / `RA-09` | All 18 | ✅ No unit reads `.env`. The sprint touches no credential |
-| `RA-08` — atomic commits, squash at close | All 18 | ✅ One commit per unit on `ai-sprint/009` |
-| `RA-12` — branch discipline | All 18 | ✅ Branch created at `d0cdbb4` before the first commit; no push to `main` during Execution |
-| `historical_log` — `#009` suffix | All 18 | ✅ Enforced by `hooks/on_commit.py`, which requires `#\w+` |
+| `secret_sovereignty` / `RA-09` | All 19 | ✅ No unit reads `.env`. The sprint touches no credential |
+| `RA-08` — atomic commits, squash at close | All 19 | ✅ One commit per unit on `ai-sprint/009` |
+| `RA-12` — branch discipline | All 19 | ✅ Branch created at `d0cdbb4` before the first commit; no push to `main` during Execution |
+| `historical_log` — `#009` suffix | All 19 | ✅ Enforced by `hooks/on_commit.py`, which requires `#\w+` |
 | `ADR-0001` — no real names in `data/` | E5, and C1 via `--write-index` | ⚠️ **The one privacy-bearing constraint.** `§D5` keeps titles out of the run journal entirely; the title index stays a separate file behind `--write-index`. A v6 field carrying a title would breach this |

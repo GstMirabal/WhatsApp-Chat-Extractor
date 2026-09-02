@@ -77,5 +77,5 @@ Phase 1, which is how `§D6` established that `export_one.py` needs no change.
 | `sprint-architect` | Its job is breaking a roadmap into a plan. Phase 1 is already closed and the plan is committed at `a4a22df` |
 | `token-saver-auditor` | **Used, not skipped** — `audit_plan.py` gated the plan at Phase 1 (exit `0`). Listed here so its use is not mistaken for absence |
 | `compliance-checker` | Overlaps `rule_validator` at Phase 4.3, which produces `task_scope.md` directly. Running both would audit the same rules twice |
-| `readme-standardizer` | No `README.md` change in the 18 units |
+| `readme-standardizer` | No `README.md` change in the 19 units |
 | `topology-scaffolder` | The sprint directory exists; no structural scaffolding is due |

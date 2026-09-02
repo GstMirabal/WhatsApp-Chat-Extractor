@@ -333,7 +333,7 @@ invocadas por el CLI que las contiene.
 | Field | Value | Reproduce |
 | :--- | :--- | :--- |
 | Delegation | `native` | `docs/active_state.json` `delegation_mode` |
-| Work units | 18 | Count of rows in Work tables (7 + 7 + 4) |
+| Work units | **19** (18 approved + `E8` added during Phase 6) | Count of rows in Work tables (7 + 8 + 4). `E8` = `tests/test_completeness.py`, which asserts the schema literal and was missed at Phase 1; rationale in `task_scope.md` § Amendment during Phase 6 |
 | Subagents dispatched | 0 planned at Phase 1 | Phase 4.1 `agent_assignment.md` is the authority |
 | Ratio at Phase 1 open | 4.1 | `python3 .agents/scripts/session_cost.py --from-anchor --json` |
 | **Ratio at Phase 3 close** | **7.8** (peak 192.467) | idem, tras los commits de Fase 3 |
@@ -350,7 +350,7 @@ documento entero en vez de parchearlo. Fue trabajo útil —descubrió cuatro
 carencias del esquema y el momento correcto para arreglarlas— pero el coste
 pertenece a la renegociación de alcance, no a la planificación.
 
-Consecuencia operativa para la Fase 6: las 18 unidades se despachan en contexto
+Consecuencia operativa para la Fase 6: las 19 unidades se despachan en contexto
 fresco por unidad (`jurisdictional_lock` ya lo exige por fichero), y **no** se
 reabre el alcance dentro de la ejecución. Una tercera ampliación de este sprint
 se rechaza y va al Sprint 010.
