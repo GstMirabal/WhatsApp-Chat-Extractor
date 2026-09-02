@@ -53,9 +53,32 @@ Gates emit; the Orchestrator transcribes (`config/artifact_registry.json`).
 
 ## 🧠 Rule Amendments & Heuristic Harvest
 
+Eight candidates, all carrying `routing_class`, indexed into `memory_index.json`
+at the close (`KI-008-A` … `KI-008-H`).
+
 | # | Finding | Class | Destination |
 | :--- | :--- | :--- | :--- |
-| _pending_ | | | |
+| `KI-008-A` | A blocking hook must be satisfiable by the actor it blocks | `nucleus` | `UPSTREAM_FINDING_013` |
+| `KI-008-B` | Write both gate rows into `SPRINT_LOG.md` before dispatching Phase 7 | `host` | `memory_index.json` |
+| `KI-008-C` | A diagnostic that ran before a state change can reach a confident wrong conclusion | `host` | `memory_index.json` |
+| `KI-008-D` | A fixture whose perturbation is regular flatters the fix | `host` | `memory_index.json` |
+| `KI-008-E` | A privacy test over a fake that cannot leak proves the fake, not the code | `host` | `memory_index.json` |
+| `KI-008-F` | Assert a schema version against the literal, not only the constant | `host` | `memory_index.json` |
+| `KI-008-G` | `model_ledger.py` writes host rows inside the submodule; purity reports clean | `nucleus` | `UPSTREAM_FINDING_004`, third instance |
+| `KI-008-H` | Green CI does not imply a satisfiable deployment gate | `host` | `memory_index.json` |
+
+## 🧹 Memory purge (Phase 3)
+
+`memory/` held no sprint logs — only `memory/telemetry/raw_errors.json`, written
+by `hooks/telemetry.py`, with a single entry preserved here before deletion so
+the record is not lost with the file:
+
+| Timestamp | Hook | Type | Detail |
+| :--- | :--- | :--- | :--- |
+| `2026-09-01T08:26:03` | `on_commit` | `BRANCH_VIOLATION` | Direct push to `main`/`master` blocked (`RA-12`) |
+
+The guard did its job; there is no pending failure class behind it. Purged under
+`§4 ephemeral_memory`.
 
 ---
 
