@@ -29,12 +29,23 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_MAX_PASSES = 2000
 DEFAULT_STALL_THRESHOLD = 3
+# How many additional stalled passes a visible spinner may suppress before the
+# harvest gives up on it. H-003: across 250 conversations exported under
+# schema v6, `passes_used` was minimum 4, median 4, 90th percentile 6, maximum
+# 13, and none exceeded 20 — so 20 stalled passes under a spinner is already
+# past anything a real conversation has needed.
+DEFAULT_LOADING_GRACE = 20
 # Pulling older history from the phone is a network round trip, not a render.
 DEFAULT_LOAD_WAIT_MS = 15_000
 
 STOP_CHAT_START = "chat_start"
 STOP_STALLED = "stalled"
 STOP_MAX_PASSES = "max_passes"
+# H-003: the phone never answered the "load earlier messages" request, so the
+# spinner never resolved. Distinct from STOP_STALLED so the export records
+# that the stall verdict was suppressed for the whole grace period, not
+# reached honestly.
+STOP_LOADING_UNRESOLVED = "loading_unresolved"
 
 # Only a start-of-conversation marker proves the whole history was read.
 #
@@ -222,14 +233,19 @@ def decide_stop(
     passes_used: int,
     max_passes: int,
     panel_loading: bool = False,
+    loading_grace: int = DEFAULT_LOADING_GRACE,
 ) -> str | None:
     """Whether the harvest should stop, and why.
 
-    ``panel_loading`` suppresses the stall verdict only. A spinner on screen is
-    positive evidence that more history is on its way, and stopping on it
-    reports a top that was never reached. ``max_passes`` is deliberately not
-    suppressed, so a spinner that never resolves still terminates the run — as
-    ``max_passes`` rather than as a top, which is the honest reason.
+    ``panel_loading`` suppresses the stall verdict, but only for
+    ``loading_grace`` stalled passes beyond ``stall_threshold``. A spinner on
+    screen is positive evidence that more history is on its way, so stopping
+    on it the moment it appears would report a top that was never reached
+    (H-003) — but the phone can also simply never answer, and the suppression
+    must not be unbounded either. ``max_passes`` is deliberately not
+    suppressed, so a spinner that outlasts even the grace period still
+    terminates the run through ``STOP_LOADING_UNRESOLVED`` rather than by
+    exhausting the whole pass budget.
 
     Args:
         at_start: True when the beginning-of-chat marker is present.
@@ -238,6 +254,8 @@ def decide_stop(
         passes_used: Passes completed so far.
         max_passes: Hard cap that guarantees termination.
         panel_loading: True when the panel is visibly still fetching.
+        loading_grace: Extra stalled passes, beyond ``stall_threshold``, that
+            a visible spinner may suppress before the harvest gives up on it.
 
     Returns:
         str | None: A ``STOP_*`` reason, or None to keep scrolling.
@@ -246,6 +264,8 @@ def decide_stop(
         return STOP_CHAT_START
     if stall_count >= stall_threshold and not panel_loading:
         return STOP_STALLED
+    if panel_loading and stall_count > stall_threshold + loading_grace:
+        return STOP_LOADING_UNRESOLVED
     if passes_used >= max_passes:
         return STOP_MAX_PASSES
     return None
@@ -344,6 +364,42 @@ class _HarvestState:
     panel_loading: bool = False
 
 
+def _observe_and_decide(
+    page: Page,
+    state: _HarvestState,
+    at_chat_start_fn: object,
+    *,
+    stall_threshold: int,
+    max_passes: int,
+    loading_grace: int,
+) -> None:
+    """Read the panel's loading state once and decide whether to stop.
+
+    Args:
+        page: Page with an open conversation.
+        state: Harvest position; mutated with the observed panel state and
+            the stop decision.
+        at_chat_start_fn: Callable that reports whether the start-of-chat
+            marker is present, taking ``page`` as its only argument.
+        stall_threshold: How many stalled passes mean the top was reached.
+        max_passes: Hard cap on scroll passes.
+        loading_grace: Extra stalled passes a visible spinner may suppress.
+    """
+    # Read once and reuse: the same observation decides whether to stop and how
+    # to classify the stop. Sampling it twice could report a spinner to one and
+    # not the other, which is a disagreement no reader could resolve.
+    state.panel_loading = panel_is_loading(page)
+    state.reason = decide_stop(
+        at_start=at_chat_start_fn(page),
+        stall_count=state.stall_count,
+        stall_threshold=stall_threshold,
+        passes_used=state.passes_used,
+        max_passes=max_passes,
+        panel_loading=state.panel_loading,
+        loading_grace=loading_grace,
+    )
+
+
 def _one_pass(
     page: Page,
     accumulator: MessageAccumulator,
@@ -353,6 +409,7 @@ def _one_pass(
     max_passes: int,
     stall_threshold: int,
     load_wait_ms: int,
+    loading_grace: int = DEFAULT_LOADING_GRACE,
 ) -> None:
     """Read the panel once, decide whether to stop, and scroll if not.
 
@@ -364,6 +421,7 @@ def _one_pass(
         max_passes: Hard cap on scroll passes.
         stall_threshold: Quiet passes that end the run.
         load_wait_ms: How long this pass waits for older messages.
+        loading_grace: Extra stalled passes a visible spinner may suppress.
     """
     from whatsapp_chat_extractor.export_one import (
         at_chat_start,
@@ -377,17 +435,11 @@ def _one_pass(
         state.stall_count = 0
     logger.info("Pass %s: +%s new, %s total (stall %s/%s)", state.passes_used,
                 added, len(accumulator), state.stall_count, stall_threshold)
-    # Read once and reuse: the same observation decides whether to stop and how
-    # to classify the stop. Sampling it twice could report a spinner to one and
-    # not the other, which is a disagreement no reader could resolve.
-    state.panel_loading = panel_is_loading(page)
-    state.reason = decide_stop(
-        at_start=at_chat_start(page),
-        stall_count=state.stall_count,
+    _observe_and_decide(
+        page, state, at_chat_start,
         stall_threshold=stall_threshold,
-        passes_used=state.passes_used,
         max_passes=max_passes,
-        panel_loading=state.panel_loading,
+        loading_grace=loading_grace,
     )
     if state.reason is None and not scroll_one_pass(page, max_wait_ms=load_wait_ms):
         # The scroll waited for older messages and none arrived. That is the
@@ -403,6 +455,7 @@ def harvest_history(
     max_passes: int = DEFAULT_MAX_PASSES,
     stall_threshold: int = DEFAULT_STALL_THRESHOLD,
     load_wait_ms: int = DEFAULT_LOAD_WAIT_MS,
+    loading_grace: int = DEFAULT_LOADING_GRACE,
 ) -> HarvestResult:
     """Collect a whole conversation by scrolling upward and merging each pass.
 
@@ -413,6 +466,9 @@ def harvest_history(
         max_passes: Hard cap on scroll passes; guarantees termination.
         stall_threshold: Consecutive passes without new rows that end the run.
         load_wait_ms: How long one pass waits for older messages to arrive.
+        loading_grace: Extra stalled passes, beyond ``stall_threshold``, that
+            a visible spinner may suppress before the harvest gives up on it
+            (H-003).
 
     Returns:
         HarvestResult: Ordered messages plus completeness metadata.
@@ -425,6 +481,7 @@ def harvest_history(
             page, accumulator, state,
             chat_title=chat_title, max_passes=max_passes,
             stall_threshold=stall_threshold, load_wait_ms=load_wait_ms,
+            loading_grace=loading_grace,
         )
 
     logger.info("Harvest stopped (%s) after %s passes", state.reason, state.passes_used)

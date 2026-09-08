@@ -8,6 +8,20 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · Versioning: [SemVer](
 
 ## [Unreleased]
 
+### Fixed
+
+- **A whole-account run could stall on one conversation for 8.3 hours with no
+  failure recorded** (`H-003`). `decide_stop` suppressed the stall verdict for
+  as long as the panel showed a loading spinner, and WhatsApp Web leaves that
+  spinner up indefinitely when it has asked the paired phone for older
+  messages and the phone never answers — observed in production at `Pass 890:
+  +0 new, 0 total (stall 889/3)`. The suppression is correct and stays; it now
+  has a bound (`loading_grace`, default 20 passes past the stall threshold,
+  set from the measured maximum of 13 across 250 real exports), and a new stop
+  reason, `loading_unresolved`, ends the harvest honestly rather than by
+  exhausting the full 2000-pass budget. Classifies as `truncated`, unchanged.
+  #H003
+
 ## [0.8.1] - 2026-09-02
 
 ### Fixed
