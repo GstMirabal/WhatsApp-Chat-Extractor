@@ -81,7 +81,7 @@ not recognise is already `truncated`. That is the correct classification — a
 harvest that stopped because a spinner never resolved has not proven it reached
 anything.
 
-Branch/commit: `hotfix/H-003` → recorded at close of this document.
+Branch/commit: `hotfix/H-003` → `1728519`.
 
 **Branch base is `ai-sprint/009`, not `main`, and the deviation is
 deliberate.** `main` is at `d0cdbb4` (`v0.8.1`) and contains no `--resume`: the
@@ -93,13 +93,36 @@ mandates the branch name, the record and the commit suffix, not the base.
 
 | Check | Command |
 | :--- | :--- |
-| Regression test pins the bound | `python3 -m pytest tests/test_completeness.py -q` |
-| Zero regression | `python3 -m pytest -q` |
-| Structural gate | `ruff check .` |
+| Regression test pins the bound | `python3 -m pytest tests/test_completeness.py -q` → `17 passed` (12 pre-existing + 5 new) |
+| Zero regression | `python3 -m pytest -q` → `283 passed, 1 skipped` (up from 278/1, exactly +5) |
+| Structural gate | `ruff check .` → `All checks passed!`, exit 0 |
+| No function over 50 lines | AST scan of `history.py` and `test_completeness.py`, both `[]` |
 
-The pinning test is mandatory and is the point of this record: without it, the
-next change to `decide_stop` can restore an unbounded suppression and nothing
-would notice until another run burned a night.
+Five tests pin the bound. The boundary case — `stall_count == stall_threshold +
+loading_grace`, `panel_loading=True` — is chosen so it fails under either of
+the two ways this could have been implemented wrong: dropping `loading_grace`
+entirely, or using `>=` where the landed code uses `>`. The other four confirm
+`at_chat_start` still wins over an unresolved spinner, ordinary non-loading
+stalling is unaffected, the bound actually fires past the grace window, and the
+new reason classifies as `COMPLETENESS_TRUNCATED` with no change to
+`classify_completeness`.
+
+**Proven by mutation, not asserted.** The `loading_grace` branch was removed
+from `decide_stop`, restoring the exact pre-hotfix unbounded-suppression
+behaviour; the boundary test failed alone (`assert None ==
+'loading_unresolved'`), the other 282 stayed green, and the source was restored
+byte-for-byte (`git diff --stat -- src/` empty) before the real fix was
+recommitted. Without this test, the next change to `decide_stop` can
+reintroduce the unbounded suppression and nothing would notice until another
+run burned a night.
+
+**One design note the implementation added.** A first attempt at extracting
+`_observe_and_decide` (needed to keep `_one_pass` under the 50-line ceiling)
+bought its line budget by deleting three explanatory comments — including the
+one stating that a pass can add zero rows while the panel is still loading
+beneath it, which is the exact interaction this hotfix turns on. Rejected on
+review and the prose restored verbatim; the line budget came from the
+extraction itself, not from shortening the explanation.
 
 **Operator workaround available before this fix ships**, and it needs no code
 change:
@@ -130,4 +153,4 @@ and re-run with a higher one.
   **No.** The decision to suppress the stall verdict while a spinner is up is
   already recorded and is still correct; this hotfix bounds it rather than
   reversing it, so `ADR-0004` and `ADR-0005` stand unchanged. `N/A`
-- [ ] Master Ledger entry added under `[Unreleased]`.
+- [x] Master Ledger entry added under `[Unreleased]` (`CHANGELOG.md`).
