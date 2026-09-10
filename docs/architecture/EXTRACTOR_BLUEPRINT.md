@@ -196,17 +196,23 @@ reader of the boolean must not break on a v5 file.
 | :--- | :--- | :--- | :--- |
 | `proven` | `true` | `stopped_reason == "chat_start"` | The beginning was **observed** |
 | `unproven` | `false` | `stalled`, panel quiet | The panel stopped producing history and nothing indicated more was coming. An inference, named as one |
-| `truncated` | `false` | `max_passes`, or `stalled` while loading | The harvest ended before the conversation did |
+| `truncated` | `false` | `max_passes`, or `loading_unresolved` (a spinner suppressed the stall verdict past `loading_grace`, H-003) | The harvest ended before the conversation did |
 
 `classify_completeness` **fails closed**: a stop reason it does not recognise is
 `truncated`, never `proven`. An unknown reason is not evidence of having arrived.
 
-The `stalled`-while-loading pairing is defensive rather than reachable, and
-deliberately kept: `decide_stop` suppresses the stall verdict while the panel is
-fetching, so the harvest loop no longer produces it. It is exactly what Sprint
-006's probe run 3 recorded before that fix — 175 passes with a `loading-spinner`
-still on screen — and classifying it as `unproven` would reinstate the error the
-fix removed.
+The `loading_unresolved` pairing is **reached in practice, not defensive
+padding**. `decide_stop` suppresses the `stalled` verdict while the panel is
+fetching — Sprint 006's probe run 3 is why: a harvest was declared `stalled`
+after 175 passes with a `loading-spinner` still on screen, and classifying a
+live spinner as `unproven` would reinstate that error. Hotfix H-003 then hit the
+opposite failure — a production run whose phone never answered the load-earlier
+request left the spinner up for 890 consecutive passes, and the suppression,
+unbounded at the time, held all the way to `max_passes`. `decide_stop` now
+bounds it: past `stall_threshold + loading_grace` stalled passes under a spinner
+it returns `STOP_LOADING_UNRESOLVED`, which `classify_completeness` fails closed
+to `truncated` with no code change. Full account:
+`docs/hotfixes/H-003-backend.md`.
 
 `stalled` counted as complete until the first live run, which exported 217
 messages of a longer conversation and marked them complete. Only the marker is
@@ -216,11 +222,17 @@ proof; an inference is not recorded as one.
 `decide_stop` takes `panel_loading`, and a visible loading indicator
 (`LOADING_SELECTORS`) suppresses the `stalled` verdict: a spinner is positive
 evidence that more history is coming, so stopping on it reports a top that was
-never reached. `max_passes` is deliberately *not* suppressed, so a spinner that
-never resolves still terminates the run and says `max_passes` — the honest
-reason — rather than claiming a top. Measured: one conversation was declared
-`stalled` after 175 passes with a spinner on screen, and ran 255 with the panel
-genuinely quiet once corrected.
+never reached. The suppression is **bounded**: `DEFAULT_LOADING_GRACE = 20` caps
+how many stalled passes past `stall_threshold` a visible spinner may suppress,
+and beyond that `decide_stop` returns `STOP_LOADING_UNRESOLVED` and the harvest
+ends — roughly 6 minutes rather than the 8.3 hours `max_passes` alone cost the
+H-003 production run. `20` is empirical: across the 250 conversations exported
+under schema v6 at the time of the fix, `passes_used` was minimum 4, median 4,
+90th percentile 6, maximum 13, none over 20. `max_passes` still terminates any
+run the grace window does not, and `STOP_CHAT_START` still wins over every
+condition. Measured: one conversation was declared `stalled` after 175 passes
+with a spinner on screen, and ran 255 with the panel genuinely quiet once
+corrected.
 
 **`proven` has never been produced, and Sprint 006 established it is unreachable
 in practice.** Across five real conversations and two runs, with the stall defect

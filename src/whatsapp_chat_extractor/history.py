@@ -293,11 +293,13 @@ def classify_completeness(stopped_reason: str, *, panel_loading: bool) -> str:
     ``truncated``, never ``proven``. An unknown reason is not evidence of
     having arrived anywhere.
 
-    The ``stalled``-while-loading pairing is defensive rather than reachable:
     ``decide_stop`` suppresses the stall verdict while the panel is fetching, so
-    the harvest loop no longer produces it. It is what probe run 3 recorded
-    before that fix, and classifying it as ``unproven`` would reinstate the
-    error the fix removed.
+    a ``stalled`` reason paired with ``panel_loading`` is never produced. A
+    spinner that outlasts ``loading_grace`` instead ends the harvest as
+    ``loading_unresolved`` (H-003), which falls through to ``truncated`` here —
+    the phone stopped answering the load-earlier request, so the beginning was
+    not reached. Classifying either as ``unproven`` would reinstate the error
+    the Sprint 006 fix removed.
 
     Args:
         stopped_reason: One of the ``STOP_*`` constants.

@@ -1,8 +1,8 @@
 # Roadmap: WhatsApp Chat Extractor — delivery program
 
-**Last Audit Sprint**: #008
-**Last Audit Date**: 2026-09-02
-**Last Audit Commit SHA**: `e0e1a4f` (`v0.8.0`)
+**Last Audit Sprint**: #009
+**Last Audit Date**: 2026-09-10
+**Last Audit Commit SHA**: `d157676` (`ai-sprint/009` tip; deployment pending)
 
 Program authority: [ADR-0001](../../decisions/ADR-0001-product-scope-whatsapp-web.md),
 [ADR-0002](../../decisions/ADR-0002-delivery-program-and-layout.md),
@@ -17,13 +17,15 @@ Program authority: [ADR-0001](../../decisions/ADR-0001-product-scope-whatsapp-we
 | P3a | 006 | **CLOSED (partial)** | Completeness criterion. **Measured**: `complete: true` is unreachable — `COMPLETE_REASONS` never fired across 5 conversations with the harvester's stall defect corrected. The goal as originally worded ("`chat_start` verified") turned out to be unachievable, which is the finding. `ADR-0004` and the schema change it governs were gate-withheld and carry into 007 |
 | P3b | **007** | **CLOSED** | All chats: `export-all` enumerates the whole list, exports each and writes a run manifest. **Measured**: the chat list virtualizes (899 conversations behind a 70-row window), position is stable across a sweep and no two chats share a title, so the digest is the enumerator's key. `ADR-0004` decided completeness as three values and schema v5 carries it. Live-verified with `--limit 3`: 3 exported, 0 failed, 907 skipped of 910. **A whole-account run is ~15 hours**, which P4 should address before it is routine |
 | P4 | **008** | **CLOSED (partial)** | Platform hardening, plus an unplanned defect fix that took the sprint's centre. **Measured**: the single-pass enumeration silently lost conversations whenever the chat list reordered (882 of 899 at one reorder per 5 reads, 856 at one per 2, no duplicates) while `enumeration_complete` reported `true`. `sweep_until_stable` recovers **899 of 899** at both rates; `ADR-0005` replaces the boolean with three values and manifest schema v2 carries it. Platform: the Actions **billing block cleared** and CI now executes for real, so `v0.8.0` is the first release with independent verification behind it — but branch protection still returns `403` on a private free-plan repository, so `ci_gate.py` still refuses. Released as `v0.8.0` |
-| P5 | 009 | **PROPOSED** | Corpus confidence and run resilience — see below. Not a capability gap: `export-all` already satisfies `ADR-0001` |
+| P5 | 009 | **CLOSED (partial)** | Corpus confidence and run resilience. **Delivered**: append-only run journal, `run_id` threading, `manifest_from_journal`, `--resume`, the `recover` subcommand and corpus contract v6 — 19 of 19 units, QA `APPROVED`, Tester `RECORD`. **Carried to 010**: `§D5`'s second append-only title journal (no unit assigned) and `§D6`'s intent that `__main__.py` not grow (421 → 793 lines). Hotfix `H-003` bounded a spinner stall that cost 8.3 hours per affected conversation, found in production |
+| P6 | 010 | **PROPOSED** | Corpus consolidation — one `consolidate` command folds the per-chat v6 exports into a single corpus file; carries the Sprint 009 decisions. See below |
 | — | — | OUT OF REPO | AI analysis (solicitudes, sentimiento), learning server, bot |
 
 **The product scope is complete.** P0 through P3b are closed and `wa-extract
 export-all` does what `ADR-0001` asked: one invocation exports every
-conversation and the manifest states the outcome of each. What P5 proposes is
-confidence in the corpus and survivability of a long run, not new capability.
+conversation and the manifest states the outcome of each. What P5 delivered is
+confidence in the corpus and survivability of a long run, not new capability;
+P6 consolidates those per-chat exports into one corpus file.
 
 Restructured 2026-08-30 after Sprint 004 closed. P3 was one undifferentiated
 "harden" row; splitting it separates a risk that must be retired alone (does a
@@ -113,20 +115,36 @@ applied.
 tracked), but contact names remain in the commit history and in Sprint 003/004
 records. That review is a person's job and is a prerequisite, not a formality.
 
-## Sprint 009 — P5 Corpus confidence and run resilience (PROPOSED)
+## Sprint 009 — P5 Corpus confidence and run resilience
 
-Not yet planned or approved. Two units, and the ordering matters: the first
-produces the data the second does not need, so they are independent and either
-can be dropped.
+Planned as run resilience. Widened once at Phase 1, by operator decision, to
+carry a bounded corpus-schema change in the same pass — the whole-account run
+that lands immediately after resume writes 910 files, so every missing field
+would cost another ~15-hour retrofit. Groups, quoted replies and reactions were
+refused in the same breath (`KI-004-A`: no correction without measurement). 19
+of 19 units landed; QA `APPROVED`, Tester `RECORD`; suite 224/1 → 277/1. Two
+parts of the approved plan were never reached and carry to Sprint 010.
 
-| # | Deliverable | Why now |
+| # | Deliverable | Outcome |
 | :--- | :--- | :--- |
-| 1 | Run `scripts/probe_unknown_rows.py` live, then classify | `sender: unknown` at 3.9% (5 of 129) and `kind: unknown` at 9.6% (30 of 311) in the #007 live run, causes unmeasured. `KI-004-A` forbids classifying without the data; the instrument exists and is operator-gated |
-| 2 | Resume after a mid-run failure | Sprint 006's deliverable 3, never implemented. `manifest.py` says so in its own docstring: the data model allows it, the code does not do it. A whole-account run is **~15 hours**, and the manifest is written only at the end — so a crash at hour 12 leaves the exported files orphaned with no record of which is which |
+| 1 | Run `scripts/probe_unknown_rows.py` live, then classify the `unknown` rates | **NOT DONE** — the plan opened resume-only and was widened to corpus contract v6 instead; the operator-gated probe run was not taken and is not scheduled |
+| 2 | Resume after a mid-run failure | **DONE** — an append-only run journal with `fsync`, `run_id` threaded through the run, `manifest_from_journal` reconstruction, the `--resume` flag, the `recover` subcommand and crash-to-journal orchestration all shipped (`ADR-0006`, `ADR-0007`) |
+| 3 | Corpus contract v6 (added to scope at Phase 1) | **DONE** — `message_id`, `timestamp_iso`, pinned locale, recorded timezone, `passes_used` and `undated_messages` now land on every exported record |
 
-Carried, not scheduled: test gaps `F-4` (`cmd_export_all` exit condition, needs
-a Playwright harness) and `F-6`; five pre-existing complexity violations in
-`export_one.py` and `__main__.py`; the nucleus PR.
+**Carried to Sprint 010** (`SPRINT_LOG.md` Phase 8, `RA-05`): `§D5` — the
+second append-only title journal `data/chat_index_<run_id>.ndjson` the design
+note specified and no work unit was assigned, so `manifest.write_chat_index`
+still writes one batched object at the end of a run; `§D6` — `__main__.py` grew
+421 → 793 lines when the CLI orchestration landed in the file the note was
+written to protect; test gap `T-2` — `_request_timezone` and `_confirm_timezone`
+have no tests, deferred because Sprint 010 may rewrite them; and `KI-009-H` —
+the harvest loop has no wall-clock timeout.
+
+### Unplanned — hotfix H-003
+
+| # | Delivered | Evidence |
+| :--- | :--- | :--- |
+| 1 | `loading_grace` bounds the spinner suppression in `decide_stop`, and a new `loading_unresolved` stop reason ends the harvest honestly once the bound is exceeded | `panel_is_loading` stays true whenever the paired phone never answers a load-earlier request, so the stall branch could never fire and an affected conversation would burn 8.3 hours (2000 passes × 15 s) before the run moved on. Found in production on 2026-09-08, not in review — the suite runs without a browser and no test can hang on a live page. The run diagnosed was 4 h 24 m into one such stall at pass 890 (stall 889/3). Suite 278/1 → 283/1; branch `hotfix/H-003` → `1728519`, merged into `ai-sprint/009` at `d157676` |
 
 **What no sprint will fix.** `ADR-0004` established that `complete: true` is
 unreachable — no conversation can demonstrate it reached its beginning. That is
@@ -137,6 +155,27 @@ extends the same honesty to enumeration: convergence is evidence, never proof.
 (`data/` gitignored since Sprint 003, verified by `git log --all --diff-filter=A -- data/`),
 but contact names remain in the commit history and in Sprint 003/004 records.
 That review is a person's job and is a prerequisite, not a formality.
+
+## Sprint 010 — P6 Corpus consolidation (PROPOSED)
+
+Not yet planned or approved. Sprint 009 left 910 per-chat v6 exports on disk and
+no single artifact a downstream reader can open; this sprint produces that
+artifact and settles the decisions Sprint 009 deferred.
+
+| # | Deliverable | Why now |
+| :--- | :--- | :--- |
+| 1 | A `consolidate` CLI subcommand (no browser, like `recover`) that reads every `data/chat_*.json`, checks all carry schema v6, and writes one `data/corpus_<run_id>.ndjson` — a header line (schema version, source run, generated-at, conversation count) then one line per conversation holding that chat's whole export verbatim, no field or message dropped — aborting with a non-zero exit on a repeated `chat_id` | A directory of 910 files is not a corpus a reader can consume; verbatim folding keeps the v6 contract intact and the duplicate-`chat_id` guard catches an enumerator key collision |
+| 2 | `§D5` decision — the title index becomes the append-only `chat_index_<run_id>.ndjson` the design note specifies, or the plan text is amended to the batched `write_chat_index` that shipped, and `_titles_for_index` is withdrawn if redundant | Carried from Sprint 009: the design note had no implementer, so the code and the plan text now disagree |
+| 3 | `§D6` decision — whether the run orchestration moves out of `__main__.py` into a module of its own, and the line ceiling the file is held to afterwards | Carried from Sprint 009: `__main__.py` went 421 → 793 lines when the CLI orchestration landed in it |
+| 4 | `T-2` — tests for `_request_timezone` and `_confirm_timezone`, or their rewrite | Carried from Sprint 009 and deferred deliberately: Sprint 010 may rewrite both when `session.launch_context` gains a `timezone_id` parameter, so tests written earlier would carry a known expiry |
+| 5 | `KI-009-H` — a per-conversation wall-clock deadline for the harvest loop, outside the page API | Carried from Sprint 009, blocking: `set_default_timeout` does not govern the `ElementHandle` calls the loop is built from, so a wedged renderer blocks forever with no journal record |
+| 6 | Systemic amendment candidate from `H-003 §5` — every loop that waits on an external system states its bound in wall-clock time, not only in iterations | Two defects of this family in six days (`H-003` and `KI-009-H`), both found by running the software and neither by review; routed to `constitutional_escalation` for a nucleus amendment |
+
+Exit criterion: `wa-extract consolidate --run-id <RUN_ID>` produces one
+`data/corpus_<RUN_ID>.ndjson` whose conversation count equals the number of
+`data/chat_*.json` files read, every line after the header validates as a
+schema-v6 export, and a `chat_id` repeated across inputs aborts with a non-zero
+exit.
 
 ---
 
@@ -152,6 +191,7 @@ That review is a person's job and is a prerequisite, not a formality.
 | P3b | All chats; manifest; failure policy | Downstream AI products |
 | P4 | Platform controls and upstream contributions | Product features — **the sprint departed from this** |
 | P5 | Measuring the `unknown` rates; surviving a 15-hour run | New capability; anything `ADR-0001` did not ask for |
+| P6 | Folding the v6 per-chat exports into one corpus file; the Sprint 009 carries, including a wall-clock bound for the harvest loop | Re-harvesting or re-exporting any conversation; new capability beyond consolidation |
 
 **P4's exclusion did not hold, and saying so is the point.** The row reads *"Out:
 Product features"*, and Sprint 008 shipped `sweep_until_stable`, `ADR-0005` and
