@@ -210,5 +210,55 @@ If the phone is not delivering history there is nothing more to get: a higher
 cap only changes how long the conversation waits before it is recorded
 `truncated` again.
 
+## 8. Building one corpus from a run (`consolidate`, #010)
+
+`export-all` and `export-one` leave one `data/chat_*.json` file per
+conversation. `consolidate` joins every one of them under `--data-dir` into a
+single NDJSON file, opening no browser (`§D4`):
+
+```bash
+wa-extract consolidate
+```
+
+| Flag | Default | What it changes |
+| :--- | :--- | :--- |
+| `--data-dir` | `data/` | Directory holding the `chat_*.json` files and, unless `--from-manifest` is given, the run manifests it reads the source run id from |
+| `--from-manifest` | none (newest `run_manifest_*.json` under `--data-dir`) | Names the source run explicitly from this manifest path instead |
+| `--out` | `<data-dir>/corpus_<source_run>.ndjson` | Output file path |
+
+`consolidate` aborts with exit `2` and writes no file on either of two
+conflicts:
+
+| Cause | Detail |
+| :--- | :--- |
+| Duplicate `chat_id` | Two input files carry the same pseudonymous `chat_id`; the operator resolves it by deleting the wrong file |
+| Wrong schema | An input file's `schema_version` is not the current one (`6`) |
+
+### Reading the corpus line by line
+
+The first line is a provenance header, not a conversation. Read it once, then
+one `json.loads` per remaining line:
+
+```python
+import json
+
+with open("data/corpus_<source_run>.ndjson", encoding="utf-8") as handle:
+    header = json.loads(next(handle))
+    for line in handle:
+        chat = json.loads(line)
+```
+
+| Header field | What it carries |
+| :--- | :--- |
+| `record` | Always `"header"`, the discriminator that marks this line as the header rather than a conversation |
+| `corpus_schema` | Version of the header shape itself |
+| `chat_schema` | Schema version every conversation line was written under (`6`) |
+| `source_run` | The run id the corpus was consolidated from, or `unknown` when no run manifest was found |
+| `generated_at` | UTC ISO 8601 timestamp of the `consolidate` run that wrote the file |
+| `chat_count` | How many conversation lines follow the header — read exactly this many `json.loads` calls after skipping the header, or read until EOF |
+
+Each conversation line is one `chat_*.json` export written verbatim: nothing
+is flattened, trimmed or recomputed during consolidation.
+
 ---
-*Updated at Sprint Closeout #009 (RA-05).*
+*Updated at Sprint Closeout #010 (RA-05).*
