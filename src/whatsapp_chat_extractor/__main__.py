@@ -25,6 +25,12 @@ from whatsapp_chat_extractor.chat_list import (
     open_chat_by_digest,
     sweep_until_stable,
 )
+from whatsapp_chat_extractor.consolidate import (
+    build_header,
+    read_chat_files,
+    resolve_source_run,
+    write_corpus,
+)
 from whatsapp_chat_extractor.export_one import open_chat_by_query
 from whatsapp_chat_extractor.history import (
     COMPLETENESS_TRUNCATED,
@@ -612,6 +618,29 @@ def cmd_recover(args: argparse.Namespace) -> int:
     return _run_exit_code(manifest)
 
 
+def cmd_consolidate(args: argparse.Namespace) -> int:
+    """Join every per-conversation export under ``data_dir`` into one NDJSON.
+
+    Opens no browser: reading the export files and writing one corpus is work
+    a machine without Chromium must still be able to do (`§D4`).
+
+    Returns:
+        int: ``0`` on success, ``2`` if `consolidate` rejected the input
+            (duplicate ``chat_id``, or a file that is not schema v6).
+    """
+    try:
+        chats = read_chat_files(args.data_dir)
+        source_run = resolve_source_run(args.data_dir, args.from_manifest)
+        out_path = args.out or args.data_dir / f"corpus_{source_run}.ndjson"
+        header = build_header(chats, source_run)
+        write_corpus(chats, header, out_path)
+    except ValueError as exc:
+        logger.error("%s", exc)
+        return 2
+    print(out_path)
+    return 0
+
+
 def _add_harvest_args(parser: argparse.ArgumentParser) -> None:
     """Scroll-and-wait knobs shared by both export subcommands.
 
@@ -757,6 +786,37 @@ def _add_recover(sub: argparse._SubParsersAction) -> None:
     recover.set_defaults(func=cmd_recover)
 
 
+def _add_consolidate(sub: argparse._SubParsersAction) -> None:
+    """Register the `consolidate` subcommand.
+
+    It takes no browser arguments, because it drives no browser: joining the
+    per-conversation export files into one corpus must not require opening
+    WhatsApp Web (`§D4`).
+
+    Args:
+        sub: The subparser registry.
+    """
+    consolidate = sub.add_parser(
+        "consolidate",
+        help="Join data/chat_*.json into one NDJSON corpus. Opens no browser",
+    )
+    consolidate.add_argument(
+        "--data-dir", type=Path, default=DEFAULT_DATA_DIR,
+        help="Directory holding the per-conversation export files and, unless "
+             "--from-manifest is given, the run manifests (default: data/)",
+    )
+    consolidate.add_argument(
+        "--from-manifest", type=Path, default=None,
+        help="Name the source run from this manifest path explicitly, instead "
+             "of picking the newest run_manifest_*.json under --data-dir",
+    )
+    consolidate.add_argument(
+        "--out", type=Path, default=None,
+        help="Output file (default: <data-dir>/corpus_<source-run>.ndjson)",
+    )
+    consolidate.set_defaults(func=cmd_consolidate)
+
+
 def build_parser() -> argparse.ArgumentParser:
     """The `wa-extract` command line.
 
@@ -772,6 +832,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_export_one(sub)
     _add_export_all(sub)
     _add_recover(sub)
+    _add_consolidate(sub)
     return parser
 
 
