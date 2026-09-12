@@ -63,8 +63,9 @@ Unit-level state and per-file assignees: `task_scope.md`.
 
 | Gate | Round | Verdict | Class | Notes |
 | :--- | :--- | :--- | :--- | :--- |
-| QA (structural) | — | *pending* | — | Not yet run |
-| Tester (functional) | — | *pending* | — | Not yet run |
+| QA (structural) | 1 | `REJECTED` | `charter` | Full repository scan from round 1 (31 files, 551 functions), instructed by the Orchestrator after Sprint 009's round-1 miss. Zero complexity/style findings. **Executed the design contract instead of trusting the docstring**: `write_corpus` accepted a header and a body from two independent lists with no reconciliation — proved by calling it with a 1-chat header and a 2-chat body and getting a corpus whose header lied, no error. The false guarantee had propagated into `EXTRACTOR_BLUEPRINT.md` as Law. Also flagged, unrecorded as a charge: a missing `chat_id` crashed with `KeyError` instead of this module's own `ValueError` contract |
+| QA (structural) | 2 | *pending* | — | Dispatched after `9169e4c` (fix + pinning tests, proven by mutation) and `d6c94f3` (Blueprint correction) |
+| Tester (functional) | — | *pending* | — | Awaiting QA approval |
 
 ---
 
