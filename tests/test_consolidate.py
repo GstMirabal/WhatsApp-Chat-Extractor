@@ -147,3 +147,35 @@ def test_read_order_is_stable_and_ascending_by_filename(tmp_path: Path) -> None:
     ]
     assert first_pass == expected
     assert second_pass == expected
+
+
+def test_write_corpus_recomputes_chat_count_rather_than_trusting_the_header(
+    tmp_path: Path,
+) -> None:
+    """A header built from a shorter list than the one actually written must
+    not reach disk unreconciled (`§D2`) — `write_corpus` is authoritative on
+    the count of what it writes, not the header's own claim.
+    """
+    stale_header = build_header([a_chat("Ana")], "run-1")
+    assert stale_header["chat_count"] == 1
+    real_body = [a_chat("Ana"), a_chat("Beto")]
+
+    out_path = write_corpus(real_body, stale_header, tmp_path / "corpus.ndjson")
+    lines = out_path.read_text(encoding="utf-8").splitlines()
+
+    assert len(lines) == 3
+    assert json.loads(lines[0])["chat_count"] == 2
+    assert stale_header["chat_count"] == 1
+
+
+def test_a_file_with_no_chat_id_raises_value_error_not_key_error(
+    tmp_path: Path,
+) -> None:
+    """A malformed v6 file missing `chat_id` must hit this module's own
+    `ValueError` abort contract — the only exception `cmd_consolidate`
+    catches — not an uncaught `KeyError` from deeper in the read path.
+    """
+    write_chat_file(tmp_path, "chat_broken.json", {"schema_version": SCHEMA_VERSION})
+
+    with pytest.raises(ValueError, match="chat_broken.json has no chat_id"):
+        read_chat_files(tmp_path)

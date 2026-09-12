@@ -64,7 +64,7 @@ def _load_chat_file(path: Path) -> dict:
 
     Raises:
         ValueError: If the file's ``schema_version`` is not
-            ``writers.SCHEMA_VERSION``.
+            ``writers.SCHEMA_VERSION``, or if the file has no ``chat_id``.
         OSError: If the file cannot be read.
     """
     with path.open(encoding="utf-8") as handle:
@@ -74,6 +74,8 @@ def _load_chat_file(path: Path) -> dict:
         raise ValueError(
             f"{path.name} is schema {schema}, expected {SCHEMA_VERSION}"
         )
+    if "chat_id" not in chat:
+        raise ValueError(f"{path.name} has no chat_id")
     return chat
 
 
@@ -171,9 +173,12 @@ def resolve_source_run(data_dir: Path, from_manifest: Path | None) -> str:
 def build_header(chats: list[dict], source_run: str) -> dict:
     """Build the provenance header that precedes the conversation lines.
 
-    ``chat_count`` is taken from ``chats`` here so the caller passes the same
-    list to :func:`write_corpus`; the header cannot then disagree with the body
-    it is written above (`§D2`).
+    ``chat_count`` is taken from ``chats`` here for convenience, but this
+    value is not authoritative on its own: :func:`write_corpus` recomputes
+    ``chat_count`` from the ``chats`` list it actually writes and overwrites
+    whatever this function returned, so a header built from a different list
+    than the one later passed to :func:`write_corpus` never reaches disk
+    unreconciled (`§D2`).
 
     Args:
         chats: The conversations that will form the corpus body.
@@ -200,12 +205,16 @@ def write_corpus(chats: list[dict], header: dict, out_path: Path) -> Path:
     The header is written first, then the conversations in the order given,
     each as ``json.dumps(..., ensure_ascii=False)`` on its own line. The
     conversation dicts are written verbatim — nothing is flattened, trimmed or
-    recomputed (`§D3`). This function does not touch ``header["chat_count"]``;
-    the caller is responsible for having built it from ``chats``.
+    recomputed (`§D3`). Before serializing, ``header["chat_count"]`` is
+    overwritten with ``len(chats)`` — the count of the lines actually written
+    below it — so the header cannot disagree with the body it precedes,
+    regardless of what ``chat_count`` the passed-in ``header`` already carried
+    (`§D2`). ``header`` itself is not mutated; a corrected copy is written.
 
     Args:
         chats: The conversations to write, one per line, in order.
-        header: The provenance header from :func:`build_header`.
+        header: The provenance header from :func:`build_header`. Its
+            ``chat_count`` is not trusted; it is replaced with ``len(chats)``.
         out_path: Destination file. Its parent directory is created if absent.
 
     Returns:
@@ -214,8 +223,9 @@ def write_corpus(chats: list[dict], header: dict, out_path: Path) -> Path:
     Raises:
         OSError: If the directory or file cannot be written.
     """
+    corrected_header = {**header, "chat_count": len(chats)}
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    parts = [json.dumps(header, ensure_ascii=False) + "\n"]
+    parts = [json.dumps(corrected_header, ensure_ascii=False) + "\n"]
     for chat in chats:
         parts.append(json.dumps(chat, ensure_ascii=False) + "\n")
     out_path.write_text("".join(parts), encoding="utf-8")
@@ -223,6 +233,6 @@ def write_corpus(chats: list[dict], header: dict, out_path: Path) -> Path:
         "Wrote corpus to %s (1 header + %s conversation line(s), source_run=%s)",
         out_path,
         len(chats),
-        header.get("source_run"),
+        corrected_header.get("source_run"),
     )
     return out_path
