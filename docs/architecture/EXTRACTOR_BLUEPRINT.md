@@ -362,8 +362,15 @@ this section states the resulting contract, verified against
 | 1 (header) | `record`, `corpus_schema` (`consolidate.CORPUS_SCHEMA_VERSION`), `chat_schema` (`writers.SCHEMA_VERSION`), `source_run`, `generated_at`, `chat_count` |
 | 2…N+1 (body) | One line per conversation, `json.dumps` of its `chat_*.json` payload verbatim — every schema v6 field and every message, nothing flattened, trimmed, or recomputed |
 
-`chat_count` is counted from the body **after** it is assembled, so the
-header cannot claim more conversations than the file holds.
+`chat_count` is not a value the caller supplies and this system trusts:
+`write_corpus` recomputes it from the ``chats`` list it actually writes and
+overwrites whatever the header carried, so the written file's header cannot
+disagree with the body beneath it regardless of what built the header
+(`src/whatsapp_chat_extractor/consolidate.py`, `§D2`; corrected at the Phase 7
+structural gate, which
+proved the earlier "written after counting" claim false by execution rather
+than by reading the docstring — the pre-fix code computed the count in
+`build_header`, independently of what `write_corpus` later wrote).
 
 | Abort | Condition | Exit code |
 | :--- | :--- | :--- |
