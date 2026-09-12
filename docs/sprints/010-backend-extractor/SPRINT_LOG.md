@@ -64,8 +64,28 @@ Unit-level state and per-file assignees: `task_scope.md`.
 | Gate | Round | Verdict | Class | Notes |
 | :--- | :--- | :--- | :--- | :--- |
 | QA (structural) | 1 | `REJECTED` | `charter` | Full repository scan from round 1 (31 files, 551 functions), instructed by the Orchestrator after Sprint 009's round-1 miss. Zero complexity/style findings. **Executed the design contract instead of trusting the docstring**: `write_corpus` accepted a header and a body from two independent lists with no reconciliation — proved by calling it with a 1-chat header and a 2-chat body and getting a corpus whose header lied, no error. The false guarantee had propagated into `EXTRACTOR_BLUEPRINT.md` as Law. Also flagged, unrecorded as a charge: a missing `chat_id` crashed with `KeyError` instead of this module's own `ValueError` contract |
-| QA (structural) | 2 | *pending* | — | Dispatched after `9169e4c` (fix + pinning tests, proven by mutation) and `d6c94f3` (Blueprint correction) |
-| Tester (functional) | — | *pending* | — | Awaiting QA approval |
+| QA (structural) | 2 | `RECORD` | `testifying` | Both round-1 charges verified fixed by direct execution (not the diff): mismatched header/body now reconciled on disk, missing `chat_id` now raises `ValueError` not `KeyError`. Both pinning tests independently mutation-proven a second time. 553 functions, zero new complexity findings. One finding, `F-1` |
+| Tester (functional) | — | *pending* | — | Dispatched after `0e333b8` |
+
+**`F-1` closed at `0e333b8`.** `str.splitlines()` also breaks on U+2028/U+2029/
+U+0085, which `json.dumps(..., ensure_ascii=False)` leaves unescaped inside a
+string value a real WhatsApp message body can carry. The four line-counting
+sites in `tests/test_consolidate.py` and `tests/test_consolidate_cli.py` —
+including the test that proves `write_corpus`'s own `chat_count`
+reconciliation — used `.splitlines()` and could have overcounted a file that
+was written and would be read correctly by anything iterating the file
+object. Switched to `text.rstrip("\n").split("\n")`, matching what
+`EXTRACTOR_WALKTHROUGH.md`'s operator guidance already did safely. Reproduced
+independently before and after the fix.
+
+**`jurisdictional_lock` reconciled, not waived.** Round 2 was asked to examine
+whether `9169e4c` touching two files (`consolidate.py` + its pinning test)
+conflicts with "one physical file per unit." It does not: the lock bounds one
+file per *task*, not per commit, and both paths were already assigned to the
+same unit's assignee in `task_scope.md`. `rules/code_craft.md §6` /
+`hooks/on_commit.py`'s `audit_regression_test` **mandates** the pairing for
+any `fix(` commit — the two rules point the same direction, not opposite
+ones.
 
 ---
 
