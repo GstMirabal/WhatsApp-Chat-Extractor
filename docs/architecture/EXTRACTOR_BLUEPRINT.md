@@ -44,6 +44,7 @@ an invalid one.
 | `ChatExport` JSON | file schema | `writers.ChatExport` / this blueprint §3 |
 | `RunManifest` JSON | file schema | `manifest.RunManifest` / this blueprint §3 (#007) |
 | `wa-extract recover` | CLI | `src/whatsapp_chat_extractor/__main__.py` (#009) |
+| `wa-extract consolidate` | CLI | `src/whatsapp_chat_extractor/__main__.py` (#010) |
 | Run journal NDJSON | file schema | `journal.JournalHeader` / this blueprint §3 (#009) |
 | `timestamps.parse_rendered` | function | `src/whatsapp_chat_extractor/timestamps.py` (#009) |
 | `/wa-export <chat>` | slash command | `.claude/commands/wa-export.md`, `.cursor/commands/wa-export.md` |
@@ -345,6 +346,34 @@ steps over the conversations `journal.exported_chat_ids` already found
 `exported`; the chat list is enumerated again from scratch, never read back
 from the journal. A `failed` or `skipped` outcome does not count as done, so a
 resumed run retries it.
+
+### Corpus consolidation (#010)
+
+`wa-extract consolidate` joins every per-conversation `data/chat_*.json` an
+export run left into one `data/corpus_<source_run>.ndjson`. It opens no
+browser, the same posture as `recover`. Design rationale is
+`docs/sprints/010-backend-extractor/IMPLEMENTATION_PLAN.md` §Design (D1-D7);
+this section states the resulting contract, verified against
+`consolidate.read_chat_files`, `consolidate.build_header` and
+`consolidate.write_corpus`.
+
+| Line | Content |
+| :--- | :--- |
+| 1 (header) | `record`, `corpus_schema` (`consolidate.CORPUS_SCHEMA_VERSION`), `chat_schema` (`writers.SCHEMA_VERSION`), `source_run`, `generated_at`, `chat_count` |
+| 2…N+1 (body) | One line per conversation, `json.dumps` of its `chat_*.json` payload verbatim — every schema v6 field and every message, nothing flattened, trimmed, or recomputed |
+
+`chat_count` is counted from the body **after** it is assembled, so the
+header cannot claim more conversations than the file holds.
+
+| Abort | Condition | Exit code |
+| :--- | :--- | :--- |
+| Duplicate `chat_id` | Two input files under `--data-dir` carry the same `chat_id` | `2`, `ValueError` naming both files — never silently de-duplicated |
+| Wrong schema | An input file's `schema_version` is not `writers.SCHEMA_VERSION` (`6`) | `2`, `ValueError` naming the file and the schema found — a v5 file is rejected, never migrated |
+
+Implemented in `src/whatsapp_chat_extractor/consolidate.py`
+(`read_chat_files`, `resolve_source_run`, `build_header`, `write_corpus`);
+wired by `cmd_consolidate` / `_add_consolidate` in
+`src/whatsapp_chat_extractor/__main__.py`.
 
 ## 5. Crosscutting Concepts
 
