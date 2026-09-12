@@ -80,7 +80,7 @@ def test_three_synthetic_files_produce_a_four_line_corpus(tmp_path: Path) -> Non
     chats = read_chat_files(tmp_path)
     header = build_header(chats, "run-1")
     out_path = write_corpus(chats, header, tmp_path / "corpus.ndjson")
-    lines = out_path.read_text(encoding="utf-8").splitlines()
+    lines = out_path.read_text(encoding="utf-8").rstrip("\n").split("\n")
 
     assert len(lines) == 4
     written_header = json.loads(lines[0])
@@ -126,7 +126,7 @@ def test_chat_count_is_derived_from_an_empty_body(tmp_path: Path) -> None:
     assert header["chat_count"] == 0
 
     out_path = write_corpus(chats, header, tmp_path / "corpus.ndjson")
-    lines = out_path.read_text(encoding="utf-8").splitlines()
+    lines = out_path.read_text(encoding="utf-8").rstrip("\n").split("\n")
     assert len(lines) == 1
     assert json.loads(lines[0])["chat_count"] == 0
 
@@ -161,7 +161,7 @@ def test_write_corpus_recomputes_chat_count_rather_than_trusting_the_header(
     real_body = [a_chat("Ana"), a_chat("Beto")]
 
     out_path = write_corpus(real_body, stale_header, tmp_path / "corpus.ndjson")
-    lines = out_path.read_text(encoding="utf-8").splitlines()
+    lines = out_path.read_text(encoding="utf-8").rstrip("\n").split("\n")
 
     assert len(lines) == 3
     assert json.loads(lines[0])["chat_count"] == 2

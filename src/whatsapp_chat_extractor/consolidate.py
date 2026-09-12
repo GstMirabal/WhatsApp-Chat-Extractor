@@ -211,6 +211,14 @@ def write_corpus(chats: list[dict], header: dict, out_path: Path) -> Path:
     regardless of what ``chat_count`` the passed-in ``header`` already carried
     (`§D2`). ``header`` itself is not mutated; a corrected copy is written.
 
+    A written line is delimited strictly by ``\\n``. A reader that counts
+    lines with something other than iterating the open file (or splitting the
+    text on ``\\n`` alone) can disagree with ``chat_count``: Python's
+    ``str.splitlines()`` also breaks on U+2028/U+2029/U+0085, which
+    ``ensure_ascii=False`` leaves unescaped inside a JSON string value and
+    which a genuine WhatsApp message body can carry. Iterating the file
+    object, or ``text.rstrip("\\n").split("\\n")``, is the correct read.
+
     Args:
         chats: The conversations to write, one per line, in order.
         header: The provenance header from :func:`build_header`. Its

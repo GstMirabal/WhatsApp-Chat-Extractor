@@ -102,7 +102,7 @@ def test_two_v6_files_produce_a_three_line_corpus_and_exit_zero(
 
     assert exit_code == 0
     out_path = tmp_path / "corpus_unknown.ndjson"
-    lines = out_path.read_text(encoding="utf-8").splitlines()
+    lines = out_path.read_text(encoding="utf-8").rstrip("\n").split("\n")
     assert len(lines) == 3
     assert capsys.readouterr().out.strip() == str(out_path)
 
