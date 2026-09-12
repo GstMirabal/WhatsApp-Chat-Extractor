@@ -20,12 +20,12 @@ pure, fixture-testable module; the `__main__.py` change is wiring only.
 
 | # | File | Operation | Risk | Assignee | Model | Effort | Status |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| A1 | `src/whatsapp_chat_extractor/consolidate.py` | create | medium | `implementer_agent` | sonnet | medium | ⏳ |
-| A2 | `tests/test_consolidate.py` | create | low | `implementer_agent` | sonnet | medium | ⏳ |
-| B1 | `src/whatsapp_chat_extractor/__main__.py` | modify | low | `implementer_agent` | sonnet | medium | ⏳ |
-| B2 | `tests/test_consolidate_cli.py` | create | low | `implementer_agent` | sonnet | medium | ⏳ |
-| C1 | `docs/architecture/EXTRACTOR_BLUEPRINT.md` | modify | low | `doc_orchestrator` | sonnet | medium | ⏳ |
-| C2 | `docs/walkthroughs/EXTRACTOR_WALKTHROUGH.md` | modify | low | `doc_orchestrator` | sonnet | medium | ⏳ |
+| A1 | `src/whatsapp_chat_extractor/consolidate.py` | create | medium | `implementer_agent` | sonnet | medium | ✅ 935b3be |
+| A2 | `tests/test_consolidate.py` | create | low | `implementer_agent` | sonnet | medium | ✅ 54c052d |
+| B1 | `src/whatsapp_chat_extractor/__main__.py` | modify | low | `implementer_agent` | sonnet | medium | ✅ 6616d7a |
+| B2 | `tests/test_consolidate_cli.py` | create | low | `implementer_agent` | sonnet | medium | ✅ 5d0c5cd |
+| C1 | `docs/architecture/EXTRACTOR_BLUEPRINT.md` | modify | low | `doc_orchestrator` | sonnet | medium | ✅ ce2e23c |
+| C2 | `docs/walkthroughs/EXTRACTOR_WALKTHROUGH.md` | modify | low | `doc_orchestrator` | sonnet | medium | ✅ d674a95 |
 
 A row moves to `✅ <sha>` as its commit lands.
 

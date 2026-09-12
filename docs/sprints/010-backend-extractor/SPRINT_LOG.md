@@ -35,11 +35,25 @@ Design and rejected alternatives: `IMPLEMENTATION_PLAN.md` § Design.
 
 | Wave | Units | Subject | Status |
 | :--- | :--- | :--- | :--- |
-| 1 | A1 | `consolidate.py` — read, validate, write | ⏳ |
-| 2 | A2 | `test_consolidate.py` — NDJSON contract, both aborts | ⏳ |
-| 2 | B1 | `__main__.py` — `consolidate` subcommand (wiring only) | ⏳ |
-| 3 | B2 | `test_consolidate_cli.py` — orchestration, browserless | ⏳ |
-| 4 | C1–C2 | Blueprint, Walkthrough | ⏳ |
+| 1 | A1 | `consolidate.py` — read, validate, write | ✅ `935b3be` |
+| 2 | A2 | `test_consolidate.py` — NDJSON contract, both aborts | ✅ `54c052d` |
+| 2 | B1 | `__main__.py` — `consolidate` subcommand (wiring only) | ✅ `6616d7a` |
+| 3 | B2 | `test_consolidate_cli.py` — orchestration, browserless | ✅ `5d0c5cd` |
+| 4 | C1 | Blueprint — component + corpus contract subsection | ✅ `ce2e23c` |
+| 4 | C2 | Walkthrough — operator section, footer to `#010` | ✅ `d674a95` |
+
+**6 of 6 units landed.** Suite 292 passed / 1 skipped, from a 283/1 baseline at
+Sprint 010's open (`+9`, none removed); `ruff check .` exit `0`. No function in
+any touched file exceeds `max_lines_per_func` — a repository-wide scan finds
+only the two pre-existing `export_one.py` violations, untouched.
+
+**Smoke-tested against the real corpus, not only synthetic fixtures.** Ran
+`consolidate --data-dir data --out <tmp>` over the actual 1018
+`data/chat_*.json` files from the Sprint 009 whole-account run: wrote 1019
+lines (1 header + 1018), header correctly reads `chat_count: 1018` and
+`source_run: 20260902T214002Z` (resolved from the newest real manifest), and
+did not abort — confirming Sprint 009's own claim of zero duplicate `chat_id`s
+holds under the tool built to consume it.
 
 Unit-level state and per-file assignees: `task_scope.md`.
 
