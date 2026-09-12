@@ -65,7 +65,41 @@ Unit-level state and per-file assignees: `task_scope.md`.
 | :--- | :--- | :--- | :--- | :--- |
 | QA (structural) | 1 | `REJECTED` | `charter` | Full repository scan from round 1 (31 files, 551 functions), instructed by the Orchestrator after Sprint 009's round-1 miss. Zero complexity/style findings. **Executed the design contract instead of trusting the docstring**: `write_corpus` accepted a header and a body from two independent lists with no reconciliation — proved by calling it with a 1-chat header and a 2-chat body and getting a corpus whose header lied, no error. The false guarantee had propagated into `EXTRACTOR_BLUEPRINT.md` as Law. Also flagged, unrecorded as a charge: a missing `chat_id` crashed with `KeyError` instead of this module's own `ValueError` contract |
 | QA (structural) | 2 | `RECORD` | `testifying` | Both round-1 charges verified fixed by direct execution (not the diff): mismatched header/body now reconciled on disk, missing `chat_id` now raises `ValueError` not `KeyError`. Both pinning tests independently mutation-proven a second time. 553 functions, zero new complexity findings. One finding, `F-1` |
-| Tester (functional) | — | *pending* | — | Dispatched after `0e333b8` |
+| Tester (functional) | 1 | `RECORD` | `testifying` | 294/1 zero regression, verified against `d0cdbb4`. Ran `consolidate` on the real 1018-file production corpus — zero duplicate `chat_id`, provenance exact, both flags and both aborts confirmed through the real CLI. Eight coverage gaps recorded (`T-1`–`T-8`), none charging the sprint — the gate confirmed each falls outside what the plan required |
+
+**The gate verified rather than trusted, on every claim.** It ran against a
+throwaway copy of the tree, drove eight separate mutants through the full
+suite to show which shipped behaviours have no test able to catch their loss,
+and constructed a real message body carrying U+2028/U+2029/U+0085 to
+independently confirm round 2's `F-1` fix rather than accepting the commit
+message.
+
+**`T-8` is not this sprint's defect, and matters more than the seven others
+combined.** While proving `consolidate`'s provenance against real `data/`, the
+gate found that the credited manifest's `started_at`
+(`2026-09-09T20:56:52Z`) is the timestamp of its **last** `--resume` pass, not
+when the run actually began (`2026-09-02T21:40:02Z`). Root cause, confirmed by
+the Orchestrator independently: `journal.read_journal` (`journal.py:223-230`)
+overwrites `header` on every header record it walks past, so a journal holding
+five resume headers — Sprint 009's own — yields only the most recent one.
+**570 of 1018 conversations (56%) carry an `exported_at` earlier than the date
+the manifest claims the run started.** Not corpus contamination — every
+conversation's provenance is otherwise correct — but a corpus consumer dating
+the whole export from `source_run`'s manifest is off by up to a week. Carried
+below rather than fixed in this sprint: it is `journal.py`/`manifest.py`
+territory from Sprint 009, outside `consolidate`'s own scope and this sprint's
+Work table.
+
+The other seven (`T-1` through `T-7`) are mutation-proven coverage gaps in
+`consolidate.py` itself, none charging the sprint because each is a behaviour
+the plan's `A2`/`B2` rows never required tested: `--from-manifest` has zero
+test coverage though it works; four of six header fields are silently
+deletable; "newest manifest" selection is untested; the input glob is
+unpinned (though a widened glob fails loudly against real data, not silently);
+the schema abort is pinned below the CLI only; the `F-1` fix has no
+regression test of its own; and `--from-manifest`/`source_run` accepts a path
+to a file that was never a real run, the same unvalidated-string shape as the
+carried Sprint 009 gap `F-6`.
 
 **`F-1` closed at `0e333b8`.** `str.splitlines()` also breaks on U+2028/U+2029/
 U+0085, which `json.dumps(..., ensure_ascii=False)` leaves unescaped inside a
