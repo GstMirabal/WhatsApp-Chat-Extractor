@@ -90,6 +90,14 @@ below rather than fixed in this sprint: it is `journal.py`/`manifest.py`
 territory from Sprint 009, outside `consolidate`'s own scope and this sprint's
 Work table.
 
+**`T-8` is carried, by human decision at session #16, 2026-09-13, rather than
+hotfixed.** Unlike `H-003`, nothing operational is blocked: every
+conversation's own content and identity are correct, and the misdated field is
+metadata about the run, not about any message in it. Carried to a future
+sprint (`journal.read_journal` must keep the FIRST header's `started_at`, not
+the last written) alongside the other Sprint 009 debt already carried
+(`§D5`, `§D6`, `T-2`, `KI-009-H`).
+
 The other seven (`T-1` through `T-7`) are mutation-proven coverage gaps in
 `consolidate.py` itself, none charging the sprint because each is a behaviour
 the plan's `A2`/`B2` rows never required tested: `--from-manifest` has zero
