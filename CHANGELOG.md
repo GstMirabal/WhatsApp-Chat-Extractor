@@ -27,6 +27,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · Versioning: [SemVer](
   count of empty `timestamp_iso`). Every v6 field is additive; no v5 field
   changed. v5 files already on disk are not rewritten. Rationale:
   `docs/decisions/ADR-0007-corpus-contract-v6.md`.
+- **One corpus file instead of one per conversation** (`#010`). `wa-extract
+  consolidate` reads every `data/chat_*.json`, checks each is schema v6 with
+  no repeated `chat_id`, and writes `data/corpus_<source_run>.ndjson`: a
+  provenance header line, then one line per conversation carrying the whole
+  export verbatim — no field or message dropped. Aborts, no file written, on
+  a repeated `chat_id` or a non-v6 input. Verified live against the real
+  1018-conversation Sprint 009 export: zero duplicates, exact provenance.
 
 ### Fixed
 
