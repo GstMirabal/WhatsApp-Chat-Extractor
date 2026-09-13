@@ -133,6 +133,11 @@ ones.
 
 ## 🧠 Rule Amendments & Heuristic Harvest
 
+Indexed into `memory_index.json` at the close, each carrying a `routing_class`.
+
 | # | Finding | Class | Destination |
 | :--- | :--- | :--- | :--- |
-| *(none yet)* | | | |
+| `KI-010-A` | A round-1 structural gate given full-repository scope from the start, with the prior sprint's coverage miss stated as the reason, found a real design-contract defect by executing the code rather than trusting its docstring — and a round-2 gate found the round-1 fix's own pinning test was fooled by the exact defect class (`str.splitlines()` on Unicode line separators) it was written to prove closed. "Execute the claim, do not read it" held twice in one sprint | `host` | `memory_index.json` |
+| `KI-010-B` | A Blueprint stated an architectural guarantee ("the header cannot lie about the body") that the code beneath it did not actually enforce; the false claim was corrected only because a gate ran the code instead of reading the docstring the Blueprint had been written from. `architecture/` being "Law" (`agents.md §0`) does not make a claim there true — only execution does | `host` | `memory_index.json` |
+| `KI-010-C` | Validating a new tool against the real production dataset it exists to serve — not only synthetic fixtures — found a defect in a DIFFERENT, already-approved sprint's artifact (`T-8`, Sprint 009's `journal.read_journal` keeping the last `--resume` header instead of the first). A tool's own test suite is not the only place its assumptions get checked | `host` | `memory_index.json` |
+| `T-8` | `journal.read_journal` overwrites its header on every header record walked, so a journal holding multiple `--resume` headers reconstructs a manifest whose `started_at` is the last resume's start, not the run's. 570 of 1018 real conversations in this repository's own corpus predate the date their manifest claims the run began | `host` | Carried, unscheduled — not hotfixed; nothing operational is blocked |
