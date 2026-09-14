@@ -8,6 +8,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · Versioning: [SemVer](
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-09-14
+
 ### Added
 
 - **A whole-account run survives a crash** (`#009`). `export-all` writes an
