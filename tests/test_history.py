@@ -7,6 +7,8 @@ can be wrong in a way the operator would not notice.
 
 from __future__ import annotations
 
+import pytest
+
 from whatsapp_chat_extractor.history import (
     STOP_CHAT_START,
     STOP_MAX_PASSES,
@@ -20,12 +22,25 @@ from whatsapp_chat_extractor.history import (
 
 
 def row(
-    message_id: str, body: str, sender: str = "contact", kind: str = "text"
+    message_id: str,
+    body: str,
+    sender: str = "contact",
+    kind: str = "text",
+    timestamp: str = "12:00, 27/8/2026",
 ) -> HarvestedRow:
+    """One harvested row, shaped as `export_one` actually produces it.
+
+    The timestamp carries **no brackets**: `_row_timestamp` matches
+    `\\[(.*?)\\]` against `data-pre-plain-text` and returns `group(1)`, so the
+    brackets are gone before a row is built. This fixture used to include them,
+    which cost nothing while `timestamp` was only copied through, and would have
+    made every v6 `timestamp_iso` empty for a reason that exists nowhere but in
+    the fixture.
+    """
     return {
         "message_id": message_id,
         "sender": sender,
-        "timestamp": "[12:00, 27/8/2026]",
+        "timestamp": timestamp,
         "body": body,
         "kind": kind,
     }
@@ -65,6 +80,91 @@ def test_empty_pass_is_tolerated() -> None:
     accumulator = MessageAccumulator()
     assert accumulator.add_pass([]) == 0
     assert accumulator.consolidate() == []
+
+
+# --- schema v6: the record keeps the identity it deduped on (ADR-0007) ------
+
+
+def test_the_message_id_reaches_the_record_it_was_deduped_on() -> None:
+    """Until v6 `consolidate` dropped it, so no message survived re-export.
+
+    The id is not recomputed here — it is the same string `add_pass` used as
+    the deduplication key, which is the whole point: a value the harvest
+    already trusted for identity is the one the file should carry.
+    """
+    accumulator = MessageAccumulator()
+    accumulator.add_pass([row("true_id_1", "first"), row("true_id_2", "second")])
+
+    assert [m["message_id"] for m in accumulator.consolidate()] == [
+        "true_id_1", "true_id_2"
+    ]
+
+
+def test_writing_the_id_out_does_not_stop_it_deduplicating() -> None:
+    """Regression: `message_id` gains a second job and must keep the first."""
+    accumulator = MessageAccumulator()
+    accumulator.add_pass([row("same", "first")])
+
+    assert accumulator.add_pass([row("same", "first seen again")]) == 0
+    assert len(accumulator.consolidate()) == 1
+
+
+def test_the_rendered_timestamp_is_kept_and_a_parsed_one_added_beside_it() -> None:
+    accumulator = MessageAccumulator()
+    accumulator.add_pass([row("a", "hola", timestamp="14:32, 3/9/2026")])
+
+    (message,) = accumulator.consolidate()
+    assert message["timestamp"] == "14:32, 3/9/2026"
+    assert message["timestamp_iso"] == "2026-09-03T14:32"
+
+
+def test_a_row_with_only_a_clock_consolidates_with_an_empty_parsed_stamp() -> None:
+    """The `msg-meta` fallback yields `HH:MM`. It must not become today's date."""
+    accumulator = MessageAccumulator()
+    accumulator.add_pass([row("a", "hola", timestamp="14:33")])
+
+    (message,) = accumulator.consolidate()
+    assert message["timestamp"] == "14:33"
+    assert message["timestamp_iso"] == ""
+
+
+def test_an_unobserved_locale_leaves_the_parsed_stamp_empty_not_wrong() -> None:
+    accumulator = MessageAccumulator()
+    accumulator.add_pass([row("a", "hola", timestamp="14:32, 3/9/2026")])
+
+    (message,) = accumulator.consolidate(locale="ja-JP")
+    assert message["timestamp_iso"] == ""
+    assert message["timestamp"] == "14:32, 3/9/2026"
+
+
+def test_a_row_with_no_message_id_is_rejected_at_the_pass_not_at_the_record() -> None:
+    """`message_id` is mandatory, and the accumulator is where that is enforced.
+
+    Written after a first draft of `_as_record` defended against a missing id
+    with `row.get(...)`. That branch was unreachable — `add_pass` indexes
+    `message_id` to deduplicate — and the comment justifying it was wrong. The
+    tolerance `kind` gets is not owed to `message_id`, because nothing indexes
+    `kind`.
+    """
+    accumulator = MessageAccumulator()
+
+    with pytest.raises(KeyError, match="message_id"):
+        accumulator.add_pass(
+            [{"sender": "me", "timestamp": "14:32, 3/9/2026", "body": "hola"}]  # type: ignore[list-item]
+        )
+
+
+def test_a_row_predating_kind_still_consolidates_as_text() -> None:
+    """A replayed v3 fixture: nothing indexes `kind`, so it does reach the record."""
+    accumulator = MessageAccumulator()
+    accumulator.add_pass(
+        [{"message_id": "a", "sender": "me",  # type: ignore[list-item]
+          "timestamp": "14:32, 3/9/2026", "body": "hola"}]
+    )
+
+    (message,) = accumulator.consolidate()
+    assert message["kind"] == "text"
+    assert message["message_id"] == "a"
 
 
 def test_identical_text_from_different_senders_stays_distinct() -> None:

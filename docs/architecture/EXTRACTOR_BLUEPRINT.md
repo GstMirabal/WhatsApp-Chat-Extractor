@@ -43,19 +43,30 @@ an invalid one.
 | `wa-extract export-all` | CLI | `src/whatsapp_chat_extractor/__main__.py` (#007) |
 | `ChatExport` JSON | file schema | `writers.ChatExport` / this blueprint §3 |
 | `RunManifest` JSON | file schema | `manifest.RunManifest` / this blueprint §3 (#007) |
+| `wa-extract recover` | CLI | `src/whatsapp_chat_extractor/__main__.py` (#009) |
+| `wa-extract consolidate` | CLI | `src/whatsapp_chat_extractor/__main__.py` (#010) |
+| Run journal NDJSON | file schema | `journal.JournalHeader` / this blueprint §3 (#009) |
+| `timestamps.parse_rendered` | function | `src/whatsapp_chat_extractor/timestamps.py` (#009) |
 | `/wa-export <chat>` | slash command | `.claude/commands/wa-export.md`, `.cursor/commands/wa-export.md` |
 
-Data model (schema v5, #007):
+Data model (schema v6, #009):
 - **ChatExport**: `schema_version`, `chat_id`, `exported_at`, `message_count`,
-  `complete`, `completeness`, `stopped_reason`, `messages[]`
-- **MessageRecord**: `sender`, `timestamp`, `body`, `kind`, `order` — every
-  message, whatever medium it carried
-- **RunManifest** (`manifest.py`, manifest schema v2, #008): `schema_version`,
-  `started_at`, `finished_at`, `chats_enumerated`, `enumeration`, `sweeps`,
-  `counts`, `chats[]`. The manifest versions independently of `ChatExport`:
-  it is at v2 while the export file is at v5
+  `undated_messages`, `complete`, `completeness`, `stopped_reason`,
+  `passes_used`, `source_locale`, `source_timezone`, `messages[]`
+- **MessageRecord**: `message_id`, `sender`, `timestamp`, `timestamp_iso`,
+  `body`, `kind`, `order` — every message, whatever medium it carried
+- **RunManifest** (`src/whatsapp_chat_extractor/manifest.py`, manifest schema
+  v2, #008): `schema_version`, `started_at`, `finished_at`,
+  `chats_enumerated`, `enumeration`, `sweeps`, `counts`, `chats[]`. The
+  manifest versions independently of `ChatExport`: it is at v2 while the
+  export file is at v6
 - **ChatOutcome**: `chat_id`, `index`, `outcome`, `reason`, `completeness`,
   `message_count`, `file` — one per conversation the sweep found
+- **JournalHeader** (`src/whatsapp_chat_extractor/journal.py`, journal schema
+  v1, #009): `record`, `schema_version`, `run_id`, `started_at`,
+  `chats_enumerated`, `enumeration`, `sweeps` — written once, the moment
+  enumeration returns. The journal versions independently of both
+  `ChatExport` and `RunManifest`: it is at v1
 
 ### Kind contract (ADR-0003, #005)
 
@@ -186,17 +197,23 @@ reader of the boolean must not break on a v5 file.
 | :--- | :--- | :--- | :--- |
 | `proven` | `true` | `stopped_reason == "chat_start"` | The beginning was **observed** |
 | `unproven` | `false` | `stalled`, panel quiet | The panel stopped producing history and nothing indicated more was coming. An inference, named as one |
-| `truncated` | `false` | `max_passes`, or `stalled` while loading | The harvest ended before the conversation did |
+| `truncated` | `false` | `max_passes`, or `loading_unresolved` (a spinner suppressed the stall verdict past `loading_grace`, H-003) | The harvest ended before the conversation did |
 
 `classify_completeness` **fails closed**: a stop reason it does not recognise is
 `truncated`, never `proven`. An unknown reason is not evidence of having arrived.
 
-The `stalled`-while-loading pairing is defensive rather than reachable, and
-deliberately kept: `decide_stop` suppresses the stall verdict while the panel is
-fetching, so the harvest loop no longer produces it. It is exactly what Sprint
-006's probe run 3 recorded before that fix — 175 passes with a `loading-spinner`
-still on screen — and classifying it as `unproven` would reinstate the error the
-fix removed.
+The `loading_unresolved` pairing is **reached in practice, not defensive
+padding**. `decide_stop` suppresses the `stalled` verdict while the panel is
+fetching — Sprint 006's probe run 3 is why: a harvest was declared `stalled`
+after 175 passes with a `loading-spinner` still on screen, and classifying a
+live spinner as `unproven` would reinstate that error. Hotfix H-003 then hit the
+opposite failure — a production run whose phone never answered the load-earlier
+request left the spinner up for 890 consecutive passes, and the suppression,
+unbounded at the time, held all the way to `max_passes`. `decide_stop` now
+bounds it: past `stall_threshold + loading_grace` stalled passes under a spinner
+it returns `STOP_LOADING_UNRESOLVED`, which `classify_completeness` fails closed
+to `truncated` with no code change. Full account:
+`docs/hotfixes/H-003-backend.md`.
 
 `stalled` counted as complete until the first live run, which exported 217
 messages of a longer conversation and marked them complete. Only the marker is
@@ -206,11 +223,17 @@ proof; an inference is not recorded as one.
 `decide_stop` takes `panel_loading`, and a visible loading indicator
 (`LOADING_SELECTORS`) suppresses the `stalled` verdict: a spinner is positive
 evidence that more history is coming, so stopping on it reports a top that was
-never reached. `max_passes` is deliberately *not* suppressed, so a spinner that
-never resolves still terminates the run and says `max_passes` — the honest
-reason — rather than claiming a top. Measured: one conversation was declared
-`stalled` after 175 passes with a spinner on screen, and ran 255 with the panel
-genuinely quiet once corrected.
+never reached. The suppression is **bounded**: `DEFAULT_LOADING_GRACE = 20` caps
+how many stalled passes past `stall_threshold` a visible spinner may suppress,
+and beyond that `decide_stop` returns `STOP_LOADING_UNRESOLVED` and the harvest
+ends — roughly 6 minutes rather than the 8.3 hours `max_passes` alone cost the
+H-003 production run. `20` is empirical: across the 250 conversations exported
+under schema v6 at the time of the fix, `passes_used` was minimum 4, median 4,
+90th percentile 6, maximum 13, none over 20. `max_passes` still terminates any
+run the grace window does not, and `STOP_CHAT_START` still wins over every
+condition. Measured: one conversation was declared `stalled` after 175 passes
+with a spinner on screen, and ran 255 with the panel genuinely quiet once
+corrected.
 
 **`proven` has never been produced, and Sprint 006 established it is unreachable
 in practice.** Across five real conversations and two runs, with the stall defect
@@ -254,6 +277,28 @@ Consequences, and they are not interchangeable:
 | A conversation that fails is recorded and the run **continues**; losing the session aborts it | A run of hundreds that dies on the third wastes the manual login and every export already made. A lost session, by contrast, makes every later attempt fail identically |
 | A conversation beyond `--limit` is recorded as `skipped`, never omitted | An omitted conversation is indistinguishable from one that never existed |
 
+### Corpus contract v6 (ADR-0007, schema v6, #009)
+
+Every v6 field is additive — no v5 field changes name, meaning, or type.
+Rationale is `docs/decisions/ADR-0007-corpus-contract-v6.md`; this table
+states the fields that resulted, verified against `writers.MessageRecord` and
+`writers.ChatExport`.
+
+| Field | On | Type | Source |
+| :--- | :--- | :--- | :--- |
+| `message_id` | `MessageRecord` | `str` | Identity already computed by `history.HarvestedRow` for pass-to-pass deduplication, carried through to the written record instead of being dropped at that boundary |
+| `timestamp_iso` | `MessageRecord` | `str` | `timestamps.parse_rendered` of the row's rendered `timestamp`. `""` for a row WhatsApp rendered with a clock and no date — never a date inferred from anything outside that row |
+| `passes_used` | `ChatExport` | `int` | `history.HarvestResult.passes_used`, the scroll-pass count the harvest reached `completeness` in |
+| `source_locale` | `ChatExport` | `str` | The browser locale pinned by `session.launch_context`, e.g. `es-ES` |
+| `source_timezone` | `ChatExport` | `str` | The IANA zone `session.resolve_timezone` reads from the page — the zone the page actually rendered in, never the `--timezone` request |
+| `undated_messages` | `ChatExport` | `int` | `timestamps.undated_count` over every message's `timestamp_iso` in the export |
+
+`timestamp_iso` sits **beside** `timestamp`, never in place of it: the
+rendered string stays the evidence, so a parse later found wrong can be redone
+against files already on disk without reopening WhatsApp Web. Only the
+locales in `timestamps.LOCALE_DATE_ORDER` are parsed — an unrecognised locale
+yields `""` rather than a guessed day/month order.
+
 ## 4. Runtime View
 
 1. Operator runs `wa-extract login` → Chromium persistent profile → QR if needed → chat list ready.
@@ -277,6 +322,65 @@ Consequences, and they are not interchangeable:
    why the wrapper id is consulted first (#005).
 6. Pytest exercises `writers`, the pure half of `history`, and row-field
    extraction with stub rows — no live WhatsApp.
+
+### Run journal and resume (ADR-0006, #009)
+
+`wa-extract export-all` records what it did as the run makes progress, not
+only once the whole sweep returns: a run over hundreds of conversations takes
+hours, so a crash must not erase the record of what was already exported.
+Rationale is `docs/decisions/ADR-0006-run-journal-and-resume.md`; this table
+states the sequence.
+
+| Step | Event | Function |
+| :--- | :--- | :--- |
+| 1 | `run_id` minted once, before anything is written | `__main__.mint_run_id` |
+| 2 | Journal opened for append at `data/run_journal_<run_id>.ndjson` | `journal.open_journal` |
+| 3 | Header written the moment enumeration returns — not before, because `chats_enumerated` is unknown until then, and not after the first conversation, because a run that dies on it would leave no header at all | `journal.write_header`, called from `__main__._record_header` |
+| 4 | One outcome appended per conversation, as the run makes it, `fsync`ed to disk before the next chat opens | `journal.append_outcome`, called from `__main__._record_outcome` |
+| 5 | Manifest rebuilt from the journal's header and outcomes; every enumerated `chat_id` the journal never reached is recorded `skipped`, reason `run ended before this conversation` | `manifest.manifest_from_journal` |
+| 6a | Rebuild at the end of a live run, against the enumeration that same run just produced | `__main__.cmd_export_all` |
+| 6b | Rebuild later, from the journal alone, with no enumeration and no browser opened | `__main__.cmd_recover` |
+
+`export-all --resume <run_id>` reopens that same journal in append mode and
+steps over the conversations `journal.exported_chat_ids` already found
+`exported`; the chat list is enumerated again from scratch, never read back
+from the journal. A `failed` or `skipped` outcome does not count as done, so a
+resumed run retries it.
+
+### Corpus consolidation (#010)
+
+`wa-extract consolidate` joins every per-conversation `data/chat_*.json` an
+export run left into one `data/corpus_<source_run>.ndjson`. It opens no
+browser, the same posture as `recover`. Design rationale is
+`docs/sprints/010-backend-extractor/IMPLEMENTATION_PLAN.md` §Design (D1-D7);
+this section states the resulting contract, verified against
+`consolidate.read_chat_files`, `consolidate.build_header` and
+`consolidate.write_corpus`.
+
+| Line | Content |
+| :--- | :--- |
+| 1 (header) | `record`, `corpus_schema` (`consolidate.CORPUS_SCHEMA_VERSION`), `chat_schema` (`writers.SCHEMA_VERSION`), `source_run`, `generated_at`, `chat_count` |
+| 2…N+1 (body) | One line per conversation, `json.dumps` of its `chat_*.json` payload verbatim — every schema v6 field and every message, nothing flattened, trimmed, or recomputed |
+
+`chat_count` is not a value the caller supplies and this system trusts:
+`write_corpus` recomputes it from the ``chats`` list it actually writes and
+overwrites whatever the header carried, so the written file's header cannot
+disagree with the body beneath it regardless of what built the header
+(`src/whatsapp_chat_extractor/consolidate.py`, `§D2`; corrected at the Phase 7
+structural gate, which
+proved the earlier "written after counting" claim false by execution rather
+than by reading the docstring — the pre-fix code computed the count in
+`build_header`, independently of what `write_corpus` later wrote).
+
+| Abort | Condition | Exit code |
+| :--- | :--- | :--- |
+| Duplicate `chat_id` | Two input files under `--data-dir` carry the same `chat_id` | `2`, `ValueError` naming both files — never silently de-duplicated |
+| Wrong schema | An input file's `schema_version` is not `writers.SCHEMA_VERSION` (`6`) | `2`, `ValueError` naming the file and the schema found — a v5 file is rejected, never migrated |
+
+Implemented in `src/whatsapp_chat_extractor/consolidate.py`
+(`read_chat_files`, `resolve_source_run`, `build_header`, `write_corpus`);
+wired by `cmd_consolidate` / `_add_consolidate` in
+`src/whatsapp_chat_extractor/__main__.py`.
 
 ## 5. Crosscutting Concepts
 
@@ -305,6 +409,9 @@ Consequences, and they are not interchangeable:
 - `docs/decisions/ADR-0002-delivery-program-and-layout.md`: P1 spike layout + exit criterion
 - `docs/decisions/ADR-0003-media-placeholders-in-export.md`: media messages are placeholders, never dropped (schema v4)
 - `docs/decisions/ADR-0004-completeness-criterion.md`: `completeness` has three values; `complete` is derived (schema v5)
+- `docs/decisions/ADR-0005-enumeration-completeness.md`: `enumeration` states enumeration completeness in three values, replacing a boolean the pane could satisfy while the list moved underneath it (manifest schema v2)
+- `docs/decisions/ADR-0006-run-journal-and-resume.md`: append-only NDJSON run journal, `fsync`ed per line, enabling `--resume` and a browserless `recover` (journal schema v1)
+- `docs/decisions/ADR-0007-corpus-contract-v6.md`: message identity and a parsed timestamp beside the raw string, pinned locale with resolved timezone recorded, `passes_used`, `undated_messages` (schema v6)
 - Sprint #004 brought full history forward from P3: a corpus truncated by a
   scroll count does not serve the stated consumer
   (`docs/sprints/004-backend-extractor/IMPLEMENTATION_PLAN.md`)

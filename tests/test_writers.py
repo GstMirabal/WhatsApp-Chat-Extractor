@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from whatsapp_chat_extractor.writers import (
     SCHEMA_VERSION,
     MessageRecord,
@@ -14,6 +16,19 @@ from whatsapp_chat_extractor.writers import (
 )
 
 REAL_NAME = "Ana Pérez García"
+
+
+def a_message(*, order: int, timestamp_iso: str) -> MessageRecord:
+    """A schema v6 message record, for the cases that only vary its stamp."""
+    return {
+        "message_id": "true_id",
+        "sender": "contact",
+        "timestamp": "14:32, 3/9/2026",
+        "timestamp_iso": timestamp_iso,
+        "body": "hola",
+        "kind": "text",
+        "order": order,
+    }
 
 
 def test_build_export_sets_fields() -> None:
@@ -128,18 +143,105 @@ def test_written_json_carries_the_completeness_fields(tmp_path: Path) -> None:
     assert payload["message_count"] == 0
 
 
-# --- schema v5: completeness has three values (ADR-0004) --------------------
+# --- schema v6: identity, comparable time, render frame (ADR-0007) ----------
 
 
-def test_the_schema_version_is_five() -> None:
+def test_the_schema_version_is_six() -> None:
     """The version is what tells a reader which contract a file was written to.
 
     v3 carries no `kind`; v4 carries `kind` and a boolean `complete` that is
-    always False; v5 carries `completeness`. A consumer cannot infer any of this
-    from the payload alone, which is why the number is asserted rather than
-    assumed.
+    always False; v5 carries `completeness`; v6 carries `message_id`,
+    `timestamp_iso`, and the locale and timezone the file was rendered under. A
+    consumer cannot infer any of this from the payload alone, which is why the
+    number is asserted rather than assumed.
+
+    Asserted against the literal as well as the constant, deliberately: reading
+    `SCHEMA_VERSION == SCHEMA_VERSION` would pass through any bump at all
+    (`KI-008-F`).
     """
-    assert SCHEMA_VERSION == 5
+    assert SCHEMA_VERSION == 6
+
+
+def test_the_v6_fields_are_present_on_a_built_export() -> None:
+    export = build_export(
+        chat_title="Some Contact",
+        messages=[],
+        completeness="unproven",
+        stopped_reason="stalled",
+        passes_used=12,
+        source_locale="es-ES",
+        source_timezone="Europe/Madrid",
+    )
+
+    assert export["schema_version"] == 6
+    assert export["passes_used"] == 12
+    assert export["source_locale"] == "es-ES"
+    assert export["source_timezone"] == "Europe/Madrid"
+    assert export["undated_messages"] == 0
+
+
+def test_undated_messages_counts_the_rows_that_carry_no_date() -> None:
+    """The corpus reports its own gaps rather than leaving them to be discovered."""
+    export = build_export(
+        chat_title="Some Contact",
+        messages=[
+            a_message(order=0, timestamp_iso="2026-09-03T14:32"),
+            a_message(order=1, timestamp_iso=""),
+            a_message(order=2, timestamp_iso=""),
+        ],
+        completeness="unproven",
+        stopped_reason="stalled",
+    )
+
+    assert export["message_count"] == 3
+    assert export["undated_messages"] == 2
+
+
+def test_the_undated_count_is_derived_not_accepted_from_a_caller() -> None:
+    """Same reason `complete` is derived: a supplied count can contradict the messages.
+
+    `build_export` takes no `undated_messages` argument, so there is no way to
+    hand it a number that disagrees with the list beside it.
+    """
+    with pytest.raises(TypeError):
+        build_export(  # type: ignore[call-arg]
+            chat_title="Some Contact",
+            messages=[],
+            completeness="unproven",
+            stopped_reason="stalled",
+            undated_messages=99,
+        )
+
+
+def test_the_render_frame_defaults_to_empty_rather_than_to_a_guess() -> None:
+    """An unrecorded locale must be distinguishable from a real one.
+
+    Every file written before v6 is effectively in this state, and `ADR-0007`
+    decided they are not repaired: nothing stored what they were rendered under.
+    """
+    export = build_export(
+        chat_title="Some Contact",
+        messages=[],
+        completeness="unproven",
+        stopped_reason="stalled",
+    )
+
+    assert export["source_locale"] == ""
+    assert export["source_timezone"] == ""
+
+
+def test_a_message_keeps_both_its_rendered_and_its_parsed_timestamp() -> None:
+    export = build_export(
+        chat_title="Some Contact",
+        messages=[a_message(order=0, timestamp_iso="2026-09-03T14:32")],
+        completeness="unproven",
+        stopped_reason="stalled",
+    )
+
+    (message,) = export["messages"]
+    assert message["timestamp"] == "14:32, 3/9/2026"
+    assert message["timestamp_iso"] == "2026-09-03T14:32"
+    assert message["message_id"] == "true_id"
 
 
 def test_a_media_message_is_exported_with_an_empty_body_and_its_kind() -> None:

@@ -14,6 +14,25 @@ logger = logging.getLogger(__name__)
 WA_WEB_URL = "https://web.whatsapp.com/"
 DEFAULT_PROFILE_DIR = Path("data/browser_profile")
 
+# Pinned so the rendered date format is known by construction rather than
+# inferred. WhatsApp writes `data-pre-plain-text="[HH:MM, D/M/YYYY] Name: "` in
+# the browser's locale, and `D/M` versus `M/D` cannot be told apart from the
+# string alone — `3/9` is a valid date either way. Until now nothing set this,
+# so every exported timestamp was rendered under whatever the operator's Mac
+# happened to be, unrecorded.
+#
+# `es-ES` is chosen because it is what the operator already runs: this pins the
+# current behaviour rather than changing it. It is also compatible with the
+# harvest, which matches its control labels in Spanish and English
+# (`export_one.LOAD_EARLIER_PATTERN`).
+DEFAULT_LOCALE = "es-ES"
+
+# Read from the page rather than imposed. Forcing a timezone would shift every
+# rendered clock away from what the operator sees and away from every export
+# written before today; which zone the corpus *should* be in is a decision for
+# the operator, taken with `--timezone`, not a default chosen here.
+TIMEZONE_QUERY = "() => Intl.DateTimeFormat().resolvedOptions().timeZone"
+
 # Selectors are spike-fragile; record changes in SPIKE_NOTES.md.
 QR_SELECTORS = (
     'canvas[aria-label*="Scan"]',
@@ -46,6 +65,7 @@ def launch_context(
     *,
     profile_dir: Path | None = None,
     headless: bool = False,
+    locale: str = DEFAULT_LOCALE,
 ) -> BrowserContext:
     """Launch Chromium with a persistent profile for WhatsApp Web.
 
@@ -53,6 +73,9 @@ def launch_context(
         playwright: A Playwright instance from ``sync_playwright()``.
         profile_dir: Persistent user-data directory under gitignored ``data/``.
         headless: Must stay False for QR login on the operator Mac.
+        locale: BCP 47 tag the page renders under. Pinned rather than inherited
+            so the date format in every timestamp is known — see
+            :data:`DEFAULT_LOCALE`.
 
     Returns:
         A Playwright ``BrowserContext``.
@@ -63,13 +86,44 @@ def launch_context(
         raise TypeError("playwright must be a Playwright instance")
 
     user_data = str(ensure_profile_dir(profile_dir))
-    logger.info("Launching Chromium profile at %s", user_data)
+    logger.info("Launching Chromium profile at %s under locale %s", user_data, locale)
     return playwright.chromium.launch_persistent_context(
         user_data_dir=user_data,
         headless=headless,
+        locale=locale,
         viewport={"width": 1280, "height": 900},
         args=["--disable-blink-features=AutomationControlled"],
     )
+
+
+def resolve_timezone(page: Page) -> str:
+    """Which timezone the page rendered its clocks in.
+
+    Read, never imposed. The exported file records this so a reader knows what
+    the message timestamps are relative to; without it the corpus carries times
+    with no frame, which is the gap `ADR-0007` closes.
+
+    Failure is not fatal and is not silent: a run must not die because a
+    diagnostic query did not answer, but an empty value in the export must be
+    distinguishable from a real zone, so the empty string is returned and the
+    reason logged.
+
+    Args:
+        page: Page with WhatsApp Web loaded.
+
+    Returns:
+        str: An IANA zone such as ``Europe/Madrid``, or ``""`` when the page
+            could not answer.
+    """
+    try:
+        resolved = page.evaluate(TIMEZONE_QUERY)
+    except Exception:
+        logger.exception("Could not resolve the browser timezone; recording none")
+        return ""
+    if isinstance(resolved, str) and resolved.strip():
+        return resolved.strip()
+    logger.warning("Browser returned no timezone (%r); recording none", resolved)
+    return ""
 
 
 def open_whatsapp(context: BrowserContext) -> Page:

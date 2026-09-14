@@ -17,12 +17,14 @@ from whatsapp_chat_extractor.history import (
     COMPLETENESS_TRUNCATED,
     COMPLETENESS_UNPROVEN,
     STOP_CHAT_START,
+    STOP_LOADING_UNRESOLVED,
     STOP_MAX_PASSES,
     STOP_STALLED,
     HarvestedRow,
     MessageAccumulator,
     build_result,
     classify_completeness,
+    decide_stop,
 )
 from whatsapp_chat_extractor.writers import SCHEMA_VERSION, build_export
 
@@ -97,6 +99,98 @@ def test_an_unrecognised_stop_reason_is_truncated_never_proven() -> None:
     )
 
 
+def test_an_unresolved_loading_spinner_is_truncated() -> None:
+    """H-003: `classify_completeness` needed no edit for the new reason.
+
+    `STOP_LOADING_UNRESOLVED` is a reason this function does not explicitly
+    recognise, and its fail-closed design (see the unrecognised-reason case
+    above) already routes anything it does not name to `truncated` rather than
+    `proven`. That is why the fix to `decide_stop` did not require a matching
+    change here: a harvest that gave up because a spinner never resolved has
+    not proven it reached the top of the conversation.
+    """
+    assert classify_completeness(STOP_LOADING_UNRESOLVED, panel_loading=True) == (
+        COMPLETENESS_TRUNCATED
+    )
+
+
+# --- decide_stop: bounding the H-003 spinner suppression -------------------
+
+
+def test_ordinary_stalling_still_stops_the_harvest() -> None:
+    """Regression guard: the loading bound must not weaken the plain case.
+
+    With no spinner on screen, reaching `stall_threshold` must keep returning
+    `STOP_STALLED` exactly as it did before H-003 touched `decide_stop`.
+    """
+    assert decide_stop(
+        at_start=False,
+        stall_count=3,
+        stall_threshold=3,
+        passes_used=10,
+        max_passes=2000,
+        panel_loading=False,
+    ) == STOP_STALLED
+
+
+def test_loading_grace_is_honored_at_its_exact_boundary() -> None:
+    """The grace period is applied, not merely accepted as an argument.
+
+    `stall_threshold=3` and `loading_grace=5` bound the suppression at 8. At
+    that exact count the harvest must still be allowed to continue: the
+    landed comparison is `stall_count > stall_threshold + loading_grace`, so
+    a value equal to the sum must fail it. A regression that dropped
+    `loading_grace` from the sum (so the boundary is judged against
+    `stall_threshold` alone) or that flipped the operator to `>=` would both
+    return `STOP_LOADING_UNRESOLVED` here instead of `None`.
+    """
+    assert decide_stop(
+        at_start=False,
+        stall_count=8,
+        stall_threshold=3,
+        passes_used=10,
+        max_passes=2000,
+        panel_loading=True,
+        loading_grace=5,
+    ) is None
+
+
+def test_loading_grace_expires_and_the_harvest_gives_up_honestly() -> None:
+    """Past the bound, the spinner no longer suppresses the stall verdict.
+
+    One pass beyond the boundary pinned above, `decide_stop` must report
+    `STOP_LOADING_UNRESOLVED` rather than `None` (the pre-H-003 unbounded
+    suppression) or `STOP_STALLED` (which would misreport a spinner still on
+    screen as an ordinary stall).
+    """
+    assert decide_stop(
+        at_start=False,
+        stall_count=9,
+        stall_threshold=3,
+        passes_used=10,
+        max_passes=2000,
+        panel_loading=True,
+        loading_grace=5,
+    ) == STOP_LOADING_UNRESOLVED
+
+
+def test_chat_start_still_wins_over_an_unresolved_spinner() -> None:
+    """Ordering pin: a proven start outranks every other stop reason.
+
+    Even past the loading-grace boundary, a visible start-of-chat marker must
+    still produce `STOP_CHAT_START`, not the new `STOP_LOADING_UNRESOLVED`.
+    """
+    assert decide_stop(
+        at_start=True,
+        stall_count=9,
+        stall_threshold=3,
+        passes_used=10,
+        max_passes=2000,
+        panel_loading=True,
+        loading_grace=5,
+    ) == STOP_CHAT_START
+
+
 # --- build_result: the harvest reports its own completeness ---------------
 
 
@@ -145,16 +239,26 @@ def test_panel_loading_defaults_to_not_loading() -> None:
 # --- the export payload ---------------------------------------------------
 
 
-def test_export_is_schema_v5_and_states_completeness() -> None:
+def test_export_is_schema_v6_and_states_completeness() -> None:
+    """The completeness contract is unchanged by v6; only the version moved.
+
+    `ADR-0007` is additive: `completeness`, `complete` and `stopped_reason`
+    carry exactly what `ADR-0004` gave them. This case exists to prove that a
+    schema bump did **not** quietly alter the three-valued verdict — which is
+    also why it asserts the literal, not `SCHEMA_VERSION == SCHEMA_VERSION`
+    (`KI-008-F`).
+    """
     export = build_export(
         chat_title="Some Contact",
         messages=[],
         completeness=COMPLETENESS_UNPROVEN,
         stopped_reason=STOP_STALLED,
     )
-    assert export["schema_version"] == 5
-    assert SCHEMA_VERSION == 5
+    assert export["schema_version"] == 6
+    assert SCHEMA_VERSION == 6
     assert export["completeness"] == COMPLETENESS_UNPROVEN
+    assert export["complete"] is False
+    assert export["stopped_reason"] == STOP_STALLED
 
 
 def test_export_derives_complete_from_completeness() -> None:

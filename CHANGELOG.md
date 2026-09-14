@@ -8,6 +8,47 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · Versioning: [SemVer](
 
 ## [Unreleased]
 
+### Added
+
+- **A whole-account run survives a crash** (`#009`). `export-all` writes an
+  append-only NDJSON run journal (`data/run_journal_<run_id>.ndjson`) with an
+  `fsync` per record, minting a `run_id` at the start and threading it through
+  the journal, manifest and title index so the files of one run share one
+  identity. `export-all --resume <run_id>` re-enumerates the chat list and
+  exports only what the journal does not already hold; a conversation that
+  failed on the first pass and succeeds on the retry is counted once. `recover
+  --run-id <id>` rebuilds the manifest from the journal with no browser, for a
+  run that died before writing its own. Rationale:
+  `docs/decisions/ADR-0006-run-journal-and-resume.md`.
+- **Corpus contract v6** (`#009`). Each message carries `message_id` and
+  `timestamp_iso` (`""` for a row WhatsApp rendered with a clock and no date);
+  each export carries `passes_used`, `source_locale`, `source_timezone` (the
+  zone the page resolved, never a value imposed) and `undated_messages` (the
+  count of empty `timestamp_iso`). Every v6 field is additive; no v5 field
+  changed. v5 files already on disk are not rewritten. Rationale:
+  `docs/decisions/ADR-0007-corpus-contract-v6.md`.
+- **One corpus file instead of one per conversation** (`#010`). `wa-extract
+  consolidate` reads every `data/chat_*.json`, checks each is schema v6 with
+  no repeated `chat_id`, and writes `data/corpus_<source_run>.ndjson`: a
+  provenance header line, then one line per conversation carrying the whole
+  export verbatim — no field or message dropped. Aborts, no file written, on
+  a repeated `chat_id` or a non-v6 input. Verified live against the real
+  1018-conversation Sprint 009 export: zero duplicates, exact provenance.
+
+### Fixed
+
+- **A whole-account run could stall on one conversation for 8.3 hours with no
+  failure recorded** (`H-003`). `decide_stop` suppressed the stall verdict for
+  as long as the panel showed a loading spinner, and WhatsApp Web leaves that
+  spinner up indefinitely when it has asked the paired phone for older
+  messages and the phone never answers — observed in production at `Pass 890:
+  +0 new, 0 total (stall 889/3)`. The suppression is correct and stays; it now
+  has a bound (`loading_grace`, default 20 passes past the stall threshold,
+  set from the measured maximum of 13 across 250 real exports), and a new stop
+  reason, `loading_unresolved`, ends the harvest honestly rather than by
+  exhausting the full 2000-pass budget. Classifies as `truncated`, unchanged.
+  #H003
+
 ## [0.8.1] - 2026-09-02
 
 ### Fixed

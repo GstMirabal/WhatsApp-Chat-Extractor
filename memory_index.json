@@ -1,6 +1,6 @@
 {
-  "last_update": "2026-09-02",
-  "sprint_id": "008",
+  "last_update": "2026-09-13",
+  "sprint_id": "010",
   "entries": [
     {
       "id": "KI-001-A",
@@ -229,6 +229,56 @@
       "summary": "Green CI does not imply a satisfiable deployment gate: branch protection returns 403 on a private free-plan repository, which is a plan limitation and not the token scope the anchor claimed for four sprints.",
       "routing_class": "host",
       "sprint": "008"
+    },
+    {
+      "id": "KI-009-A",
+      "summary": "Before re-deriving a boot or bridge defect from scratch, check docs/audits/ first - both boot defects this sprint found were already written up by earlier sprints of this same project.",
+      "routing_class": "host"
+    },
+    {
+      "id": "KI-009-C",
+      "summary": "A field computed for internal use and discarded at the serialization boundary is invisible to every reviewer who reads only the payload type (message_id, history.py consolidate step).",
+      "routing_class": "host"
+    },
+    {
+      "id": "KI-009-D",
+      "summary": "Renegotiating scope after the plan is written costs more than planning the wider scope once - measured ratio 4.1 to 7.8 in a single phase.",
+      "routing_class": "host"
+    },
+    {
+      "id": "KI-009-F",
+      "summary": "manifest_from_journal appends reconstructed skips after the recorded outcomes in enumeration order, not at the position each gap occupies; only the trailing-gap case is reachable today, but a later unit assuming enumeration order would be wrong for a reason no test covers.",
+      "routing_class": "host"
+    },
+    {
+      "id": "KI-009-G",
+      "summary": "_manifest_from_journal_file reports an absent journal as one that 'holds no header record', conflating missing with malformed, so an operator who mistypes a run-id is told the wrong thing.",
+      "routing_class": "host"
+    },
+    {
+      "id": "KI-009-H",
+      "summary": "A harvest/polling loop with no wall-clock timeout is indistinguishable from a hang except to a human watching - the extractor's harvest loop had none, a run stalled 5h43m with zero failures recorded, and the fix must be a per-conversation deadline outside the page API since set_default_timeout does not govern the calls the loop uses.",
+      "routing_class": "host"
+    },
+    {
+      "id": "KI-010-A",
+      "summary": "A structural gate given full-repository scope from the start, told to execute a design claim rather than trust its docstring, found a real contract defect the same sprint's own pinning test then propagated by using str.splitlines() to count NDJSON lines - which breaks on U+2028/U+2029/U+0085 the same way the fix it was proving needed a real reader to avoid.",
+      "routing_class": "host"
+    },
+    {
+      "id": "KI-010-B",
+      "summary": "An architecture document being 'Law' does not make a stated guarantee true - a Blueprint claimed a header 'cannot lie about the body' and the code beneath it did not enforce that until a gate executed the code instead of reading the docstring the Blueprint had been written from.",
+      "routing_class": "host"
+    },
+    {
+      "id": "KI-010-C",
+      "summary": "Validate a new tool against the real production dataset it exists to serve, not only synthetic fixtures - doing so for consolidate found a defect in a different, already-approved sprint's artifact (Sprint 009's journal/manifest reconstruction), which no synthetic test would have surfaced.",
+      "routing_class": "host"
+    },
+    {
+      "id": "T-8",
+      "summary": "journal.read_journal overwrites its header on every header record it walks, so a journal holding multiple --resume headers reconstructs a manifest whose started_at is the last resume's start, not the run's true start; found by validating consolidate against real data, where 570 of 1018 conversations predated their own manifest's claimed start.",
+      "routing_class": "host"
     }
   ]
 }
