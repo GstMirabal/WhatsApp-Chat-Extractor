@@ -15,7 +15,7 @@ run is forensic work and must not require the browser the dead run needed.
 from __future__ import annotations
 
 import argparse
-import json
+import contextlib
 import logging
 import os
 from datetime import UTC, datetime
@@ -49,12 +49,13 @@ from whatsapp_chat_extractor.journal import (
 )
 from whatsapp_chat_extractor.manifest import (
     OUTCOME_FAILED,
+    append_chat_index_entry,
     exported,
     failed,
     manifest_from_journal,
     now,
+    open_chat_index_journal,
     skipped,
-    write_chat_index,
     write_manifest,
 )
 from whatsapp_chat_extractor.session import (
@@ -78,24 +79,30 @@ EXIT_INCOMPLETE = 3
 class RunJournal(NamedTuple):
     """The open journal of one run, plus what a resume already found in it.
 
-    Bundled rather than passed as four separate arguments so that the export
-    walk carries one optional parameter: it is driven in tests with no journal
-    at all, and a single ``None`` says that far more clearly than four.
+    Bundled rather than passed as separate arguments so that the export walk
+    carries one optional parameter: it is driven in tests with no journal at
+    all, and a single ``None`` says that far more clearly than several.
     """
 
     handle: TextIO
     run_id: str
     started_at: str
     already_exported: frozenset[str]
+    # The run's open chat-index journal, or ``None`` when ``--write-index``
+    # was not asked for. Threaded the same way ``handle`` is, so a title found
+    # during the walk is written durably the moment it is discovered (`§D5`)
+    # instead of collected for a batched write at the end.
+    chat_index_handle: TextIO | None = None
 
 
 def mint_run_id() -> str:
     """Coin the identity of a run, once, before anything is written.
 
     Minted at the start of the run rather than at the moment each file is
-    written: `write_manifest`, `write_chat_index` and the journal each used to
-    derive their own timestamp, so the three files of one run could carry three
-    different stamps and none of them named the run (`§D2`).
+    written: `write_manifest`, `open_chat_index_journal` and the run journal
+    each used to derive their own timestamp, so the three files of one run
+    could carry three different stamps and none of them named the run
+    (`§D2`).
 
     Returns:
         str: A UTC stamp in the same shape those writers used as their
@@ -325,6 +332,25 @@ def _record_outcome(journal: RunJournal | None, outcome: dict) -> None:
         append_outcome(journal.handle, outcome)
 
 
+def _record_title(journal: RunJournal | None, chat_id: str, title: str) -> None:
+    """Append one discovered title to the chat index, the moment it is read.
+
+    Written inside the walk rather than accumulated for a batched write at the
+    end (`§D5`): a crash on any later conversation still leaves this title on
+    disk. Gated on ``chat_index_handle`` rather than on the outcome journal
+    ``handle`` alone, because a run can have one without the other —
+    ``--write-index`` is a separate, explicit opt-in (`ADR-0001`).
+
+    Args:
+        journal: The run's open journal, or ``None`` when the walk is driven
+            without one.
+        chat_id: Pseudonymous identity of the conversation.
+        title: The conversation's real name, as read from the chat list.
+    """
+    if journal is not None and journal.chat_index_handle is not None:
+        append_chat_index_entry(journal.chat_index_handle, chat_id, title)
+
+
 def _export_every_chat(
     page: object, args: argparse.Namespace, *, journal: RunJournal | None = None
 ) -> tuple:
@@ -343,7 +369,10 @@ def _export_every_chat(
 
     Returns:
         tuple: The outcomes this pass produced, the `ADR-0005` enumeration
-            result, and the digest-to-title index.
+            result, and the digest-to-title index this pass read — informational
+            only. Every title in it was already written durably as it was
+            discovered (`_record_title`), so nothing downstream depends on this
+            dict surviving a crash.
     """
     enumerated = sweep_until_stable(page, settle_ms=args.settle_ms)
     _record_header(journal, enumerated)
@@ -360,6 +389,7 @@ def _export_every_chat(
         outcome, title = _export_one_ref(page, ref, args, total=len(refs))
         if title:
             index[ref["chat_id"]] = title
+            _record_title(journal, ref["chat_id"], title)
         outcomes.append(outcome)
         _record_outcome(journal, outcome)
     for ref in refs[len(targets):]:
@@ -490,39 +520,6 @@ def _manifest_from_journal_file(path: Path, enumerated_refs: list) -> dict:
     return manifest_from_journal(header, _latest_per_chat(outcomes), enumerated_refs)
 
 
-def _titles_for_index(index: dict, data_dir: Path, run_id: str) -> dict:
-    """Fold this pass's titles into any index an earlier pass of the run wrote.
-
-    ``write_chat_index`` truncates, and every pass of one run now writes the
-    same filename because the name carries the `run_id`. Without this fold,
-    resuming a run with `--write-index` would replace the mapping of every
-    conversation the earlier pass exported with the mapping of the few this pass
-    opened, and the operator would have no way to tell that names went missing.
-
-    Args:
-        index: `chat_id` to title, as this pass read them.
-        data_dir: Where the run writes.
-        run_id: Identity of the run. The filename is `manifest.write_chat_index`'s
-            convention, mirrored here to read back what that function wrote.
-
-    Returns:
-        dict: The earlier mapping updated with this pass's. This pass's titles
-            win, because they were read from the chat list more recently.
-    """
-    path = data_dir / f"chat_index_{run_id}.json"
-    if not path.is_file():
-        return index
-    try:
-        earlier = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        logger.exception("Could not read %s; writing only this pass's titles", path)
-        return index
-    if not isinstance(earlier, dict):
-        logger.warning("%s is not an object; writing only this pass's titles", path)
-        return index
-    return {**earlier, **index}
-
-
 def _run_exit_code(manifest: dict) -> int:
     """Pick the process exit code from the run's own record.
 
@@ -564,6 +561,14 @@ def _warn_on_partial_enumeration(enumerated: dict) -> None:
 def cmd_export_all(args: argparse.Namespace) -> int:
     """Export every conversation in the chat list, and record what happened.
 
+    The chat index, when ``--write-index`` asks for it, is opened once here
+    (append mode, `manifest.open_chat_index_journal`) and titles are written
+    to it durably as the walk discovers them (`§D5`) — not collected in
+    memory for a batched write after the walk returns. Opening it in append
+    mode also means a resumed run against the same ``run_id`` extends the
+    titles an earlier pass already wrote instead of needing them folded back
+    in: the file itself is the fold.
+
     Returns:
         int: ``0`` when the enumeration converged and every enumerated
             conversation is accounted for, ``3`` otherwise. The manifest and the
@@ -576,15 +581,17 @@ def cmd_export_all(args: argparse.Namespace) -> int:
         "Run %s (%s already exported, re-enumerating the chat list either way)",
         run_id, len(resumed),
     )
-    with open_journal(run_id, data_dir=args.data_dir) as handle:
-        journal = RunJournal(handle, run_id, now(), resumed)
-        _, enumerated, index = _export_all_session(args, journal)
+    with contextlib.ExitStack() as stack:
+        handle = stack.enter_context(open_journal(run_id, data_dir=args.data_dir))
+        chat_index_handle = (
+            stack.enter_context(open_chat_index_journal(run_id, data_dir=args.data_dir))
+            if args.write_index else None
+        )
+        journal = RunJournal(handle, run_id, now(), resumed, chat_index_handle)
+        _, enumerated, _ = _export_all_session(args, journal)
 
     manifest = _manifest_from_journal_file(path, enumerated["refs"])
     print(write_manifest(manifest, data_dir=args.data_dir, run_id=run_id))
-    if args.write_index and index:
-        write_chat_index(_titles_for_index(index, args.data_dir, run_id),
-                         data_dir=args.data_dir, run_id=run_id)
     _warn_on_partial_enumeration(enumerated)
     return _run_exit_code(manifest)
 
