@@ -176,6 +176,7 @@ def cmd_export_one(args: argparse.Namespace) -> int:
                 max_passes=args.max_passes,
                 stall_threshold=args.stall_threshold,
                 load_wait_ms=args.load_wait_ms,
+                deadline_seconds=args.deadline_seconds,
             )
             export = build_export(
                 chat_title=title,
@@ -244,6 +245,7 @@ def _export_open_chat(page: object, title: str, args: argparse.Namespace) -> tup
         max_passes=args.max_passes,
         stall_threshold=args.stall_threshold,
         load_wait_ms=args.load_wait_ms,
+        deadline_seconds=args.deadline_seconds,
     )
     export = build_export(
         chat_title=title,
@@ -660,6 +662,12 @@ def _add_harvest_args(parser: argparse.ArgumentParser) -> None:
         "--load-wait-ms", type=int, default=DEFAULT_LOAD_WAIT_MS,
         help="How long one pass waits for older messages from the phone "
              f"(default: {DEFAULT_LOAD_WAIT_MS})",
+    )
+    parser.add_argument(
+        "--deadline-seconds", type=float, default=None,
+        help="Wall-clock budget for the whole harvest of one chat, in "
+             "seconds (KI-009-H). Unbounded by default: only --max-passes "
+             "guarantees termination unless this is set",
     )
 
 
