@@ -33,8 +33,8 @@ transcription of the existing `claude_code` column, not an invented tier.
 | 1 | `src/whatsapp_chat_extractor/history.py` | modify | medium | `implementer_agent` | sonnet | medium | ✅ 06fc694 (trimmed to the 50-line cap in 7be5672) |
 | 2 | `src/whatsapp_chat_extractor/__main__.py` (CLI flag wiring only, Block A) | modify | low | `implementer_agent` | sonnet | medium | ✅ 754b52c |
 | 3 | `tests/test_history.py` | modify | low | `implementer_agent` | sonnet | medium | ✅ a32f8a8 |
-| 4 | `src/whatsapp_chat_extractor/journal.py` | modify | low | `implementer_agent` | sonnet | medium | ⏳ |
-| 5 | `tests/test_journal.py` | modify | low | `implementer_agent` | sonnet | medium | ⏳ |
+| 4 | `src/whatsapp_chat_extractor/journal.py` | modify | low | `implementer_agent` | sonnet | medium | ✅ 293ea35 |
+| 5 | `tests/test_journal.py` | modify | low | `implementer_agent` | sonnet | medium | ✅ 293ea35 |
 | 6 | `src/whatsapp_chat_extractor/commands.py` (new, Block C extraction) | create | high | `implementer_agent` | sonnet | medium | ⏳ |
 | 7 | `src/whatsapp_chat_extractor/__main__.py` (strip `cmd_*`, Block C) | modify | high | `implementer_agent` | sonnet | medium | ⏳ |
 | 8 | `src/whatsapp_chat_extractor/export_one.py` | modify | medium | `implementer_agent` | sonnet | medium | ⏳ |
