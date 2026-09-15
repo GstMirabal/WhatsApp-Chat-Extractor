@@ -247,24 +247,12 @@ def decide_stop(
 ) -> str | None:
     """Whether the harvest should stop, and why.
 
-    ``panel_loading`` suppresses the stall verdict, but only for
-    ``loading_grace`` stalled passes beyond ``stall_threshold``. A spinner on
-    screen is positive evidence that more history is on its way, so stopping
-    on it the moment it appears would report a top that was never reached
-    (H-003) — but the phone can also simply never answer, and the suppression
-    must not be unbounded either. ``max_passes`` is deliberately not
-    suppressed, so a spinner that outlasts even the grace period still
-    terminates the run through ``STOP_LOADING_UNRESOLVED`` rather than by
-    exhausting the whole pass budget.
-
-    ``deadline_seconds`` (KI-009-H) is a second, independent bound: unlike the
-    ``loading_grace`` suppression above, it is never suppressed by
-    ``panel_loading`` — a spinner that outlasts the deadline must still stop,
-    because a network round trip to the phone that never returns is exactly
-    the case a wall-clock bound exists to catch. This function stays pure and
-    clock-free: the caller computes ``elapsed_seconds`` with
-    ``time.monotonic()`` and passes the number in, so this rule remains
-    testable against a synthetic pass sequence with no real clock involved.
+    ``panel_loading`` suppresses the stall verdict for ``loading_grace``
+    stalled passes beyond ``stall_threshold`` (H-003) — but ``max_passes``
+    and ``deadline_seconds`` (KI-009-H) are never suppressed by it, so a
+    spinner stuck forever still terminates the run. This function stays
+    pure and clock-free: the caller computes ``elapsed_seconds`` with
+    ``time.monotonic()`` and passes the number in.
 
     Args:
         at_start: True when the beginning-of-chat marker is present.
@@ -275,12 +263,11 @@ def decide_stop(
         panel_loading: True when the panel is visibly still fetching.
         loading_grace: Extra stalled passes, beyond ``stall_threshold``, that
             a visible spinner may suppress before the harvest gives up on it.
-        elapsed_seconds: Wall-clock time elapsed since the harvest started,
-            as measured by the caller. Ignored when ``deadline_seconds`` is
+        elapsed_seconds: Wall-clock time since the harvest started, as
+            measured by the caller. Ignored when ``deadline_seconds`` is
             ``None``.
         deadline_seconds: Wall-clock budget for the whole harvest, or
-            ``None`` for no bound (the default — unbounded, matching the
-            behavior before this parameter existed).
+            ``None`` for no bound (the default).
 
     Returns:
         str | None: A ``STOP_*`` reason, or None to keep scrolling.
@@ -462,10 +449,8 @@ def _one_pass(
         stall_threshold: Quiet passes that end the run.
         load_wait_ms: How long this pass waits for older messages.
         loading_grace: Extra stalled passes a visible spinner may suppress.
-        start_time: ``time.monotonic()`` value captured once at harvest
-            start (KI-009-H).
-        deadline_seconds: Wall-clock budget for the whole harvest, or
-            ``None`` for no bound.
+        start_time, deadline_seconds: Forwarded to `_observe_and_decide`
+            (KI-009-H): harvest start time and wall-clock budget.
     """
     from whatsapp_chat_extractor.export_one import (
         at_chat_start,
@@ -481,10 +466,8 @@ def _one_pass(
                 added, len(accumulator), state.stall_count, stall_threshold)
     _observe_and_decide(
         page, state, at_chat_start,
-        stall_threshold=stall_threshold,
-        max_passes=max_passes,
-        loading_grace=loading_grace,
-        start_time=start_time,
+        stall_threshold=stall_threshold, max_passes=max_passes,
+        loading_grace=loading_grace, start_time=start_time,
         deadline_seconds=deadline_seconds,
     )
     if state.reason is None and not scroll_one_pass(page, max_wait_ms=load_wait_ms):
@@ -517,12 +500,9 @@ def harvest_history(
             a visible spinner may suppress before the harvest gives up on it
             (H-003).
         deadline_seconds: Wall-clock budget, in seconds, for the whole
-            harvest (KI-009-H). ``None`` (the default) leaves the harvest
-            unbounded in wall-clock time — only ``max_passes`` guarantees
-            termination in that case. No global default is enforced here:
-            H-003's own measurement (13 passes max across 250 conversations)
-            is not evidence for a wall-clock figure, only for the grace
-            period H-003 already bounds.
+            harvest (KI-009-H). ``None`` (the default) is unbounded — only
+            ``max_passes`` guarantees termination in that case. No global
+            default is enforced: H-003's measurement does not support one.
 
     Returns:
         HarvestResult: Ordered messages plus completeness metadata.
