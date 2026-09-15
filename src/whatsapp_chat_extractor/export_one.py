@@ -174,20 +174,39 @@ def _type_query(page: Page, query: str) -> None:
     _clear_and_type(page, query)
 
 
-def _open_first_result(page: Page, timeout_ms: int) -> None:
-    """Click the first search hit, else press Enter and wait for the panel."""
+def _try_click_result(page: Page, selector: str) -> bool:
+    """Click the first node ``selector`` matches, reporting whether it fired.
+
+    Extracted from :func:`_open_first_result` so the ``for``/``try``/``if``
+    stack stays inside the three-level indentation cap (`agents.md §1
+    max_indentation`). Behaviour is unchanged: a selector that matches nothing,
+    or whose click is refused by the page, is a miss rather than an error.
+
+    Args:
+        page: Ready WhatsApp Web page.
+        selector: One entry of ``SEARCH_RESULT_SELECTORS``.
+
+    Returns:
+        bool: True when a node was clicked.
+    """
     from playwright.sync_api import Error as PlaywrightError
 
+    loc = page.locator(selector)
+    try:
+        if loc.count() == 0:
+            return False
+        loc.first.click(timeout=5_000)
+    except PlaywrightError as exc:
+        logger.debug("Search result click miss on %s: %s", selector, exc)
+        return False
+    return True
+
+
+def _open_first_result(page: Page, timeout_ms: int) -> None:
+    """Click the first search hit, else press Enter and wait for the panel."""
     for selector in SEARCH_RESULT_SELECTORS:
-        loc = page.locator(selector)
-        try:
-            if loc.count() == 0:
-                continue
-            loc.first.click(timeout=5_000)
+        if _try_click_result(page, selector):
             return
-        except PlaywrightError as exc:
-            logger.debug("Search result click miss on %s: %s", selector, exc)
-            continue
     page.keyboard.press("Enter")
     page.wait_for_selector(", ".join(MESSAGE_PANEL_SELECTORS), timeout=timeout_ms)
 
@@ -226,6 +245,45 @@ def _title_matches_query(title: str, query: str) -> bool:
     return norm_query in norm_title
 
 
+def _verify_opened_chat(page: Page, query: str, before: str) -> str:
+    """Prove the conversation now on screen is the one ``query`` asked for.
+
+    Extracted from :func:`open_chat_by_query` so that function stays under the
+    50-line cap (`agents.md §1 max_lines_per_func`); the two post-conditions and
+    their wording are unchanged. Both fail closed (hotfix H-001).
+
+    Args:
+        page: Page whose conversation panel has already appeared.
+        query: Chat title / contact fragment typed by the human.
+        before: Title read before the search ran, used only to say whether the
+            open conversation changed at all.
+
+    Returns:
+        str: The verified conversation title. Titles are real people's names:
+            returned so the caller can derive a pseudonymous id, and
+            deliberately kept out of every log and error message.
+
+    Raises:
+        RuntimeError: If the title cannot be read, or does not contain ``query``.
+    """
+    title = read_open_chat_title(page)
+    if not title:
+        raise RuntimeError(
+            f"Opened a conversation for query={query!r} but could not read its "
+            "title, so the chat identity is unverifiable. Refusing to export an "
+            "unattributable corpus; update TITLE_SELECTORS in export_one.py."
+        )
+    if not _title_matches_query(title, query):
+        moved = "changed" if title != before else "never changed"
+        raise RuntimeError(
+            f"Search for query={query!r} left open a conversation whose title "
+            f"does not contain it (the open chat {moved}). This is the silent "
+            "wrong-chat failure guarded by hotfix H-001; open the intended chat "
+            "or refine the query."
+        )
+    return title
+
+
 def open_chat_by_query(page: Page, query: str, *, timeout_ms: int = 30_000) -> str:
     """Search the chat list and open the first match for ``query``.
 
@@ -259,23 +317,7 @@ def open_chat_by_query(page: Page, query: str, *, timeout_ms: int = 30_000) -> s
             f"Could not open chat for query={query!r}; see SPIKE_NOTES.md"
         ) from exc
 
-    # Titles are real people's names: returned so the caller can derive a
-    # pseudonymous id, and deliberately kept out of every log and error message.
-    title = read_open_chat_title(page)
-    if not title:
-        raise RuntimeError(
-            f"Opened a conversation for query={query!r} but could not read its "
-            "title, so the chat identity is unverifiable. Refusing to export an "
-            "unattributable corpus; update TITLE_SELECTORS in export_one.py."
-        )
-    if not _title_matches_query(title, query):
-        moved = "changed" if title != before else "never changed"
-        raise RuntimeError(
-            f"Search for query={query!r} left open a conversation whose title "
-            f"does not contain it (the open chat {moved}). This is the silent "
-            "wrong-chat failure guarded by hotfix H-001; open the intended chat "
-            "or refine the query."
-        )
+    title = _verify_opened_chat(page, query, before)
     logger.info("Opened and verified chat for query=%r", query)
     return title
 
@@ -352,7 +394,39 @@ def scroll_one_pass(
     before = panel_signature(page)
     handle.evaluate("el => { el.scrollTop = 0; }")
     clicked = _click_load_earlier(page)
+    return _wait_for_new_history(
+        page,
+        before=before,
+        poll_ms=poll_ms,
+        max_wait_ms=max_wait_ms,
+        clicked=clicked,
+    )
 
+
+def _wait_for_new_history(
+    page: Page,
+    *,
+    before: str,
+    poll_ms: int,
+    max_wait_ms: int,
+    clicked: bool,
+) -> bool:
+    """Poll the panel until its signature changes or the budget runs out.
+
+    Extracted from :func:`scroll_one_pass` so that function stays under the
+    50-line cap (`agents.md §1 max_lines_per_func`). Same polling rule, same
+    log line, no behaviour change.
+
+    Args:
+        page: Page with an open conversation, already scrolled to the top.
+        before: Panel signature read before the scroll.
+        poll_ms: Gap between checks for newly arrived rows.
+        max_wait_ms: How long to keep waiting before calling it a real stall.
+        clicked: Whether the load-earlier control was already clicked once.
+
+    Returns:
+        bool: True when the panel changed within the budget.
+    """
     waited = 0
     while waited < max_wait_ms:
         page.wait_for_timeout(poll_ms)
@@ -400,30 +474,69 @@ def _click_load_earlier(page: Page) -> bool:
     Returns:
         bool: True when a control was clicked.
     """
+    if _click_load_earlier_testid(page):
+        return True
+    for node in page.query_selector_all(LOAD_EARLIER_CANDIDATES):
+        if _click_load_earlier_candidate(node):
+            return True
+    return False
+
+
+def _click_load_earlier_testid(page: Page) -> bool:
+    """Click the load-earlier control addressed by its test id, if present.
+
+    Extracted from :func:`_click_load_earlier` to keep that function inside the
+    three-level indentation cap (`agents.md §1 max_indentation`). Unchanged
+    behaviour: a missing control and a refused click are both a plain miss.
+
+    Args:
+        page: Page with an open conversation.
+
+    Returns:
+        bool: True when the control was clicked.
+    """
     from playwright.sync_api import Error as PlaywrightError
 
     try:
         node = page.query_selector(LOAD_EARLIER_TESTID)
-        if node is not None:
-            node.click(timeout=2_000)
-            logger.info("Clicked load-earlier control (testid)")
-            return True
+        if node is None:
+            return False
+        node.click(timeout=2_000)
     except PlaywrightError as exc:
         logger.debug("Load-earlier testid click miss: %s", exc)
+        return False
+    logger.info("Clicked load-earlier control (testid)")
+    return True
 
-    for node in page.query_selector_all(LOAD_EARLIER_CANDIDATES):
-        try:
-            if _inside_a_message(node):
-                continue
-            label = (node.inner_text() or "").strip()
-            if not is_load_earlier_label(label):
-                continue
-            node.click(timeout=2_000)
-            logger.info("Clicked load-earlier control: %r", label[:60])
-            return True
-        except PlaywrightError as exc:
-            logger.debug("Load-earlier click miss: %s", exc)
-    return False
+
+def _click_load_earlier_candidate(node: object) -> bool:
+    """Click one text-identified candidate when it really is the loader.
+
+    Extracted from :func:`_click_load_earlier` for the same indentation reason
+    as :func:`_click_load_earlier_testid`. A node inside a message bubble, a
+    node whose text is not a known label, and a node whose click is refused are
+    all skipped exactly as before.
+
+    Args:
+        node: One element handle from ``LOAD_EARLIER_CANDIDATES``.
+
+    Returns:
+        bool: True when the control was clicked.
+    """
+    from playwright.sync_api import Error as PlaywrightError
+
+    try:
+        if _inside_a_message(node):
+            return False
+        label = (node.inner_text() or "").strip()  # type: ignore[attr-defined]
+        if not is_load_earlier_label(label):
+            return False
+        node.click(timeout=2_000)  # type: ignore[attr-defined]
+    except PlaywrightError as exc:
+        logger.debug("Load-earlier click miss: %s", exc)
+        return False
+    logger.info("Clicked load-earlier control: %r", label[:60])
+    return True
 
 
 def _inside_a_message(node: object) -> bool:
