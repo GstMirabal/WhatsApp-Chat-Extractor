@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from whatsapp_chat_extractor import __main__ as cli
+from whatsapp_chat_extractor import commands as cli
 from whatsapp_chat_extractor.manifest import (
     OUTCOME_EXPORTED,
     OUTCOME_FAILED,
