@@ -42,6 +42,13 @@ docs/active_state.json
 # Ephemeral session telemetry (agents.md §4)
 /memory/
 
+# OS cruft
+.DS_Store
+
+# Claude Code plan-mode safety net (agents.md §0) — not the canonical
+# Implementation Plan location, which is docs/sprints/[ID]-.../IMPLEMENTATION_PLAN.md
+/docs/plans/
+
 
 # .agents Claude/Cursor bridge + graphify output (regenerated locally, never commit)
 /.claude/commands/
