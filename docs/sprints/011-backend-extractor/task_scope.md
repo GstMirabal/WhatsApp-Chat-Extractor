@@ -30,9 +30,9 @@ transcription of the existing `claude_code` column, not an invented tier.
 
 | # | File | Operation | Risk | Assignee | Model | Effort | Status |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| 1 | `src/whatsapp_chat_extractor/history.py` | modify | medium | `implementer_agent` | sonnet | medium | ⏳ |
-| 2 | `src/whatsapp_chat_extractor/__main__.py` (CLI flag wiring only, Block A) | modify | low | `implementer_agent` | sonnet | medium | ⏳ |
-| 3 | `tests/test_history.py` | modify | low | `implementer_agent` | sonnet | medium | ⏳ |
+| 1 | `src/whatsapp_chat_extractor/history.py` | modify | medium | `implementer_agent` | sonnet | medium | ✅ 06fc694 (trimmed to the 50-line cap in 7be5672) |
+| 2 | `src/whatsapp_chat_extractor/__main__.py` (CLI flag wiring only, Block A) | modify | low | `implementer_agent` | sonnet | medium | ✅ 754b52c |
+| 3 | `tests/test_history.py` | modify | low | `implementer_agent` | sonnet | medium | ✅ a32f8a8 |
 | 4 | `src/whatsapp_chat_extractor/journal.py` | modify | low | `implementer_agent` | sonnet | medium | ⏳ |
 | 5 | `tests/test_journal.py` | modify | low | `implementer_agent` | sonnet | medium | ⏳ |
 | 6 | `src/whatsapp_chat_extractor/commands.py` (new, Block C extraction) | create | high | `implementer_agent` | sonnet | medium | ⏳ |
