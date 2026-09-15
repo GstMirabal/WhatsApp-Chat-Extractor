@@ -138,6 +138,51 @@ def test_explicit_out_overrides_the_default_corpus_path(tmp_path: Path) -> None:
     assert not (tmp_path / "corpus_unknown.ndjson").exists()
 
 
+def test_from_manifest_flag_overrides_newest_manifest_scan(tmp_path: Path) -> None:
+    """`T-1`: `--from-manifest` was untested end-to-end through the CLI, so a
+    regression that dropped `args.from_manifest` on the way to
+    `resolve_source_run` (or read it but never passed it through `cmd_consolidate`)
+    would go unnoticed as long as `consolidate.py`'s own unit tests passed.
+
+    Two manifests are written so the newest-by-filename scan and the explicit
+    flag disagree; the header must credit the flag's run, not the scan's.
+    """
+    _write_chat_file(tmp_path, "chat_1.json", _synthetic_chat("Ana"))
+    older = tmp_path / "run_manifest_aaa_older.json"
+    newer = tmp_path / "run_manifest_zzz_newer.json"
+    older.write_text("{}", encoding="utf-8")
+    newer.write_text("{}", encoding="utf-8")
+    args = _consolidate_args(tmp_path, ["--from-manifest", str(older)])
+
+    exit_code = args.func(args)
+
+    assert exit_code == 0
+    out_path = tmp_path / "corpus_aaa_older.ndjson"
+    assert out_path.is_file()
+    header = json.loads(out_path.read_text(encoding="utf-8").split("\n", 1)[0])
+    assert header["source_run"] == "aaa_older"
+
+
+def test_wrong_schema_file_exits_two_through_the_cli(tmp_path: Path) -> None:
+    """`T-5`: the schema-version abort (`consolidate._load_chat_file`) was only
+    pinned below the CLI, in `tests/test_consolidate.py`. A regression that let
+    a non-v6 file reach `write_corpus` — e.g. a `cmd_consolidate` refactor that
+    stopped propagating `ValueError` as exit `2` — would pass every existing
+    `consolidate.py` unit test while breaking the actual command, the same gap
+    `test_duplicate_chat_id_exits_two_and_writes_no_corpus_file` closes for the
+    duplicate-`chat_id` abort.
+    """
+    chat = _synthetic_chat("Ana")
+    chat["schema_version"] = chat["schema_version"] - 1
+    _write_chat_file(tmp_path, "chat_1.json", chat)
+    args = _consolidate_args(tmp_path)
+
+    exit_code = args.func(args)
+
+    assert exit_code == 2
+    assert list(tmp_path.glob("corpus_*.ndjson")) == []
+
+
 def test_consolidate_runs_with_playwright_unimportable(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
