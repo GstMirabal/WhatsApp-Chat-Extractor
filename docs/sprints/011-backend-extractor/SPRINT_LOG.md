@@ -97,7 +97,7 @@ Gates emit; the Orchestrator transcribes (`config/artifact_registry.json`).
 | :--- | :--- | :--- | :--- | :--- |
 | QA (structural) | 1 | `REJECTED` | `charter` | `journal.py::read_journal` (Block B fix, `293ea35`) pushed from block depth 3 to depth 4 — newly-introduced violation of agents.md §1 `max_indentation` (limit 3) in shipped production source, the one function the plan's Verification table did not name. Everything else clean: ruff exit 0, zero TODO/FIXME, submodule pure, all 28 commits carry #011, Block C cleared all four pre-existing `export_one.py` violations. |
 | QA (structural) | 2 | `APPROVED` | `none` | Full re-audit run from scratch over all 14 changed `.py` files (not just the 3 Round 1 scoped): `ruff check .` exit 0, AST walk zero violations (`journal.py::read_journal` now depth 2, 35 lines), no TODO/FIXME, `.agents` clean, all 30 commits carry `#011` unhyphenated, 316 passed / 1 skipped. |
-| Tester (functional) | — | *(pending — not yet dispatched)* | — | — |
+| Tester (functional) | 1 | `RECORD` | `testifying` | Suite green at clean HEAD `4253873`: 316 passed / 1 skipped vs. measured pre-sprint baseline 294 passed / 1 skipped on `main` (+22 tests, zero regressions); all four spot-checked claims survive mutation testing. **Coverage gap, non-blocking, carry-forward**: `--deadline-seconds` (Block A, the sprint's one blocking item) is pinned only at the pure `decide_stop` level — both CLI-to-harvest hand-offs sit in Playwright-only code, so a mutation making the flag a total no-op leaves the entire suite green. |
 
 **Bounce-and-fix cycle (Round 1 → Round 2): CLOSED.** QA Round 1 `REJECTED`
 the sprint on the `journal.py::read_journal` depth-4 violation above. Commit
@@ -113,6 +113,20 @@ reports.
 class (`charter` / `instructing` / `testifying`) and notes are written by the
 Orchestrator strictly from what each gate emits (`RA-17`), never authored or
 inferred in advance.*
+
+**Phase 7 is now complete.** Gate 1 (QA, structural): `APPROVED` after one
+bounce-and-fix cycle — Round 1 `REJECTED` / `charter` on the
+`journal.py::read_journal` depth-4 violation, fixed by `a0b6122`, Round 2
+`APPROVED` / `none` on a from-scratch re-audit of all 14 changed files. Gate 2
+(Tester, functional): `RECORD` / `testifying`, no bounce — the suite is green
+with zero regressions against the measured pre-sprint baseline, and one
+coverage gap was noted rather than surfaced as a blocking defect. The
+`--deadline-seconds` end-to-end coverage gap MUST be added to the sprint's
+carried-items list, alongside the pre-existing `test_strength_gaps` F-4
+finding it resembles (`docs/active_state.json`: `cmd_export_all` /
+`EXIT_INCOMPLETE` untested because covering them needs a Playwright harness
+that does not exist), for Phase 8 Sprint Closeout to record in the Global
+Roadmap — not silently dropped.
 
 ---
 
