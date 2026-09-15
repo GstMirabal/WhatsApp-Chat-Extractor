@@ -10,13 +10,26 @@ back to real conversations, and mapping back means storing `title → chat_id`.
 `ADR-0001` forbids names in `data/` by default, so the mapping is a separate
 file behind an explicit flag rather than a column in the manifest:
 
-===================================  ==========================================
-`data/run_manifest_<stamp>.json`     Outcomes. **No titles.** Always written
-`data/chat_index_<stamp>.json`       `chat_id` → title. The only file with names
-===================================  ==========================================
+======================================  =======================================
+`data/run_manifest_<run_id>.json`       Outcomes. **No titles.** Always written,
+                                         once, at the end of a run.
+`data/chat_index_<run_id>.ndjson`       `chat_id` -> title. The only file with
+                                         names. Append-only, one line per title,
+                                         written the moment it is discovered
+                                         (`§D5`).
+======================================  =======================================
 
 Both live under gitignored `data/`. They are separate so the operator can delete
 the index without losing the record of what the run did.
+
+**The chat index is append-only, for the same reason the run journal is
+(`§D5`).** A batched writer that only produces its file at the end of a run
+loses every title gathered during that run if the process dies first —
+unlike `journal.append_outcome`, which survives a crash because each record
+reaches disk before the next conversation opens. `open_chat_index_journal`
+and `append_chat_index_entry` give the chat index the identical discipline:
+opened in append mode, one JSON line per title, flushed and `fsync`ed before
+the call returns.
 
 **Resume rebuilds the manifest from the journal; it is no longer unbuilt.**
 `journal.py` records each conversation's outcome durably as a run goes, so a
@@ -27,17 +40,18 @@ enumerated `chat_id` the journal never reached `skipped`, with reason `run
 ended before this conversation` — distinguishable from a skip produced by
 `--limit`, and honest about a run that was interrupted rather than finished.
 `run_id`, minted once when a run starts, threads through `write_manifest` and
-`write_chat_index` so every file one run produces shares that identity instead
-of each deriving its own timestamp.
+`open_chat_index_journal` so every file one run produces shares that identity
+instead of each deriving its own timestamp.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import os
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, TypedDict
+from typing import TYPE_CHECKING, Any, TextIO, TypedDict
 
 from whatsapp_chat_extractor.writers import DEFAULT_DATA_DIR
 
@@ -324,41 +338,98 @@ def write_manifest(
     return path
 
 
-def write_chat_index(
-    index: dict[str, str], data_dir: Path | None = None, *, run_id: str | None = None
-) -> Path:
-    """Write the `chat_id` → title map and return its path.
+def chat_index_path(run_id: str, data_dir: Path | None = None) -> Path:
+    """Where the chat index for one run lives.
+
+    Named the same way :func:`journal.journal_path` names the run journal, so
+    reopening an existing run's index (a resumed pass) and reopening its
+    journal follow one convention.
+
+    Args:
+        run_id: Identity minted once at the start of the run.
+        data_dir: Destination root (default ``data/``).
+
+    Returns:
+        Path: The chat index file, which may not exist yet.
+    """
+    root = data_dir or DEFAULT_DATA_DIR
+    return root / f"chat_index_{run_id}.ndjson"
+
+
+def open_chat_index_journal(run_id: str, data_dir: Path | None = None) -> TextIO:
+    """Open the run's chat index for appending, creating the directory if needed.
 
     **This is the only file this project writes that contains real names.** It
     exists because a pseudonymous corpus the operator cannot map back to a
     conversation is not usable for review, and it is a separate file — never a
     column in the manifest — so deleting it costs nothing else.
 
-    Callers must not invoke this unless the operator asked for it explicitly.
+    Callers must not invoke this unless the operator asked for it explicitly
+    (`--write-index`). Opened in append mode, mirroring
+    :func:`journal.open_journal` exactly: a resumed pass extends the same
+    run's index instead of truncating the titles an earlier pass already
+    discovered, and a crash mid-run leaves every title written so far intact.
 
     Args:
-        index: Digest to title, as read during the run.
-        data_dir: Destination root (default ``data/``).
         run_id: Identity minted once at the start of the run (`journal.py`),
-            so this file's name matches the run's manifest. Falls back to a
-            fresh UTC timestamp when the caller has none.
+            so this file's name matches the run's journal and manifest.
+        data_dir: Destination root (default ``data/``).
 
     Returns:
-        Path: The file written.
+        TextIO: Handle the caller must close.
 
     Raises:
-        OSError: If the directory or file cannot be written.
+        OSError: If the directory or file cannot be opened.
     """
     root = data_dir or DEFAULT_DATA_DIR
     root.mkdir(parents=True, exist_ok=True)
-    stamp = run_id or datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-    path = root / f"chat_index_{stamp}.json"
-    path.write_text(
-        json.dumps(index, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-    )
-    # The count, never the names: this log line reaches terminals and CI output.
+    path = chat_index_path(run_id, data_dir)
+    # Names the file, never the names it will hold: this log line reaches
+    # terminals and CI output.
     logger.warning(
-        "Wrote %s with %s real conversation names to %s. Delete it when the "
-        "mapping is no longer needed.", path.name, len(index), root,
+        "Chat index at %s will hold real conversation names as they are "
+        "discovered. Delete it when the mapping is no longer needed.", path,
     )
-    return path
+    return path.open("a", encoding="utf-8")
+
+
+def _append_index_record(handle: TextIO, payload: dict[str, Any]) -> None:
+    """Write one JSON record as a line and force it to disk.
+
+    Replicates :func:`journal._append_record` rather than importing it: the
+    two modules already carry a type-only reference to each other
+    (`journal.JournalHeader` under `TYPE_CHECKING` here, `manifest.ChatOutcome`
+    the same way there), and reaching into another module's private helper at
+    runtime would turn that into a real import cycle for no benefit — the
+    write+flush+fsync sequence is three lines to repeat.
+
+    Args:
+        handle: Chat index handle from :func:`open_chat_index_journal`.
+        payload: The record. Serialized on a single line — a newline inside a
+            title would split one record into two unparseable ones.
+
+    Raises:
+        OSError: If the write or the sync fails.
+    """
+    handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
+    handle.flush()
+    os.fsync(handle.fileno())
+
+
+def append_chat_index_entry(handle: TextIO, chat_id: str, title: str) -> None:
+    """Record one conversation's title, durably, the moment it is discovered.
+
+    Written inside the export walk rather than batched at the end (`§D5`): the
+    title survives a crash on any later conversation, not only a crash after
+    the last one.
+
+    Args:
+        handle: Chat index handle from :func:`open_chat_index_journal`.
+        chat_id: Pseudonymous identity of the conversation, matching the
+            journal and the manifest.
+        title: The conversation's real name, as read from the chat list.
+
+    Raises:
+        OSError: If the write or the sync fails.
+    """
+    _append_index_record(handle, {"chat_id": chat_id, "title": title})
