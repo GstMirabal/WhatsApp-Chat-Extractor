@@ -1,6 +1,6 @@
 # Walkthrough: EXTRACTOR
 **File**: `docs/walkthroughs/EXTRACTOR_WALKTHROUGH.md`
-**Last updated**: Sprint #009
+**Last updated**: Sprint #011
 
 ---
 
@@ -15,6 +15,7 @@
 | #007 | P3b all chats | `export-all` enumerates every conversation and writes a run manifest. **Measured that the chat list virtualizes**: 899 conversations behind a 70-row window, reproduced across two sweeps. `ADR-0004` replaced the completeness boolean with three values (schema v5). **Verified live: 3 exported, 0 failed, 907 skipped of 910 enumerated.** Two probe defects and one enumerator limit were found by measuring again rather than by review |
 | #009 | P4 resume + corpus v6 | `export-all` writes an append-only NDJSON run journal (`data/run_journal_<run_id>.ndjson`) as it goes; `export-all --resume <run_id>` re-enumerates the chat list and exports only what the journal lacks; `recover --run-id <id>` rebuilds `data/run_manifest_<run_id>.json` from the journal with no browser. Schema v6 adds `message_id` and `timestamp_iso` per message and `passes_used`, `source_locale`, `source_timezone`, `undated_messages` per export (`ADR-0006`, `ADR-0007`). Suite 277 passed / 1 skipped, from a 224 / 1 baseline |
 | H-003 | Unresolved-spinner hotfix | A harvest whose "load older messages from your phone" request the phone never answers previously ran the full `--max-passes` budget (~8.3 h per conversation). It now gives up after `loading_grace` stalled passes past the stall threshold (default `20`) with `stopped_reason: loading_unresolved` and `completeness: truncated`, ~6 minutes instead. Landed on `ai-sprint/009` at `1728519` |
+| #011 | Backlog closure | Closed every item carried from Sprints 009-010 in one sprint. `--deadline-seconds` bounds the harvest loop by wall-clock time (`STOP_DEADLINE`) so a stuck conversation no longer risks the full `--max-passes` budget with no operator watching; the chat-index journal (`--write-index`) is now append-only and survives a crash mid-run instead of losing every title on one batched write; `journal.read_journal` keeps the first `--resume` header, not the last; every `cmd_*` handler moved out of `__main__.py` into a new `commands.py` (`__main__.py` 854→277 lines); timezone-prompt functions gained test coverage. 13/13 units, QA `APPROVED` after one bounce-and-fix cycle, Tester `RECORD`. Suite 294 / 1 → 316 / 1 |
 
 ## 2. Current state
 
@@ -58,6 +59,9 @@ WhatsApp Web renders such a marker.
 | `proven` completeness never observed; `unproven` is the normal result | measured, by design | ADR-0004 |
 | Direction depends on WA Web markup (tail, aria-label, `data-pre-plain-text`) | `:tech-debt:` | Blueprint §3 direction contract |
 | Retry after a session drop mid-harvest; resume of a partial whole-account run | **resolved (#009)** | `ADR-0006` shipped `export-all --resume <run_id>` (re-enumerate, skip conversations the journal marks `exported`) and `recover --run-id <id>` (rebuild the manifest, no browser); see §5 |
+| The harvest loop had no wall-clock bound — only `max_passes` (iteration count) — so a conversation whose panel never resolved, and never tripped H-003's spinner rule either, could still burn hours with no operator watching | **resolved (#011)** | `--deadline-seconds` / `STOP_DEADLINE`; see §9 |
+| `export-all --write-index` wrote `data/chat_index_<run_id>.json` once, at the end of a run — a crash before that write lost every title the run had already gathered | **resolved (#011)** | Append-only `data/chat_index_<run_id>.ndjson`; see §9 |
+| `journal.read_journal` kept the timestamp of the **last** `--resume` header, not the run's true start | **resolved (#011)** | First-write-wins guard; see roadmap `T-8` |
 | WhatsApp Web selectors churn | `:tech-debt:` | `SPIKE_NOTES.md` + `export_one.py` constants |
 | Host lacks CONTRIBUTING/SECURITY/CODE_OF_CONDUCT/NOTICE at root | platform gap | `/agents:harden` |
 
@@ -260,5 +264,34 @@ with open("data/corpus_<source_run>.ndjson", encoding="utf-8") as handle:
 Each conversation line is one `chat_*.json` export written verbatim: nothing
 is flattened, trimmed or recomputed during consolidation.
 
+## 9. Bounding a stuck harvest and protecting the chat index (#011)
+
+**Wall-clock deadline.** H-003 bounds a harvest whose spinner never resolves;
+it does not bound a harvest that shows no spinner and simply never advances.
+`--deadline-seconds` now caps the whole harvest by wall-clock time,
+independent of `--max-passes`:
+
+```bash
+wa-extract export-one --query "PARTIAL_CHAT_NAME" --deadline-seconds 1800
+```
+
+An export that hits the deadline carries `stopped_reason: deadline` and
+`completeness: truncated` — the same honest failure as `max_passes` or
+`loading_unresolved`, bounded by time instead of iteration count. There is no
+default: an unset `--deadline-seconds` runs exactly as before this sprint,
+unbounded except by `--max-passes`. A conversation this large no longer risks
+the ~8-hour `max_passes` budget with no operator watching.
+
+**Chat-index journal survives a crash.** `export-all --write-index` used to
+write `data/chat_index_<run_id>.json` once, at the very end of a run — a
+crash before that write lost every title the run had already gathered. It
+now appends one line per conversation to `data/chat_index_<run_id>.ndjson` as
+each title is discovered, the same discipline the outcomes journal has used
+since #009:
+
+```bash
+python3 -c "import json;[print(json.loads(l)) for l in open('data/chat_index_<run_id>.ndjson')]"
+```
+
 ---
-*Updated at Sprint Closeout #010 (RA-05).*
+*Updated at Sprint Closeout #011 (RA-05).*
