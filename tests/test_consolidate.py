@@ -13,8 +13,11 @@ from pathlib import Path
 import pytest
 
 from whatsapp_chat_extractor.consolidate import (
+    CORPUS_SCHEMA_VERSION,
+    RECORD_HEADER,
     build_header,
     read_chat_files,
+    resolve_source_run,
     write_corpus,
 )
 from whatsapp_chat_extractor.writers import (
@@ -179,3 +182,100 @@ def test_a_file_with_no_chat_id_raises_value_error_not_key_error(
 
     with pytest.raises(ValueError, match="chat_broken.json has no chat_id"):
         read_chat_files(tmp_path)
+
+
+def test_build_header_carries_all_six_provenance_fields(tmp_path: Path) -> None:
+    """Sprint 010 `T-2`: only `chat_count` and `chat_schema` were ever pinned
+    by a test; the other four (`record`, `corpus_schema`, `source_run`,
+    `generated_at`) were deletable from `build_header` with nothing noticing.
+    """
+    chats = [a_chat("Ana")]
+
+    header = build_header(chats, "run-42")
+
+    assert header["record"] == RECORD_HEADER
+    assert header["corpus_schema"] == CORPUS_SCHEMA_VERSION
+    assert header["chat_schema"] == SCHEMA_VERSION
+    assert header["source_run"] == "run-42"
+    assert header["chat_count"] == 1
+    assert isinstance(header["generated_at"], str)
+    assert header["generated_at"].endswith("Z")
+
+
+def test_resolve_source_run_picks_the_lexicographically_newest_manifest(
+    tmp_path: Path,
+) -> None:
+    """Sprint 010 `T-3`: `resolve_source_run` reads `manifests[-1]` after an
+    ascending-name sort. Picking `manifests[0]` instead — the oldest — would
+    have survived the suite before this test existed. Two manifest names are
+    chosen so their sort order is unambiguous.
+    """
+    (tmp_path / "run_manifest_2026-01-01T000000Z-aaa.json").write_text("{}")
+    (tmp_path / "run_manifest_2026-06-01T000000Z-zzz.json").write_text("{}")
+
+    source_run = resolve_source_run(tmp_path, None)
+
+    assert source_run == "2026-06-01T000000Z-zzz"
+
+
+def test_resolve_source_run_from_manifest_accepts_a_path_never_written(
+    tmp_path: Path,
+) -> None:
+    """Sprint 010 `T-7`: `resolve_source_run` never checks that `from_manifest`
+    names a file that exists — it only parses the filename. A path to a run
+    that never happened is accepted exactly like a real one, silently.
+    """
+    fabricated = tmp_path / "run_manifest_never-existed.json"
+    assert not fabricated.exists()
+
+    source_run = resolve_source_run(tmp_path, fabricated)
+
+    assert source_run == "never-existed"
+
+
+def test_a_legacy_chat_index_json_file_is_swept_by_the_unpinned_glob(
+    tmp_path: Path,
+) -> None:
+    """Sprint 010 `T-4`: `CHAT_FILE_GLOB` (`chat_*.json`) has never been
+    pinned against a filename that merely starts with `chat_` and ends
+    `.json` without being a per-conversation export. Before Sprint 011 Block D
+    moved the chat index to `chat_index_<run_id>.ndjson`, its predecessor
+    wrote exactly that shape (`chat_index_<stamp>.json`) into the very
+    directory `read_chat_files` scans. A file left over from a run made
+    before that migration reproduces the collision: the glob matches it and
+    `read_chat_files` aborts trying to read it as an export — loud, not
+    silent, but never proven by a test until now.
+    """
+    write_chat_file(tmp_path, "chat_1.json", a_chat("Ana"))
+    legacy_index = tmp_path / "chat_index_20260101T000000Z.json"
+    legacy_index.write_text(
+        json.dumps({"digest-1": "Ana"}, ensure_ascii=False), encoding="utf-8"
+    )
+
+    with pytest.raises(ValueError, match="chat_index_20260101T000000Z.json"):
+        read_chat_files(tmp_path)
+
+
+def test_message_body_with_unicode_line_separators_does_not_corrupt_line_count(
+    tmp_path: Path,
+) -> None:
+    """Regression pin for `F-1` (Sprint 010, `0e333b8`): the fix itself had no
+    test of its own (Sprint 010 `T-6`). A body carrying U+2028/U+2029/U+0085
+    is written unescaped because `write_corpus` serializes with
+    `ensure_ascii=False`; counting the corpus with `str.splitlines()` — the
+    self-inflicted defect `F-1` fixed — disagrees with the true
+    `\\n`-delimited line count that `header["chat_count"]` promises.
+    """
+    tricky = a_chat("Ana")
+    tricky["messages"][0]["body"] = "line1 line2 line3line4"
+    write_chat_file(tmp_path, "chat_1.json", tricky)
+
+    chats = read_chat_files(tmp_path)
+    header = build_header(chats, "run-1")
+    out_path = write_corpus(chats, header, tmp_path / "corpus.ndjson")
+    raw = out_path.read_text(encoding="utf-8")
+    correct_lines = raw.rstrip("\n").split("\n")
+
+    assert len(correct_lines) == 2
+    assert json.loads(correct_lines[0])["chat_count"] == 1
+    assert len(raw.splitlines()) != len(correct_lines)

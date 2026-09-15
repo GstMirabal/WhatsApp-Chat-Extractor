@@ -11,6 +11,7 @@ import pytest
 
 from whatsapp_chat_extractor.history import (
     STOP_CHAT_START,
+    STOP_DEADLINE,
     STOP_MAX_PASSES,
     STOP_STALLED,
     HarvestedRow,
@@ -237,6 +238,51 @@ def test_a_reached_start_still_wins_while_loading() -> None:
         at_start=True, stall_count=3, stall_threshold=3,
         passes_used=10, max_passes=2000, panel_loading=True,
     ) == STOP_CHAT_START
+
+
+def test_a_deadline_stops_the_harvest_once_elapsed() -> None:
+    """KI-009-H: a synthetic clock past the budget stops the harvest.
+
+    No browser and no real clock: `elapsed_seconds` is the number the impure
+    caller would have computed from `time.monotonic()`, handed straight to
+    this pure function.
+    """
+    assert decide_stop(
+        at_start=False, stall_count=0, stall_threshold=3,
+        passes_used=10, max_passes=2000,
+        elapsed_seconds=5.1, deadline_seconds=5.0,
+    ) == STOP_DEADLINE
+
+
+def test_a_deadline_does_not_fire_before_it_elapses() -> None:
+    assert decide_stop(
+        at_start=False, stall_count=0, stall_threshold=3,
+        passes_used=10, max_passes=2000,
+        elapsed_seconds=4.9, deadline_seconds=5.0,
+    ) is None
+
+
+def test_no_deadline_means_unbounded_wall_clock_time() -> None:
+    """`deadline_seconds=None` (the default) never stops the harvest on time."""
+    assert decide_stop(
+        at_start=False, stall_count=0, stall_threshold=3,
+        passes_used=10, max_passes=2000,
+        elapsed_seconds=999_999.0, deadline_seconds=None,
+    ) is None
+
+
+def test_a_deadline_fires_despite_a_loading_panel() -> None:
+    """The un-suppressible property: a spinner does not buy the deadline extra time.
+
+    Unlike the stall verdict, `STOP_DEADLINE` is not suppressed by
+    `panel_loading=True`: a network round trip to the phone that never
+    returns is exactly the case the deadline exists to catch.
+    """
+    assert decide_stop(
+        at_start=False, stall_count=3, stall_threshold=3,
+        passes_used=10, max_passes=2000, panel_loading=True,
+        elapsed_seconds=5.1, deadline_seconds=5.0,
+    ) == STOP_DEADLINE
 
 
 def test_pass_cap_stops_the_harvest() -> None:

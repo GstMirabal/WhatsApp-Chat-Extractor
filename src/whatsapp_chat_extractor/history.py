@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, TypedDict
 
@@ -46,6 +47,13 @@ STOP_MAX_PASSES = "max_passes"
 # that the stall verdict was suppressed for the whole grace period, not
 # reached honestly.
 STOP_LOADING_UNRESOLVED = "loading_unresolved"
+# KI-009-H: only `max_passes` (an iteration count) bounded the harvest loop
+# before this reason existed. A conversation whose phone never answers a
+# load-earlier request could run for 8+ hours before `max_passes` finally
+# fired. Deliberately not added to `COMPLETE_REASONS`, so it falls through to
+# `truncated` in `classify_completeness` — the same way `STOP_LOADING_UNRESOLVED`
+# already does: a deadline is a budget, never proof of having arrived anywhere.
+STOP_DEADLINE = "deadline"
 
 # Only a start-of-conversation marker proves the whole history was read.
 #
@@ -234,18 +242,17 @@ def decide_stop(
     max_passes: int,
     panel_loading: bool = False,
     loading_grace: int = DEFAULT_LOADING_GRACE,
+    elapsed_seconds: float = 0.0,
+    deadline_seconds: float | None = None,
 ) -> str | None:
     """Whether the harvest should stop, and why.
 
-    ``panel_loading`` suppresses the stall verdict, but only for
-    ``loading_grace`` stalled passes beyond ``stall_threshold``. A spinner on
-    screen is positive evidence that more history is on its way, so stopping
-    on it the moment it appears would report a top that was never reached
-    (H-003) — but the phone can also simply never answer, and the suppression
-    must not be unbounded either. ``max_passes`` is deliberately not
-    suppressed, so a spinner that outlasts even the grace period still
-    terminates the run through ``STOP_LOADING_UNRESOLVED`` rather than by
-    exhausting the whole pass budget.
+    ``panel_loading`` suppresses the stall verdict for ``loading_grace``
+    stalled passes beyond ``stall_threshold`` (H-003) — but ``max_passes``
+    and ``deadline_seconds`` (KI-009-H) are never suppressed by it, so a
+    spinner stuck forever still terminates the run. This function stays
+    pure and clock-free: the caller computes ``elapsed_seconds`` with
+    ``time.monotonic()`` and passes the number in.
 
     Args:
         at_start: True when the beginning-of-chat marker is present.
@@ -256,12 +263,19 @@ def decide_stop(
         panel_loading: True when the panel is visibly still fetching.
         loading_grace: Extra stalled passes, beyond ``stall_threshold``, that
             a visible spinner may suppress before the harvest gives up on it.
+        elapsed_seconds: Wall-clock time since the harvest started, as
+            measured by the caller. Ignored when ``deadline_seconds`` is
+            ``None``.
+        deadline_seconds: Wall-clock budget for the whole harvest, or
+            ``None`` for no bound (the default).
 
     Returns:
         str | None: A ``STOP_*`` reason, or None to keep scrolling.
     """
     if at_start:
         return STOP_CHAT_START
+    if deadline_seconds is not None and elapsed_seconds > deadline_seconds:
+        return STOP_DEADLINE
     if stall_count >= stall_threshold and not panel_loading:
         return STOP_STALLED
     if panel_loading and stall_count > stall_threshold + loading_grace:
@@ -374,6 +388,8 @@ def _observe_and_decide(
     stall_threshold: int,
     max_passes: int,
     loading_grace: int,
+    start_time: float,
+    deadline_seconds: float | None,
 ) -> None:
     """Read the panel's loading state once and decide whether to stop.
 
@@ -386,6 +402,11 @@ def _observe_and_decide(
         stall_threshold: How many stalled passes mean the top was reached.
         max_passes: Hard cap on scroll passes.
         loading_grace: Extra stalled passes a visible spinner may suppress.
+        start_time: ``time.monotonic()`` value captured once at harvest
+            start, used to compute the elapsed wall-clock time this pass
+            passes into ``decide_stop`` (KI-009-H).
+        deadline_seconds: Wall-clock budget for the whole harvest, or
+            ``None`` for no bound.
     """
     # Read once and reuse: the same observation decides whether to stop and how
     # to classify the stop. Sampling it twice could report a spinner to one and
@@ -399,6 +420,8 @@ def _observe_and_decide(
         max_passes=max_passes,
         panel_loading=state.panel_loading,
         loading_grace=loading_grace,
+        elapsed_seconds=time.monotonic() - start_time,
+        deadline_seconds=deadline_seconds,
     )
 
 
@@ -412,6 +435,8 @@ def _one_pass(
     stall_threshold: int,
     load_wait_ms: int,
     loading_grace: int = DEFAULT_LOADING_GRACE,
+    start_time: float,
+    deadline_seconds: float | None = None,
 ) -> None:
     """Read the panel once, decide whether to stop, and scroll if not.
 
@@ -424,6 +449,8 @@ def _one_pass(
         stall_threshold: Quiet passes that end the run.
         load_wait_ms: How long this pass waits for older messages.
         loading_grace: Extra stalled passes a visible spinner may suppress.
+        start_time, deadline_seconds: Forwarded to `_observe_and_decide`
+            (KI-009-H): harvest start time and wall-clock budget.
     """
     from whatsapp_chat_extractor.export_one import (
         at_chat_start,
@@ -439,9 +466,9 @@ def _one_pass(
                 added, len(accumulator), state.stall_count, stall_threshold)
     _observe_and_decide(
         page, state, at_chat_start,
-        stall_threshold=stall_threshold,
-        max_passes=max_passes,
-        loading_grace=loading_grace,
+        stall_threshold=stall_threshold, max_passes=max_passes,
+        loading_grace=loading_grace, start_time=start_time,
+        deadline_seconds=deadline_seconds,
     )
     if state.reason is None and not scroll_one_pass(page, max_wait_ms=load_wait_ms):
         # The scroll waited for older messages and none arrived. That is the
@@ -458,6 +485,7 @@ def harvest_history(
     stall_threshold: int = DEFAULT_STALL_THRESHOLD,
     load_wait_ms: int = DEFAULT_LOAD_WAIT_MS,
     loading_grace: int = DEFAULT_LOADING_GRACE,
+    deadline_seconds: float | None = None,
 ) -> HarvestResult:
     """Collect a whole conversation by scrolling upward and merging each pass.
 
@@ -471,12 +499,17 @@ def harvest_history(
         loading_grace: Extra stalled passes, beyond ``stall_threshold``, that
             a visible spinner may suppress before the harvest gives up on it
             (H-003).
+        deadline_seconds: Wall-clock budget, in seconds, for the whole
+            harvest (KI-009-H). ``None`` (the default) is unbounded — only
+            ``max_passes`` guarantees termination in that case. No global
+            default is enforced: H-003's measurement does not support one.
 
     Returns:
         HarvestResult: Ordered messages plus completeness metadata.
     """
     accumulator = MessageAccumulator()
     state = _HarvestState()
+    start_time = time.monotonic()
 
     while state.reason is None:
         _one_pass(
@@ -484,6 +517,7 @@ def harvest_history(
             chat_title=chat_title, max_passes=max_passes,
             stall_threshold=stall_threshold, load_wait_ms=load_wait_ms,
             loading_grace=loading_grace,
+            start_time=start_time, deadline_seconds=deadline_seconds,
         )
 
     logger.info("Harvest stopped (%s) after %s passes", state.reason, state.passes_used)

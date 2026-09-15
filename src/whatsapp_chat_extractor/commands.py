@@ -1,0 +1,643 @@
+"""Run orchestration: the ``cmd_*`` handlers and the helpers they are built on.
+
+Split out of ``__main__.py`` in Sprint 011 (`IMPLEMENTATION_PLAN.md` §D6), which
+had grown to 854 lines by mixing two unrelated jobs: describing the command line
+and running it. ``__main__.py`` now only builds the ``argparse`` tree and binds
+each subcommand to a handler here; everything that opens a browser, walks the
+chat list, writes a file or decides an exit code lives in this module.
+
+Playwright is imported inside the three browser-driven entrypoints, never at
+module level, so ``recover`` and ``consolidate`` run on a machine that cannot
+launch Chromium (`IMPLEMENTATION_PLAN.md` §D4). Rebuilding the record of a dead
+run is forensic work and must not require the browser the dead run needed.
+"""
+
+from __future__ import annotations
+
+import argparse
+import contextlib
+import logging
+import os
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import NamedTuple, TextIO
+
+from whatsapp_chat_extractor.chat_list import (
+    ENUMERATION_CONVERGED,
+    open_chat_by_digest,
+    sweep_until_stable,
+)
+from whatsapp_chat_extractor.consolidate import (
+    build_header,
+    read_chat_files,
+    resolve_source_run,
+    write_corpus,
+)
+from whatsapp_chat_extractor.export_one import open_chat_by_query
+from whatsapp_chat_extractor.history import (
+    COMPLETENESS_TRUNCATED,
+    COMPLETENESS_UNPROVEN,
+    harvest_history,
+)
+from whatsapp_chat_extractor.journal import (
+    append_outcome,
+    exported_chat_ids,
+    journal_path,
+    open_journal,
+    read_journal,
+    write_header,
+)
+from whatsapp_chat_extractor.manifest import (
+    OUTCOME_FAILED,
+    append_chat_index_entry,
+    exported,
+    failed,
+    manifest_from_journal,
+    now,
+    open_chat_index_journal,
+    skipped,
+    write_manifest,
+)
+from whatsapp_chat_extractor.session import (
+    DEFAULT_LOCALE,
+    launch_context,
+    open_whatsapp,
+    qr_visible,
+    resolve_timezone,
+    wait_until_ready,
+)
+from whatsapp_chat_extractor.writers import (
+    build_export,
+    write_chat_export,
+)
+
+logger = logging.getLogger("wa-extract")
+
+EXIT_INCOMPLETE = 3
+
+
+class RunJournal(NamedTuple):
+    """The open journal of one run, plus what a resume already found in it.
+
+    Bundled rather than passed as separate arguments so that the export walk
+    carries one optional parameter: it is driven in tests with no journal at
+    all, and a single ``None`` says that far more clearly than several.
+    """
+
+    handle: TextIO
+    run_id: str
+    started_at: str
+    already_exported: frozenset[str]
+    # The run's open chat-index journal, or ``None`` when ``--write-index``
+    # was not asked for. Threaded the same way ``handle`` is, so a title found
+    # during the walk is written durably the moment it is discovered (`§D5`)
+    # instead of collected for a batched write at the end.
+    chat_index_handle: TextIO | None = None
+
+
+def mint_run_id() -> str:
+    """Coin the identity of a run, once, before anything is written.
+
+    Minted at the start of the run rather than at the moment each file is
+    written: `write_manifest`, `open_chat_index_journal` and the run journal
+    each used to derive their own timestamp, so the three files of one run
+    could carry three different stamps and none of them named the run
+    (`§D2`).
+
+    Returns:
+        str: A UTC stamp in the same shape those writers used as their
+            fallback, so filenames keep the form readers already expect.
+    """
+    return datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+
+
+def _await_login(context: object, args: argparse.Namespace) -> None:
+    """Drive one already-launched context to a ready WhatsApp Web session.
+
+    Extracted from :func:`cmd_login` so that the ``with``/``try`` pair guarding
+    the browser and the work done inside it are not stacked into a fourth level
+    of indentation (`agents.md §1 max_indentation`). No behaviour change.
+
+    Args:
+        context: The launched persistent Chromium context.
+        args: Parsed command line, carrying ``timeout_ms``, ``profile_dir`` and
+            ``keep_open``.
+    """
+    page = open_whatsapp(context)
+    if qr_visible(page):
+        logger.info("QR visible — scan with the business phone")
+    ready = wait_until_ready(page, timeout_ms=args.timeout_ms)
+    logger.info("Session ready (%s). Profile kept at %s", ready, args.profile_dir)
+    if args.keep_open:
+        logger.info("Keeping browser open until Enter…")
+        input()
+
+
+def cmd_login(args: argparse.Namespace) -> int:
+    """Open WhatsApp Web and wait until the chat list is ready."""
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as playwright:
+        context = launch_context(
+            playwright,
+            profile_dir=args.profile_dir,
+            headless=False,
+        )
+        try:
+            _await_login(context, args)
+        finally:
+            context.close()
+    return 0
+
+
+def cmd_export_one(args: argparse.Namespace) -> int:
+    """Export one human-selected chat's full history to JSON under ``data/``.
+
+    Returns:
+        int: ``0`` when the harvest reached the start of the chat, ``3`` when it
+            stopped at the pass cap, so a caller can tell a complete corpus from
+            a truncated one without parsing the file.
+    """
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as playwright:
+        context = launch_context(
+            playwright,
+            profile_dir=args.profile_dir,
+            headless=False,
+        )
+        try:
+            page = open_whatsapp(context)
+            wait_until_ready(page, timeout_ms=args.timeout_ms)
+            title = open_chat_by_query(page, args.query, timeout_ms=60_000)
+            harvest = harvest_history(
+                page,
+                chat_title=title,
+                max_passes=args.max_passes,
+                stall_threshold=args.stall_threshold,
+                load_wait_ms=args.load_wait_ms,
+                deadline_seconds=args.deadline_seconds,
+            )
+            export = build_export(
+                chat_title=title,
+                messages=harvest["messages"],
+                completeness=harvest["completeness"],
+                stopped_reason=harvest["stopped_reason"],
+                passes_used=harvest["passes_used"],
+                source_locale=DEFAULT_LOCALE,
+                source_timezone=resolve_timezone(page),
+            )
+            path = write_chat_export(export, data_dir=args.data_dir)
+            print(path)
+        finally:
+            context.close()
+
+    return report_completeness(harvest)
+
+
+def report_completeness(harvest: dict) -> int:
+    """Tell the operator what the harvest reached, and pick the exit code.
+
+    Only `truncated` is a failure. Under the v4 boolean this branch fired on
+    every single export ever produced, because `complete` was never True
+    (ADR-0004): the operator was told each run had failed and to raise a cap
+    that was not the cause. `unproven` is the expected outcome and exits 0.
+
+    Args:
+        harvest: A ``HarvestResult``.
+
+    Returns:
+        int: ``0`` unless the harvest was truncated.
+    """
+    if harvest["completeness"] == COMPLETENESS_TRUNCATED:
+        logger.error(
+            "Truncated export: the harvest ended at %s passes (%s) before the "
+            "conversation did. Re-run with a higher --max-passes.",
+            harvest["passes_used"],
+            harvest["stopped_reason"],
+        )
+        return EXIT_INCOMPLETE
+    if harvest["completeness"] == COMPLETENESS_UNPROVEN:
+        logger.info(
+            "Export complete as far as can be shown: the panel stopped "
+            "producing history after %s passes, but no start-of-chat marker "
+            "was observed, so the beginning is not proven.",
+            harvest["passes_used"],
+        )
+    return 0
+
+
+def _export_open_chat(page: object, title: str, args: argparse.Namespace) -> tuple:
+    """Harvest and write the conversation currently on screen.
+
+    Args:
+        page: Page with the conversation open.
+        title: Verified title of that conversation. Hashed, never stored.
+        args: Parsed command line, carrying the run's resolved timezone in
+            ``source_timezone``.
+
+    Returns:
+        tuple: The harvest result and the path written.
+    """
+    harvest = harvest_history(
+        page,
+        chat_title=title,
+        max_passes=args.max_passes,
+        stall_threshold=args.stall_threshold,
+        load_wait_ms=args.load_wait_ms,
+        deadline_seconds=args.deadline_seconds,
+    )
+    export = build_export(
+        chat_title=title,
+        messages=harvest["messages"],
+        completeness=harvest["completeness"],
+        stopped_reason=harvest["stopped_reason"],
+        passes_used=harvest["passes_used"],
+        source_locale=DEFAULT_LOCALE,
+        source_timezone=args.source_timezone,
+    )
+    return harvest, write_chat_export(export, data_dir=args.data_dir)
+
+
+def _export_one_ref(
+    page: object, ref: dict, args: argparse.Namespace, *, total: int
+) -> tuple:
+    """Open, harvest and write one enumerated conversation.
+
+    A failure is returned as an outcome rather than raised, because a run of
+    hundreds must not end on the third (`§D3`); the caller decides what to do
+    with it.
+
+    Args:
+        page: Ready WhatsApp Web page showing the chat list.
+        ref: The enumerated `ChatRef` to open.
+        args: Parsed command line.
+        total: How many conversations the enumeration found, for the log line.
+
+    Returns:
+        tuple: The outcome to record, and the conversation's title — ``""``
+            when it failed, so no real name is carried out of an attempt that
+            wrote no file.
+    """
+    try:
+        title = open_chat_by_digest(page, ref, total=total, settle_ms=args.settle_ms)
+        harvest, path = _export_open_chat(page, title, args)
+    except (LookupError, RuntimeError) as exc:
+        logger.warning("Chat %s failed: %s", ref["chat_id"], exc)
+        return failed(ref["chat_id"], index=ref["index"], reason=str(exc)), ""
+    return exported(
+        ref["chat_id"], index=ref["index"],
+        completeness=harvest["completeness"],
+        message_count=len(harvest["messages"]), file=path.name,
+    ), title
+
+
+def _record_header(journal: RunJournal | None, enumerated: dict) -> None:
+    """Write the run header the moment the sweep returns, and not before.
+
+    Before the sweep the header would carry no `chats_enumerated`, which is the
+    field that lets a rebuilt manifest say how many conversations were never
+    attempted. After the first conversation it would not exist at all for a run
+    that died on that conversation.
+
+    Args:
+        journal: The run's open journal, or ``None`` when the walk is driven
+            without one.
+        enumerated: The `sweep_until_stable` result.
+    """
+    if journal is None:
+        return
+    write_header(
+        journal.handle,
+        run_id=journal.run_id,
+        started_at=journal.started_at,
+        chats_enumerated=len(enumerated["refs"]),
+        enumeration=enumerated["enumeration"],
+        sweeps=enumerated["sweeps"],
+    )
+
+
+def _record_outcome(journal: RunJournal | None, outcome: dict) -> None:
+    """Append one conversation's outcome as the run makes it.
+
+    Written inside the walk rather than batched at the end: the record exists
+    for the run that does not reach the end.
+
+    Args:
+        journal: The run's open journal, or ``None``.
+        outcome: Entry from ``manifest.exported``, ``failed`` or ``skipped``.
+            It carries no title (`ADR-0001`, `§D5`).
+    """
+    if journal is not None:
+        append_outcome(journal.handle, outcome)
+
+
+def _record_title(journal: RunJournal | None, chat_id: str, title: str) -> None:
+    """Append one discovered title to the chat index, the moment it is read.
+
+    Written inside the walk rather than accumulated for a batched write at the
+    end (`§D5`): a crash on any later conversation still leaves this title on
+    disk. Gated on ``chat_index_handle`` rather than on the outcome journal
+    ``handle`` alone, because a run can have one without the other —
+    ``--write-index`` is a separate, explicit opt-in (`ADR-0001`).
+
+    Args:
+        journal: The run's open journal, or ``None`` when the walk is driven
+            without one.
+        chat_id: Pseudonymous identity of the conversation.
+        title: The conversation's real name, as read from the chat list.
+    """
+    if journal is not None and journal.chat_index_handle is not None:
+        append_chat_index_entry(journal.chat_index_handle, chat_id, title)
+
+
+def _export_every_chat(
+    page: object, args: argparse.Namespace, *, journal: RunJournal | None = None
+) -> tuple:
+    """Walk the enumerated list, exporting each conversation in turn.
+
+    A failure on one conversation does not end the run (`§D3`). Losing the
+    WhatsApp session does end it, because every later attempt would fail
+    identically. Conversations a resumed run already exported are stepped over
+    rather than re-recorded: the journal already holds their outcome.
+
+    Args:
+        page: Ready WhatsApp Web page showing the chat list.
+        args: Parsed command line.
+        journal: The run's open journal. ``None`` drives the walk with no
+            durable record, which is what the browserless tests do.
+
+    Returns:
+        tuple: The outcomes this pass produced, the `ADR-0005` enumeration
+            result, and the digest-to-title index this pass read — informational
+            only. Every title in it was already written durably as it was
+            discovered (`_record_title`), so nothing downstream depends on this
+            dict surviving a crash.
+    """
+    enumerated = sweep_until_stable(page, settle_ms=args.settle_ms)
+    _record_header(journal, enumerated)
+    refs = enumerated["refs"]
+    targets = refs[: args.limit] if args.limit else refs
+    done = journal.already_exported if journal else frozenset()
+    outcomes: list[dict] = []
+    index: dict[str, str] = {}
+    for position, ref in enumerate(targets, start=1):
+        logger.info("Chat %s of %s (%s)", position, len(targets), ref["chat_id"])
+        if ref["chat_id"] in done:
+            logger.info("Already exported by this run id; not re-opened")
+            continue
+        outcome, title = _export_one_ref(page, ref, args, total=len(refs))
+        if title:
+            index[ref["chat_id"]] = title
+            _record_title(journal, ref["chat_id"], title)
+        outcomes.append(outcome)
+        _record_outcome(journal, outcome)
+    for ref in refs[len(targets):]:
+        beyond = skipped(ref["chat_id"], index=ref["index"], reason="beyond --limit")
+        outcomes.append(beyond)
+        _record_outcome(journal, beyond)
+    return outcomes, enumerated, index
+
+
+def _request_timezone(requested: str) -> None:
+    """Ask the browser process to render its clocks in ``requested``.
+
+    Made through the environment Chromium inherits at launch because
+    ``session.launch_context`` takes no ``timezone_id``. It is a request, not a
+    guarantee, and nothing is recorded from it: every export states the zone the
+    page itself resolved (:func:`_confirm_timezone`). Without the flag nothing
+    is decided and the machine's own zone stands (`§D7`).
+
+    Args:
+        requested: IANA zone such as ``Europe/Madrid``, or ``""`` for none.
+    """
+    if not requested:
+        return
+    os.environ["TZ"] = requested
+    logger.info("Asking the browser to render its clocks in %s", requested)
+
+
+def _confirm_timezone(page: object, requested: str) -> str:
+    """Read back the zone the page actually rendered its clocks in.
+
+    Args:
+        page: Ready WhatsApp Web page.
+        requested: What ``--timezone`` asked for, or ``""``.
+
+    Returns:
+        str: The zone ``session.resolve_timezone`` read, or ``""`` when the page
+            could not answer. Never the requested value — recording a zone the
+            page did not use would put a false frame on every timestamp in the
+            corpus, which is the defect `ADR-0007` exists to close.
+    """
+    resolved = resolve_timezone(page)
+    if requested and resolved != requested:
+        logger.warning(
+            "Asked for timezone %s but the page resolved %r. The export records "
+            "what the page resolved.", requested, resolved,
+        )
+    return resolved
+
+
+def _export_all_session(args: argparse.Namespace, journal: RunJournal) -> tuple:
+    """Drive one browser session for a whole-account run.
+
+    Args:
+        args: Parsed command line. The resolved timezone is recorded onto it as
+            ``source_timezone``, beside the other per-run settings it carries,
+            so every conversation is written under the one value read once when
+            the session became ready.
+        journal: The run's open journal.
+
+    Returns:
+        tuple: What :func:`_export_every_chat` returned.
+    """
+    from playwright.sync_api import sync_playwright
+
+    _request_timezone(args.timezone)
+    with sync_playwright() as playwright:
+        context = launch_context(
+            playwright, profile_dir=args.profile_dir, headless=False
+        )
+        try:
+            page = open_whatsapp(context)
+            wait_until_ready(page, timeout_ms=args.timeout_ms)
+            args.source_timezone = _confirm_timezone(page, args.timezone)
+            return _export_every_chat(page, args, journal=journal)
+        finally:
+            context.close()
+
+
+def _latest_per_chat(outcomes: list[dict]) -> list[dict]:
+    """The last outcome recorded for each conversation, in first-seen order.
+
+    A journal is append-only and a resumed run appends to the journal of the
+    run it resumes, so one conversation can hold a `failed` line from the first
+    attempt and an `exported` line from the retry. Both are true of the run's
+    history; only the last is true of its result, and counting both would report
+    one conversation as failed and exported at the same time.
+
+    Args:
+        outcomes: Every outcome the journal holds, in write order.
+
+    Returns:
+        list[dict]: One entry per `chat_id`.
+    """
+    latest: dict[str, dict] = {}
+    for outcome in outcomes:
+        latest[outcome["chat_id"]] = outcome
+    return list(latest.values())
+
+
+def _manifest_from_journal_file(path: Path, enumerated_refs: list) -> dict:
+    """Rebuild a run manifest from the journal on disk.
+
+    Read back from the file rather than assembled from memory, so the manifest
+    states what was durably recorded and a resumed run's manifest carries the
+    conversations its earlier pass exported.
+
+    Args:
+        path: The run's journal, from ``journal.journal_path``.
+        enumerated_refs: Conversations a live enumeration found, so the ones the
+            journal never reached are recorded as `skipped`. Empty when there
+            was no enumeration — `recover` has no browser to make one with.
+
+    Returns:
+        dict: A ``RunManifest``.
+
+    Raises:
+        RuntimeError: If the journal holds no header, which means the run it
+            belongs to never got past enumeration and there is nothing to state
+            about it that would not be invented.
+    """
+    header, outcomes = read_journal(path)
+    if header is None:
+        raise RuntimeError(
+            f"{path} holds no header record, so started_at, chats_enumerated, "
+            "enumeration and sweeps are unknown and the manifest cannot be "
+            "rebuilt from it"
+        )
+    return manifest_from_journal(header, _latest_per_chat(outcomes), enumerated_refs)
+
+
+def _run_exit_code(manifest: dict) -> int:
+    """Pick the process exit code from the run's own record.
+
+    Args:
+        manifest: A ``RunManifest``.
+
+    Returns:
+        int: ``0`` only when the enumeration converged, nothing failed, and
+            every enumerated conversation has an entry. ``3`` otherwise — a run
+            that recorded fewer conversations than it enumerated stopped early,
+            and reporting success for it is what the journal exists to prevent.
+    """
+    if manifest["enumeration"] != ENUMERATION_CONVERGED:
+        return EXIT_INCOMPLETE
+    if manifest["counts"][OUTCOME_FAILED]:
+        return EXIT_INCOMPLETE
+    if len(manifest["chats"]) < manifest["chats_enumerated"]:
+        return EXIT_INCOMPLETE
+    return 0
+
+
+def _warn_on_partial_enumeration(enumerated: dict) -> None:
+    """Say plainly when a run was not a whole-account export.
+
+    Args:
+        enumerated: The `sweep_until_stable` result.
+    """
+    if enumerated["enumeration"] == ENUMERATION_CONVERGED:
+        return
+    logger.error(
+        "Enumeration is %s over %s sweeps, so this is not a whole-account "
+        "export. `truncated` means the sweep never reached the foot of the "
+        "chat list: raise --max-passes. `unconverged` means the list was "
+        "still yielding new conversations when the sweep budget ran out.",
+        enumerated["enumeration"], enumerated["sweeps"],
+    )
+
+
+def cmd_export_all(args: argparse.Namespace) -> int:
+    """Export every conversation in the chat list, and record what happened.
+
+    The chat index, when ``--write-index`` asks for it, is opened once here
+    (append mode, `manifest.open_chat_index_journal`) and titles are written
+    to it durably as the walk discovers them (`§D5`) — not collected in
+    memory for a batched write after the walk returns. Opening it in append
+    mode also means a resumed run against the same ``run_id`` extends the
+    titles an earlier pass already wrote instead of needing them folded back
+    in: the file itself is the fold.
+
+    Returns:
+        int: ``0`` when the enumeration converged and every enumerated
+            conversation is accounted for, ``3`` otherwise. The manifest and the
+            journal carry the detail either way.
+    """
+    run_id = args.resume or mint_run_id()
+    path = journal_path(run_id, args.data_dir)
+    resumed = frozenset(exported_chat_ids(path)) if args.resume else frozenset()
+    logger.info(
+        "Run %s (%s already exported, re-enumerating the chat list either way)",
+        run_id, len(resumed),
+    )
+    with contextlib.ExitStack() as stack:
+        handle = stack.enter_context(open_journal(run_id, data_dir=args.data_dir))
+        chat_index_handle = (
+            stack.enter_context(open_chat_index_journal(run_id, data_dir=args.data_dir))
+            if args.write_index else None
+        )
+        journal = RunJournal(handle, run_id, now(), resumed, chat_index_handle)
+        _, enumerated, _ = _export_all_session(args, journal)
+
+    manifest = _manifest_from_journal_file(path, enumerated["refs"])
+    print(write_manifest(manifest, data_dir=args.data_dir, run_id=run_id))
+    _warn_on_partial_enumeration(enumerated)
+    return _run_exit_code(manifest)
+
+
+def cmd_recover(args: argparse.Namespace) -> int:
+    """Rebuild a dead run's manifest from its journal, with no browser.
+
+    Returns:
+        int: The same code the run itself would have returned, from the same
+            rule (:func:`_run_exit_code`).
+
+    Raises:
+        RuntimeError: If the journal is absent or holds no header record.
+    """
+    path = journal_path(args.run_id, args.data_dir)
+    manifest = _manifest_from_journal_file(path, [])
+    print(write_manifest(manifest, data_dir=args.data_dir, run_id=args.run_id))
+    unrecorded = manifest["chats_enumerated"] - len(manifest["chats"])
+    if unrecorded > 0:
+        logger.warning(
+            "%s of the %s conversations this run enumerated have no line in the "
+            "journal and cannot be named: the journal records what was done, "
+            "never what the chat list held. Re-run export-all --resume %s to "
+            "reach them.", unrecorded, manifest["chats_enumerated"], args.run_id,
+        )
+    return _run_exit_code(manifest)
+
+
+def cmd_consolidate(args: argparse.Namespace) -> int:
+    """Join every per-conversation export under ``data_dir`` into one NDJSON.
+
+    Opens no browser: reading the export files and writing one corpus is work
+    a machine without Chromium must still be able to do (`§D4`).
+
+    Returns:
+        int: ``0`` on success, ``2`` if `consolidate` rejected the input
+            (duplicate ``chat_id``, or a file that is not schema v6).
+    """
+    try:
+        chats = read_chat_files(args.data_dir)
+        source_run = resolve_source_run(args.data_dir, args.from_manifest)
+        out_path = args.out or args.data_dir / f"corpus_{source_run}.ndjson"
+        header = build_header(chats, source_run)
+        write_corpus(chats, header, out_path)
+    except ValueError as exc:
+        logger.error("%s", exc)
+        return 2
+    print(out_path)
+    return 0

@@ -8,6 +8,45 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · Versioning: [SemVer](
 
 ## [Unreleased]
 
+### Added
+
+- **The harvest loop has a wall-clock deadline** (`#011`, `KI-009-H`). A new
+  `--deadline-seconds` flag bounds a conversation's harvest by elapsed time,
+  independent of and un-suppressible by the existing `panel_loading` grace
+  period — a stuck spinner that outlasts the deadline still stops the run
+  (`STOP_DEADLINE`, falls through to `truncated`). Unbounded (`None`) by
+  default: the corpus evidence behind `DEFAULT_LOADING_GRACE` does not support
+  a global time budget. This was the one carried item the roadmap marked as
+  blocking a fully unattended run.
+- **The per-conversation title index survives a crash** (`#011`, `§D5`).
+  `data/chat_index_<run_id>.ndjson` (behind `--write-index`, unchanged) is now
+  written append-only, one title per line as discovered, mirroring the run
+  journal's durability discipline. The previous batched writer lost every
+  title gathered during a run if the process died before its single write at
+  the end.
+
+### Fixed
+
+- **A journal spanning multiple `--resume` passes reported the wrong start
+  time** (`#011`, `T-8`). `read_journal` kept the *last* `RECORD_HEADER`
+  record instead of the first, so a resumed run's manifest inherited the
+  resume's timestamp as `started_at` rather than the run's true beginning —
+  measured against this repository's own corpus: 570 of 1018 conversations'
+  manifests claimed a start date that postdated when the run actually began.
+
+### Changed
+
+- **`__main__.py` split into CLI wiring and command orchestration** (`#011`,
+  `§D6`). The five `cmd_*` handlers and their supporting helpers moved to a
+  new `whatsapp_chat_extractor.commands` module (854 → 277 lines in
+  `__main__.py`); no CLI-facing behavior changed. Four pre-existing structural
+  violations (two over-length functions, two over-depth functions) were
+  cleared in the same pass.
+- Eight test-coverage gaps closed with no production-code change: the CLI's
+  `--from-manifest` and schema-abort paths in `consolidate`, five other
+  mutation-proven `consolidate` gaps, and the timezone-negotiation helpers
+  (`#011`).
+
 ## [0.9.0] - 2026-09-14
 
 ### Added
