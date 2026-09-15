@@ -35,10 +35,10 @@ transcription of the existing `claude_code` column, not an invented tier.
 | 3 | `tests/test_history.py` | modify | low | `implementer_agent` | sonnet | medium | ✅ a32f8a8 |
 | 4 | `src/whatsapp_chat_extractor/journal.py` | modify | low | `implementer_agent` | sonnet | medium | ✅ 293ea35 |
 | 5 | `tests/test_journal.py` | modify | low | `implementer_agent` | sonnet | medium | ✅ 293ea35 |
-| 6 | `src/whatsapp_chat_extractor/commands.py` (new, Block C extraction) | create | high | `implementer_agent` | sonnet | medium | ⏳ |
-| 7 | `src/whatsapp_chat_extractor/__main__.py` (strip `cmd_*`, Block C) | modify | high | `implementer_agent` | sonnet | medium | ⏳ |
-| 8 | `src/whatsapp_chat_extractor/export_one.py` | modify | medium | `implementer_agent` | sonnet | medium | ⏳ |
-| 9 | `tests/test_export_all.py` / `test_resume.py` / `test_consolidate_cli.py` (repoint patches, Block C) | modify | medium | `implementer_agent` | sonnet | medium | ⏳ |
+| 6 | `src/whatsapp_chat_extractor/commands.py` (new, Block C extraction) | create | high | `implementer_agent` | sonnet | medium | ✅ 95860fa |
+| 7 | `src/whatsapp_chat_extractor/__main__.py` (strip `cmd_*`, Block C) | modify | high | `implementer_agent` | sonnet | medium | ✅ 5cad4ac |
+| 8 | `src/whatsapp_chat_extractor/export_one.py` | modify | medium | `implementer_agent` | sonnet | medium | ✅ 17231c8 |
+| 9 | `tests/test_export_all.py` / `test_resume.py` / `test_consolidate_cli.py` (repoint patches, Block C) | modify | medium | `implementer_agent` | sonnet | medium | ✅ 9d16259 (test_export_all.py), 85e7016 (test_resume.py); test_consolidate_cli.py needed no repoint — it only reaches `cli.build_parser`, which stayed in `__main__.py` |
 | 10 | `src/whatsapp_chat_extractor/manifest.py` | modify | medium | `implementer_agent` | sonnet | medium | ⏳ |
 | 11 | `tests/test_manifest.py` | modify | low | `implementer_agent` | sonnet | medium | ⏳ |
 | 12 | `tests/test_consolidate.py` / `test_consolidate_cli.py` (`T-1`–`T-7`) | modify | low | `implementer_agent` | sonnet | medium | ⏳ |
