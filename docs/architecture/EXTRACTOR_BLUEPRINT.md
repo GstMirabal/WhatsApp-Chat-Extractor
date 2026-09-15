@@ -38,16 +38,33 @@ an invalid one.
 
 | Interface | Type | Defined in |
 | :--- | :--- | :--- |
-| `wa-extract login` | CLI | `src/whatsapp_chat_extractor/__main__.py` |
-| `wa-extract export-one` | CLI | `src/whatsapp_chat_extractor/__main__.py` |
-| `wa-extract export-all` | CLI | `src/whatsapp_chat_extractor/__main__.py` (#007) |
+| `wa-extract login` | CLI | `commands.cmd_login`, parser wiring in `__main__.build_parser` (handler moved to `commands.py` #011) |
+| `wa-extract export-one` | CLI | `commands.cmd_export_one`, parser wiring in `__main__.build_parser` (handler moved to `commands.py` #011) |
+| `wa-extract export-all` | CLI | `commands.cmd_export_all` (#007; handler moved to `commands.py` #011), parser wiring in `__main__.build_parser` |
 | `ChatExport` JSON | file schema | `writers.ChatExport` / this blueprint §3 |
 | `RunManifest` JSON | file schema | `manifest.RunManifest` / this blueprint §3 (#007) |
-| `wa-extract recover` | CLI | `src/whatsapp_chat_extractor/__main__.py` (#009) |
-| `wa-extract consolidate` | CLI | `src/whatsapp_chat_extractor/__main__.py` (#010) |
+| `wa-extract recover` | CLI | `commands.cmd_recover` (#009; handler moved to `commands.py` #011), parser wiring in `__main__.build_parser` |
+| `wa-extract consolidate` | CLI | `commands.cmd_consolidate` (#010; handler moved to `commands.py` #011), parser wiring in `__main__.build_parser` |
 | Run journal NDJSON | file schema | `journal.JournalHeader` / this blueprint §3 (#009) |
 | `timestamps.parse_rendered` | function | `src/whatsapp_chat_extractor/timestamps.py` (#009) |
 | `/wa-export <chat>` | slash command | `.claude/commands/wa-export.md`, `.cursor/commands/wa-export.md` |
+| `whatsapp_chat_extractor.commands` | module | `src/whatsapp_chat_extractor/commands.py` (#011) — holds every `cmd_*` handler; `__main__.py` keeps `build_parser`/`_add_*`/`main()` only |
+
+### CLI orchestration split (§D6, #011)
+
+`__main__.py` carried every `cmd_*` handler since Sprint 007 and had grown to
+854 lines (421 at Sprint 008), with `cmd_login` at block depth 4
+(`agents.md §1 max_indentation`, limit 3). Sprint 011 extracted all five
+handlers — `cmd_login`, `cmd_export_one`, `cmd_export_all`, `cmd_recover`,
+`cmd_consolidate` — into a new module, `whatsapp_chat_extractor.commands`
+(636 lines). `__main__.py` is now 277 lines and holds only `build_parser`,
+the `_add_*` parser-registration helpers, and `main()`, importing
+`commands.cmd_*` for dispatch. No CLI-visible behavior changed: the
+extraction also fixed `cmd_login`'s depth-4 block and `export_one.py`'s two
+over-length / two depth-4 functions (`open_chat_by_query`, `scroll_one_pass`,
+`_open_first_result`, `_click_load_earlier`) by extracting their innermost
+`try`/`for` bodies into named helpers, closing the module-growth concern this
+item was carried under without changing what any flag does.
 
 Data model (schema v6, #009):
 - **ChatExport**: `schema_version`, `chat_id`, `exported_at`, `message_count`,
@@ -104,11 +121,21 @@ the sequence.
 ### Identity contract
 
 No personal identifier is written to disk **by default**. One file is the
-exception and is named for it: `data/chat_index_<stamp>.json`, written only when
-the operator passes `export-all --write-index`, maps `chat_id` back to the real
-conversation name. It is a separate file from the run manifest so it can be
-deleted without losing the record of what a run did, and the manifest itself
-never carries a title.
+exception and is named for it: `data/chat_index_<run_id>.ndjson`, written only
+when the operator passes `export-all --write-index`, maps `chat_id` back to
+the real conversation name. It is a separate file from the run manifest so it
+can be deleted without losing the record of what a run did, and the manifest
+itself never carries a title.
+
+**Append-only since Sprint 011 (§D5).** `manifest.write_chat_index` used to
+write one batched JSON object at the end of a run — a crash before that call
+lost every title gathered during the run, unlike the outcomes journal's
+append-on-every-record discipline. `manifest.open_chat_index_journal` now
+opens the file for append at run start and `manifest.append_chat_index_entry`
+writes one line per conversation as its title is discovered, mirroring
+`journal.append_outcome`'s crash-tolerance argument exactly. `write_chat_index`
+is retired. No change to the privacy boundary: `--write-index` remains the
+gate, and titles never entered the pseudonymous run journal either way.
 
 | Field | Rule |
 | :--- | :--- |
@@ -197,7 +224,7 @@ reader of the boolean must not break on a v5 file.
 | :--- | :--- | :--- | :--- |
 | `proven` | `true` | `stopped_reason == "chat_start"` | The beginning was **observed** |
 | `unproven` | `false` | `stalled`, panel quiet | The panel stopped producing history and nothing indicated more was coming. An inference, named as one |
-| `truncated` | `false` | `max_passes`, or `loading_unresolved` (a spinner suppressed the stall verdict past `loading_grace`, H-003) | The harvest ended before the conversation did |
+| `truncated` | `false` | `max_passes`, `loading_unresolved` (a spinner suppressed the stall verdict past `loading_grace`, H-003), or `deadline` (`STOP_DEADLINE`, the `--deadline-seconds` wall-clock cap elapsed, `KI-009-H`, #011) | The harvest ended before the conversation did |
 
 `classify_completeness` **fails closed**: a stop reason it does not recognise is
 `truncated`, never `proven`. An unknown reason is not evidence of having arrived.
@@ -248,6 +275,24 @@ That measurement is what `ADR-0004` decided against: a field that is always
 single thing it exists to do in a training corpus. `proven` is nonetheless kept
 in the value set, because the day WhatsApp Web renders a start marker the export
 must be able to say so without another schema change.
+
+**`KI-009-H` closed, Sprint 011: wall-clock deadline.** `harvest_history` had
+only `max_passes` — an iteration count — bounding it; nothing bounded wall
+time, so a conversation whose panel never resolved and never tripped
+`loading_unresolved` either could still run the full `max_passes` budget
+regardless of elapsed time. `deadline_seconds` now threads through
+`harvest_history` → `_one_pass` → `_observe_and_decide` → `decide_stop`,
+checked against `time.monotonic()` captured once at harvest start, and a new
+`STOP_DEADLINE` reason joins `STOP_MAX_PASSES` and `STOP_LOADING_UNRESOLVED`.
+It is deliberately **not** added to `COMPLETE_REASONS`, so
+`classify_completeness` fails it closed to `truncated` — the same discipline
+`STOP_LOADING_UNRESOLVED` already follows. Exposed as `--deadline-seconds`
+with no default enforced (`None`, unbounded, unless the operator sets one):
+H-003's own measurement (13 passes maximum across 250 conversations) bounds
+the `loading_grace` window, not a global wall-clock default, and stating one
+here would invent a figure the corpus does not support. `max_passes` and
+`deadline_seconds` are complementary bounds, not substitutes — one guarantees
+termination on iteration count, the other on wall time.
 
 **Only `truncated` is a failure.** `export-one` exits `3` on `truncated` and `0`
 otherwise. It previously exited `3` whenever `complete` was false, which — since
@@ -338,14 +383,24 @@ states the sequence.
 | 3 | Header written the moment enumeration returns — not before, because `chats_enumerated` is unknown until then, and not after the first conversation, because a run that dies on it would leave no header at all | `journal.write_header`, called from `__main__._record_header` |
 | 4 | One outcome appended per conversation, as the run makes it, `fsync`ed to disk before the next chat opens | `journal.append_outcome`, called from `__main__._record_outcome` |
 | 5 | Manifest rebuilt from the journal's header and outcomes; every enumerated `chat_id` the journal never reached is recorded `skipped`, reason `run ended before this conversation` | `manifest.manifest_from_journal` |
-| 6a | Rebuild at the end of a live run, against the enumeration that same run just produced | `__main__.cmd_export_all` |
-| 6b | Rebuild later, from the journal alone, with no enumeration and no browser opened | `__main__.cmd_recover` |
+| 6a | Rebuild at the end of a live run, against the enumeration that same run just produced | `commands.cmd_export_all` (#011) |
+| 6b | Rebuild later, from the journal alone, with no enumeration and no browser opened | `commands.cmd_recover` (#011) |
 
 `export-all --resume <run_id>` reopens that same journal in append mode and
 steps over the conversations `journal.exported_chat_ids` already found
 `exported`; the chat list is enumerated again from scratch, never read back
 from the journal. A `failed` or `skipped` outcome does not count as done, so a
 resumed run retries it.
+
+**`T-8` closed, Sprint 011: first header wins.** `journal.read_journal` used
+to set `header = record` on every `RECORD_HEADER` line with no guard, so a
+journal holding two or more `--resume` headers reconstructed `started_at`
+from the **last** resume rather than the run's true start — measured against
+this project's own 1018-conversation corpus, 570 conversations (56%) carried
+an `exported_at` earlier than the date their manifest claimed the run
+started. Fixed with a first-write-wins guard
+(`if header is None: header = record`); pinned by a regression test against a
+synthetic two-header journal, the exact shape that produced the defect.
 
 ### Corpus consolidation (#010)
 
@@ -379,8 +434,8 @@ than by reading the docstring — the pre-fix code computed the count in
 
 Implemented in `src/whatsapp_chat_extractor/consolidate.py`
 (`read_chat_files`, `resolve_source_run`, `build_header`, `write_corpus`);
-wired by `cmd_consolidate` / `_add_consolidate` in
-`src/whatsapp_chat_extractor/__main__.py`.
+wired by `commands.cmd_consolidate` / `__main__._add_consolidate` (handler
+moved to `commands.py` #011).
 
 ## 5. Crosscutting Concepts
 
@@ -400,7 +455,7 @@ wired by `cmd_consolidate` / `_add_consolidate` in
 | Sender is a role, never a person | `tests/test_row_fields.py` |
 | The harvester never clicks inside a message | Candidates are panel chrome; any node under `[data-id]`/`.message-in`/`.message-out` is rejected |
 | Older history is loaded without the operator | `_click_load_earlier` matches the control by text across button and `[role=button]` |
-| Harvest always terminates | `--max-passes` hard cap, covered by `tests/test_history.py` |
+| Harvest always terminates | `--max-passes` hard cap and, since #011, `--deadline-seconds` wall-clock cap (`STOP_DEADLINE`); both covered by `tests/test_history.py` |
 | Submodule purity | `git -C .agents status --porcelain` empty at close |
 
 ## 7. Decisions
