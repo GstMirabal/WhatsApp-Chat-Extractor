@@ -8,6 +8,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · Versioning: [SemVer](
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-09-15
+
 ### Added
 
 - **The harvest loop has a wall-clock deadline** (`#011`, `KI-009-H`). A new
