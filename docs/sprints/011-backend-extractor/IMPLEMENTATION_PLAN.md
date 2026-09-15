@@ -2,7 +2,7 @@
 
 **Canonical path**: `docs/sprints/011-backend-extractor/IMPLEMENTATION_PLAN.md`
 **Branch**: `ai-sprint/011` · **Base**: `main` at `136c1e1c5240e9876041eb48ea3334b48df54f2c`
-**Status**: `DRAFT`
+**Status**: `APPROVED`
 
 > Authored at Phase 1 (Planning) by `principal_agent`, extracted to this path at
 > Phase 3, and **committed before Phase 5 approves it**: `agents.md §2 triple_lock`
@@ -225,9 +225,9 @@ established pattern.
 
 | Field | Value |
 | :--- | :--- |
-| **Approved by** | *(pending — Phase 5)* |
-| **Date** | *(pending)* |
-| **Plan commit at approval** | *(pending)* |
+| **Approved by** | gst.mirabal@gmail.com (human, explicit "ok" in chat) |
+| **Date** | 2026-09-15 |
+| **Plan commit at approval** | `13aa85c` |
 | **Remaining locks** | Active Sprint · QA + Tester verdicts · Human OK at close |
 
 *Phase 5 is a single attended human authorization. It MUST NOT be wrapped inside an
