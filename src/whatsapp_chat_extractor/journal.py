@@ -226,7 +226,8 @@ def read_journal(path: Path) -> tuple[JournalHeader | None, list[ChatOutcome]]:
             _reject_or_warn(path, number, len(chunks))
             break
         if record.get("record") == RECORD_HEADER:
-            header = record  # type: ignore[assignment]
+            if header is None:
+                header = record  # type: ignore[assignment]
             continue
         outcomes.append(_as_outcome(record))
     return header, outcomes

@@ -82,6 +82,45 @@ def test_the_record_discriminator_does_not_leak_into_the_outcome(
     assert "record" not in outcomes[0]
 
 
+def test_a_journal_with_two_resume_headers_keeps_the_first(
+    tmp_path: Path,
+) -> None:
+    """`--resume` writes a new header on each restart (T-8).
+
+    `read_journal` must reconstruct the run's true start from the first
+    header written, not the most recent resume's.
+    """
+    handle = open_journal(RUN_ID, data_dir=tmp_path)
+    try:
+        write_header(
+            handle, run_id=RUN_ID, started_at="2026-09-02T09:00:00Z",
+            chats_enumerated=3, enumeration="converged", sweeps=3,
+        )
+        append_outcome(handle, three_outcomes()[0])
+    finally:
+        handle.close()
+
+    # A `--resume` pass reopens the journal in append mode and writes a
+    # second header with a later `started_at`.
+    resumed = open_journal(RUN_ID, data_dir=tmp_path)
+    try:
+        write_header(
+            resumed, run_id=RUN_ID, started_at="2026-09-03T11:00:00Z",
+            chats_enumerated=3, enumeration="converged", sweeps=1,
+        )
+        for outcome in three_outcomes()[1:]:
+            append_outcome(resumed, outcome)
+    finally:
+        resumed.close()
+
+    path = journal_path(RUN_ID, data_dir=tmp_path)
+    header, outcomes = read_journal(path)
+
+    assert header is not None
+    assert header["started_at"] == "2026-09-02T09:00:00Z"
+    assert [o["chat_id"] for o in outcomes] == ["chat_aaa", "chat_bbb", "chat_ccc"]
+
+
 def test_a_final_line_torn_mid_character_is_discarded_not_fatal(
     tmp_path: Path,
 ) -> None:
