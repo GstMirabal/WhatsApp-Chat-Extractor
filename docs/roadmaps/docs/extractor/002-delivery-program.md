@@ -1,8 +1,8 @@
 # Roadmap: WhatsApp Chat Extractor — delivery program
 
-**Last Audit Sprint**: #010
-**Last Audit Date**: 2026-09-13
-**Last Audit Commit SHA**: `ai-sprint/009` tip; deployment pending for both Sprint 009 and 010
+**Last Audit Sprint**: #011
+**Last Audit Date**: 2026-09-15
+**Last Audit Commit SHA**: `ai-sprint/011` tip at `4253873`; Sprints 009-010 already deployed and sealed as `v0.9.0` (`main` at `136c1e1`, `#010`); Sprint 011 deployment pending
 
 Program authority: [ADR-0001](../../decisions/ADR-0001-product-scope-whatsapp-web.md),
 [ADR-0002](../../decisions/ADR-0002-delivery-program-and-layout.md),
@@ -18,7 +18,8 @@ Program authority: [ADR-0001](../../decisions/ADR-0001-product-scope-whatsapp-we
 | P3b | **007** | **CLOSED** | All chats: `export-all` enumerates the whole list, exports each and writes a run manifest. **Measured**: the chat list virtualizes (899 conversations behind a 70-row window), position is stable across a sweep and no two chats share a title, so the digest is the enumerator's key. `ADR-0004` decided completeness as three values and schema v5 carries it. Live-verified with `--limit 3`: 3 exported, 0 failed, 907 skipped of 910. **A whole-account run is ~15 hours**, which P4 should address before it is routine |
 | P4 | **008** | **CLOSED (partial)** | Platform hardening, plus an unplanned defect fix that took the sprint's centre. **Measured**: the single-pass enumeration silently lost conversations whenever the chat list reordered (882 of 899 at one reorder per 5 reads, 856 at one per 2, no duplicates) while `enumeration_complete` reported `true`. `sweep_until_stable` recovers **899 of 899** at both rates; `ADR-0005` replaces the boolean with three values and manifest schema v2 carries it. Platform: the Actions **billing block cleared** and CI now executes for real, so `v0.8.0` is the first release with independent verification behind it — but branch protection still returns `403` on a private free-plan repository, so `ci_gate.py` still refuses. Released as `v0.8.0` |
 | P5 | 009 | **CLOSED (partial)** | Corpus confidence and run resilience. **Delivered**: append-only run journal, `run_id` threading, `manifest_from_journal`, `--resume`, the `recover` subcommand and corpus contract v6 — 19 of 19 units, QA `APPROVED`, Tester `RECORD`. **Carried to 010**: `§D5`'s second append-only title journal (no unit assigned) and `§D6`'s intent that `__main__.py` not grow (421 → 793 lines). Hotfix `H-003` bounded a spinner stall that cost 8.3 hours per affected conversation, found in production |
-| P6 | 010 | **CLOSED (partial)** | `wa-extract consolidate` folds every `data/chat_*.json` into one `data/corpus_<run_id>.ndjson`, verbatim, header-reconciled by construction after a Phase 7 fix. QA `RECORD` (two rounds), Tester `RECORD`. **Verified live against 1018 real files**: zero duplicate `chat_id`, exact provenance. **Found, not fixed**: `T-8` — the manifest's `started_at` is its last `--resume` pass, not the run's true start; 56% of conversations predate it. **Still carried**: `§D5`, `§D6`, `T-2`, `KI-009-H` — the plan deliberately excluded them, this row previously did not say so |
+| P6 | 010 | **CLOSED (partial)** | `wa-extract consolidate` folds every `data/chat_*.json` into one `data/corpus_<run_id>.ndjson`, verbatim, header-reconciled by construction after a Phase 7 fix. QA `RECORD` (two rounds), Tester `RECORD`. **Verified live against 1018 real files**: zero duplicate `chat_id`, exact provenance. **Found, not fixed at this sprint's close**: `T-8` — the manifest's `started_at` is its last `--resume` pass, not the run's true start; 56% of conversations predate it. Closed by Sprint 011. **Still carried at this sprint's close**: `§D5`, `§D6`, `T-2`, `KI-009-H` — the plan deliberately excluded them, this row previously did not say so. All four closed by Sprint 011 |
+| P7 | **011** | **CLOSED** | Backlog closure: every item carried from Sprints 009-010, bundled into one sprint by operator decision rather than opened individually. **Delivered**: `KI-009-H` (harvest wall-clock deadline — `deadline_seconds`, `STOP_DEADLINE`, `--deadline-seconds` — no longer blocks a fully unattended run); `T-8` (`journal.read_journal` now keeps the first `--resume` header, not the last); `§D6` (`cmd_*` handlers extracted into new `commands.py`, `__main__.py` 854→277 lines); `§D5` (`manifest.write_chat_index` retired for an append-only `chat_index_<run_id>.ndjson`); `T-2` (`_request_timezone`/`_confirm_timezone` covered). 13 of 13 Work-table units landed. QA `REJECTED`/`charter` (round 1, a `journal.py::read_journal` depth-4 regression the `T-8` fix itself introduced) → `APPROVED`/`none` (round 2, full re-audit); Tester `RECORD`/`testifying`, zero regressions (294 passed / 1 skipped → 316 passed / 1 skipped). **Carried**: the `--deadline-seconds` end-to-end coverage gap |
 | — | — | OUT OF REPO | AI analysis (solicitudes, sentimiento), learning server, bot |
 
 **The product scope is complete.** P0 through P3b are closed and `wa-extract
@@ -26,9 +27,12 @@ export-all` does what `ADR-0001` asked: one invocation exports every
 conversation and the manifest states the outcome of each. P5 delivered
 confidence in the corpus and survivability of a long run; P6 delivered the one
 artifact a downstream reader can open instead of 1018 separate files. Neither
-is new product capability. `§D5`, `§D6`, `T-2`, `KI-009-H` and `T-8` remain
-carried and unscheduled — none blocks using the tool, and `KI-009-H` is the
-only one that blocks a fully unattended run.
+was new product capability, and neither closed the remaining backlog: **Sprint
+011 closed all five items this paragraph previously named as carried and
+unscheduled** — `§D5`, `§D6`, `T-2`, `KI-009-H` and `T-8` — and `KI-009-H` no
+longer blocks a fully unattended run. One new item carries from Sprint 011
+itself, unscheduled: the `--deadline-seconds` end-to-end coverage gap (see
+Sprint 011 below).
 
 Restructured 2026-08-30 after Sprint 004 closed. P3 was one undifferentiated
 "harden" row; splitting it separates a risk that must be retired alone (does a
@@ -164,15 +168,16 @@ That review is a person's job and is a prerequisite, not a formality.
 Approved and closed 2026-09-13. The plan the operator approved deliberately
 narrowed scope to consolidation alone — its own "Out of scope" table names
 `§D5`, `§D6`, `T-2` and `KI-009-H` and routes each back to a future sprint
-rather than settling them here, which this row previously did not say.
+rather than settling them here, which this row previously did not say. All
+four closed by Sprint 011 (see below).
 
 | # | Deliverable | Outcome |
 | :--- | :--- | :--- |
 | 1 | `wa-extract consolidate`: reads every `data/chat_*.json`, checks all carry schema v6 with no repeated `chat_id`, writes one `data/corpus_<source_run>.ndjson` (header line, then one verbatim v6 export per line) | **DONE.** 6/6 units, QA `RECORD` (two rounds — a real `§D2` header/body reconciliation defect found by execution and fixed, then a `str.splitlines()` counting fragility in the proving test itself, also fixed), Tester `RECORD` (real-data run against all 1018 production files: zero duplicate `chat_id`, exact provenance, both aborts and both flags confirmed). Suite 283/1 → 294/1 |
-| 2 | `§D5` — the title-index journal decision | **NOT DONE.** Explicitly out of scope in the approved plan; still carried |
-| 3 | `§D6` — `__main__.py` orchestration size | **NOT DONE.** Same; still carried |
-| 4 | `T-2` — timezone function tests | **NOT DONE.** Same; still carried, same reasoning (a rewrite may still be coming) |
-| 5 | `KI-009-H` — wall-clock deadline for the harvest loop | **NOT DONE.** Same; still carried, still blocking a fully unattended run |
+| 2 | `§D5` — the title-index journal decision | **NOT DONE.** Explicitly out of scope in the approved plan; still carried. **Closed by Sprint 011**: append-only `chat_index_<run_id>.ndjson`, `write_chat_index` retired |
+| 3 | `§D6` — `__main__.py` orchestration size | **NOT DONE.** Same; still carried. **Closed by Sprint 011**: `cmd_*` handlers extracted into new `commands.py`, `__main__.py` 854→277 lines |
+| 4 | `T-2` — timezone function tests | **NOT DONE.** Same; still carried, same reasoning (a rewrite may still be coming). **Closed by Sprint 011**: `_request_timezone`/`_confirm_timezone` covered in new `tests/test_timezone.py`; no rewrite was needed |
+| 5 | `KI-009-H` — wall-clock deadline for the harvest loop | **NOT DONE.** Same; still carried, still blocking a fully unattended run. **Closed by Sprint 011**: `--deadline-seconds` / `STOP_DEADLINE` — no longer blocks a fully unattended run |
 | 6 | Systemic wall-clock-bound amendment (`H-003 §5`) | **NOT DONE.** Still pending `constitutional_escalation` |
 
 ### Unplanned — `T-8`, found validating against real data
@@ -187,10 +192,54 @@ started.** No conversation's own content or identity is wrong — only the
 run-level metadata. Carried, not hotfixed: unlike `H-003`, nothing operational
 is blocked by it.
 
+**Closed by Sprint 011.** `journal.read_journal` now guards
+`header = record` to first-write-wins instead of overwriting on every
+`RECORD_HEADER` line it walks; pinned by a regression test against a
+synthetic two-header journal, the exact shape that produced this defect.
+
 Exit criterion, met: `wa-extract consolidate` (no arguments) produced
 `data/corpus_20260902T214002Z.ndjson` whose conversation count equaled the
 1018 real `data/chat_*.json` files read, every line after the header validated
 as a schema-v6 export, and no `chat_id` repeated across inputs.
+
+---
+
+## Sprint 011 — Backlog closure: `KI-009-H`, `T-8`, `§D6`, `§D5`, `T-2`
+
+Approved and closed 2026-09-15. Bundled every carried backlog item from
+Sprints 009-010 into one sprint, by operator decision, rather than opening
+each item individually (`docs/sprints/011-backend-extractor/IMPLEMENTATION_PLAN.md`
+§ Context). Five independent blocks; partial close was an accepted, named
+outcome if budget ran out after any block. All five landed.
+
+| # | Deliverable | Outcome |
+| :--- | :--- | :--- |
+| 1 | `KI-009-H` — wall-clock deadline for the harvest loop | **DONE.** `deadline_seconds` threads through `harvest_history` → `_one_pass` → `_observe_and_decide` → `decide_stop`, checked against `time.monotonic()` captured at harvest start; new `STOP_DEADLINE` reason falls through to `truncated` (not added to `COMPLETE_REASONS`, same discipline as `STOP_LOADING_UNRESOLVED`). Exposed as `--deadline-seconds`, unbounded by default. **No longer blocks a fully unattended run** |
+| 2 | `T-8` — journal header selection kept the last `--resume` header, not the first | **DONE.** `journal.read_journal` now guards `header = record` to first-write-wins; regression test pins it against a synthetic two-header journal |
+| 3 | `§D6` — `__main__.py` orchestration size (854 lines) and `cmd_login`'s depth-4 block | **DONE.** All five `cmd_*` handlers extracted into new `commands.py` (636 lines); `__main__.py` is now 277 lines, argparse wiring only. Pre-existing `export_one.py` complexity (two over-length, two depth-4 functions) closed in the same block |
+| 4 | `§D5` — the title-index journal decision | **DONE.** `manifest.write_chat_index` retired; `data/chat_index_<run_id>.ndjson` written append-only via `open_chat_index_journal`/`append_chat_index_entry`, mirroring the outcomes journal's crash-tolerance discipline |
+| 5 | `T-2` — timezone function tests | **DONE.** `_request_timezone`/`_confirm_timezone` covered in new `tests/test_timezone.py` |
+
+13 of 13 Work-table units landed, zero scope change during execution. Also
+landed, test-only and not tracked in this roadmap: additional mutation-proven
+coverage gaps in `consolidate.py`/its CLI carried from Sprint 010's own gate
+record (see `docs/sprints/011-backend-extractor/PHASE_REGISTER.md`, not
+scheduled here). QA `REJECTED`/`charter` (round 1 — the `T-8` fix itself
+pushed `journal.py::read_journal` from block depth 3 to depth 4, caught by
+the structural gate and fixed in `a0b6122`) → `APPROVED`/`none` (round 2, a
+from-scratch re-audit of all 14 changed files); Tester `RECORD`/`testifying`,
+zero regressions against a measured pre-sprint baseline (294 passed / 1
+skipped → 316 passed / 1 skipped). Full account:
+`docs/sprints/011-backend-extractor/SPRINT_LOG.md`,
+`docs/sprints/011-backend-extractor/PHASE_REGISTER.md`.
+
+**Carried to Sprint 012** (`SPRINT_LOG.md` Phase 8, `RA-05`): the
+`--deadline-seconds` end-to-end coverage gap found by this sprint's own
+Tester Agent — `decide_stop`-level behavior is pinned, but the CLI-to-harvest
+wiring in `commands.py` has no test, so a mutation making the flag a total
+no-op leaves the whole suite green. Same harness-gap class as the
+pre-existing `test_strength_gaps` F-4 (`docs/active_state.json`): both need a
+Playwright harness this project does not have.
 
 ---
 
