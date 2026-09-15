@@ -41,8 +41,8 @@ transcription of the existing `claude_code` column, not an invented tier.
 | 9 | `tests/test_export_all.py` / `test_resume.py` / `test_consolidate_cli.py` (repoint patches, Block C) | modify | medium | `implementer_agent` | sonnet | medium | ✅ 9d16259 (test_export_all.py), 85e7016 (test_resume.py); test_consolidate_cli.py needed no repoint — it only reaches `cli.build_parser`, which stayed in `__main__.py` |
 | 10 | `src/whatsapp_chat_extractor/manifest.py` | modify | medium | `implementer_agent` | sonnet | medium | ✅ f963295 |
 | 11 | `tests/test_manifest.py` | modify | low | `implementer_agent` | sonnet | medium | ✅ 4fde8bf |
-| 12 | `tests/test_consolidate.py` / `test_consolidate_cli.py` (`T-1`–`T-7`) | modify | low | `implementer_agent` | sonnet | medium | ⏳ |
-| 13 | `tests/test_export_search.py` or new `tests/test_timezone.py` (`T-2`) | create/modify | low | `implementer_agent` | sonnet | medium | ⏳ |
+| 12 | `tests/test_consolidate.py` / `test_consolidate_cli.py` (`T-1`–`T-7`) | modify | low | `implementer_agent` | sonnet | medium | ✅ 914277d (T-2,T-3,T-4,T-6,T-7), 3b13133 (T-1,T-5 — completed by `principal_agent` after the dispatched subagent hit a session rate limit) |
+| 13 | `tests/test_export_search.py` or new `tests/test_timezone.py` (`T-2`) | create/modify | low | `implementer_agent` | sonnet | medium | ✅ 4a188b5 (new `tests/test_timezone.py`) |
 
 Status starts at `⏳` (not started) for every row, matching the Implementation
 Plan's Work table at Phase 3 extraction — no unit has begun execution yet.
