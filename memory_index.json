@@ -1,6 +1,6 @@
 {
-  "last_update": "2026-09-13",
-  "sprint_id": "010",
+  "last_update": "2026-09-15",
+  "sprint_id": "011",
   "entries": [
     {
       "id": "KI-001-A",
@@ -279,6 +279,12 @@
       "id": "T-8",
       "summary": "journal.read_journal overwrites its header on every header record it walks, so a journal holding multiple --resume headers reconstructs a manifest whose started_at is the last resume's start, not the run's true start; found by validating consolidate against real data, where 570 of 1018 conversations predated their own manifest's claimed start.",
       "routing_class": "host"
+    },
+    {
+      "id": "KI-011-A",
+      "summary": "Classify a defect-addressing commit as fix( only when a test proving the bug is staged in the same commit (rules/code_craft.md §6, hooks/on_commit.py audit_regression_test); this sprint tripped that gate three times at commit time rather than before drafting the message (two implementer_agent source-only fix( attempts recovered by staging source+test together, one principal_agent structural fix( recovered by reclassifying to refactor() — before typing fix(, check first whether a test is staged alongside the source change, and if not, commit as refactor(/chore( from the start instead of relying on the hook rejection to discover it. The hook rejected correctly all three times and gave an actionable message each time, so this is a host-side commit-drafting habit to break, not a rule or hook defect to escalate upstream.",
+      "routing_class": "host",
+      "sprint": "011"
     }
   ]
 }
