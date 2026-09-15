@@ -96,18 +96,18 @@ Gates emit; the Orchestrator transcribes (`config/artifact_registry.json`).
 | Gate | Round | Verdict | Class | Notes |
 | :--- | :--- | :--- | :--- | :--- |
 | QA (structural) | 1 | `REJECTED` | `charter` | `journal.py::read_journal` (Block B fix, `293ea35`) pushed from block depth 3 to depth 4 — newly-introduced violation of agents.md §1 `max_indentation` (limit 3) in shipped production source, the one function the plan's Verification table did not name. Everything else clean: ruff exit 0, zero TODO/FIXME, submodule pure, all 28 commits carry #011, Block C cleared all four pre-existing `export_one.py` violations. |
-| QA (structural) | 2 | *(pending)* | *(pending)* | *(pending)* |
+| QA (structural) | 2 | `APPROVED` | `none` | Full re-audit run from scratch over all 14 changed `.py` files (not just the 3 Round 1 scoped): `ruff check .` exit 0, AST walk zero violations (`journal.py::read_journal` now depth 2, 35 lines), no TODO/FIXME, `.agents` clean, all 30 commits carry `#011` unhyphenated, 316 passed / 1 skipped. |
 | Tester (functional) | — | *(pending — not yet dispatched)* | — | — |
 
-**Bounce-and-fix cycle (Round 1 → Round 2):** QA Round 1 `REJECTED` the sprint
-on the `journal.py::read_journal` depth-4 violation above. Commit `a0b6122`
-(`refactor(journal): restore read_journal to max_indentation depth 3 #011`)
-applied the semantics-preserving fix QA Agent's Round 1 report itself
-prescribed. Verified before Round 2 dispatch: AST walk shows zero violations
-in `journal.py`, `ruff check` clean, `tests/test_journal.py` 13/13 passing
-unchanged, full suite 316 passed / 1 skipped. Round 2 is dispatched separately
-to confirm `APPROVED` before Gate 2 (Tester) runs — this log did not pass Gate
-1 cleanly on the first attempt.
+**Bounce-and-fix cycle (Round 1 → Round 2): CLOSED.** QA Round 1 `REJECTED`
+the sprint on the `journal.py::read_journal` depth-4 violation above. Commit
+`a0b6122` (`refactor(journal): restore read_journal to max_indentation depth 3
+#011`) applied the semantics-preserving fix QA Agent's Round 1 report itself
+prescribed. Round 2 re-audited from scratch — all 14 changed files, not just
+the 3 Round 1 scoped — and returned `APPROVED` / `none` above. This log did
+not pass Gate 1 cleanly on the first attempt; it is clean now. Gate 2
+(Tester) is being gated separately and will be transcribed after it
+reports.
 
 *Rows above are placeholders only where marked `(pending)`. Verdicts, rounds,
 class (`charter` / `instructing` / `testifying`) and notes are written by the
