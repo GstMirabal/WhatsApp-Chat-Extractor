@@ -173,8 +173,9 @@ def _add_export_all(sub: argparse._SubParsersAction) -> None:
     # (ADR-0001); the manifest never carries them.
     export_all.add_argument(
         "--write-index", action="store_true",
-        help="Also write data/chat_index_<run_id>.json mapping chat_id to the "
-             "REAL conversation name. Off by default; delete it when done",
+        help="Also write data/chat_index_<run_id>.ndjson mapping chat_id to the "
+             "REAL conversation name, one entry per line as discovered. Off by "
+             "default; delete it when done",
     )
     _add_harvest_args(export_all)
     # Filled in once the session is ready, so it is always present to read.
