@@ -9,10 +9,12 @@ has already been written.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
 
+from whatsapp_chat_extractor import manifest as manifest_module
 from whatsapp_chat_extractor.journal import (
     append_outcome,
     journal_path,
@@ -25,14 +27,16 @@ from whatsapp_chat_extractor.manifest import (
     OUTCOME_EXPORTED,
     OUTCOME_FAILED,
     OUTCOME_SKIPPED,
+    append_chat_index_entry,
     build_manifest,
+    chat_index_path,
     exported,
     failed,
     manifest_from_journal,
     now,
+    open_chat_index_journal,
     skipped,
     summarize,
-    write_chat_index,
     write_manifest,
 )
 from whatsapp_chat_extractor.writers import pseudonymous_chat_id
@@ -189,13 +193,55 @@ def test_the_manifest_filename_carries_no_name(tmp_path: Path) -> None:
 
 
 # --- the chat index, the one file that holds names -------------------------
+#
+# §D5: this file used to be written once, in a single batched call, at the
+# end of a run — so a crash any time before that call lost every title the
+# run had gathered. It is now append-only, mirroring `journal.py`'s own
+# durability exactly, and the tests below pin that property rather than only
+# the two functions in isolation.
+
+
+def an_index(
+    tmp_path: Path, entries: list[tuple[str, str]], *, run_id: str = RUN_ID
+) -> Path:
+    """Write `entries` to a real chat index, following `test_journal.py`."""
+    handle = open_chat_index_journal(run_id, data_dir=tmp_path)
+    try:
+        for chat_id, title in entries:
+            append_chat_index_entry(handle, chat_id, title)
+    finally:
+        handle.close()
+    return chat_index_path(run_id, data_dir=tmp_path)
+
+
+def read_index_lines(path: Path) -> list[dict]:
+    """Every line of a chat index, independently parsed as JSON."""
+    return [
+        json.loads(line)
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
 
 
 def test_the_index_maps_digests_back_to_titles(tmp_path: Path) -> None:
-    path = write_chat_index({ANA: "Ana", BETO: "Beto"}, data_dir=tmp_path)
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    assert payload[ANA] == "Ana"
+    path = an_index(tmp_path, [(ANA, "Ana"), (BETO, "Beto")])
+    entries = read_index_lines(path)
+    assert {(e["chat_id"], e["title"]) for e in entries} == {
+        (ANA, "Ana"), (BETO, "Beto"),
+    }
     assert path.name.startswith("chat_index_")
+    assert path.name.endswith(".ndjson")
+
+
+def test_each_title_is_its_own_line_not_one_batched_object(tmp_path: Path) -> None:
+    """The defect this item closes: one JSON object could not lose half of
+    itself to a crash. One line per title can — and does not, because each
+    line is written, flushed and synced before the next title is read."""
+    path = an_index(tmp_path, [(ANA, "Ana"), (BETO, "Beto")])
+    lines = [line for line in path.read_text(encoding="utf-8").splitlines() if line]
+    assert len(lines) == 2
+    for line in lines:
+        assert isinstance(json.loads(line), dict)
 
 
 def test_the_index_is_a_separate_file_from_the_manifest(tmp_path: Path) -> None:
@@ -203,7 +249,7 @@ def test_the_index_is_a_separate_file_from_the_manifest(tmp_path: Path) -> None:
     manifest = build_manifest(a_run(), started_at=now(), chats_enumerated=3,
                               enumeration="converged", sweeps=3)
     manifest_path = write_manifest(manifest, data_dir=tmp_path)
-    index_path = write_chat_index({ANA: "Ana"}, data_dir=tmp_path)
+    index_path = an_index(tmp_path, [(ANA, "Ana")])
     assert manifest_path != index_path
     index_path.unlink()
     assert manifest_path.exists()
@@ -215,7 +261,75 @@ def test_writing_no_index_is_the_default_path(tmp_path: Path) -> None:
     manifest = build_manifest(a_run(), started_at=now(), chats_enumerated=3,
                               enumeration="converged", sweeps=3)
     write_manifest(manifest, data_dir=tmp_path)
-    assert not list(tmp_path.glob("chat_index_*.json"))
+    assert not list(tmp_path.glob("chat_index_*.ndjson"))
+
+
+def test_no_conversation_name_reaches_the_index_filename(tmp_path: Path) -> None:
+    """The name is inside the file, gated by `--write-index`; the filename
+    itself must not leak it into a directory listing or a log line."""
+    path = an_index(tmp_path, [(ANA, "Ana")])
+    assert "Ana" not in path.name
+
+
+def test_appending_extends_an_existing_index_rather_than_erasing_it(
+    tmp_path: Path,
+) -> None:
+    """Opened in append mode on purpose: resuming a run with `--write-index`
+    must not destroy the titles an earlier pass already discovered — the file
+    itself is the fold, with no merge step needed (`§D5`)."""
+    an_index(tmp_path, [(ANA, "Ana")])
+    handle = open_chat_index_journal(RUN_ID, data_dir=tmp_path)
+    try:
+        append_chat_index_entry(handle, BETO, "Beto")
+    finally:
+        handle.close()
+
+    entries = read_index_lines(chat_index_path(RUN_ID, data_dir=tmp_path))
+
+    assert {e["chat_id"] for e in entries} == {ANA, BETO}
+
+
+def test_every_index_append_is_forced_to_disk(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Without `fsync` a power cut loses what a `kill -9` would have kept —
+    exactly the argument `journal.py`'s own equivalent test makes."""
+    synced: list[int] = []
+    real_fsync = os.fsync
+    monkeypatch.setattr(
+        manifest_module.os, "fsync",
+        lambda fd: (synced.append(fd), real_fsync(fd))[1],
+    )
+
+    an_index(tmp_path, [(ANA, "Ana"), (BETO, "Beto")])
+
+    assert len(synced) == 2
+
+
+def test_a_mid_run_crash_leaves_every_title_written_so_far_intact(
+    tmp_path: Path,
+) -> None:
+    """`§D5`'s actual property, not just the two functions in isolation: a run
+    that dies partway through must not lose the titles it had already
+    discovered.
+
+    Only two of three conversations' titles are ever appended — the third is
+    never reached, as if the process died right after the second and before
+    the third chat opened. The handle is never closed cleanly either, because
+    a `kill -9` would not run a `finally` block. Nothing simulates a batched
+    final write here, because the property under test is that no such write
+    is needed: both titles already reached disk when they were discovered.
+    """
+    handle = open_chat_index_journal(RUN_ID, data_dir=tmp_path)
+    append_chat_index_entry(handle, ANA, "Ana")
+    append_chat_index_entry(handle, BETO, "Beto")
+
+    entries = read_index_lines(chat_index_path(RUN_ID, data_dir=tmp_path))
+
+    assert {(e["chat_id"], e["title"]) for e in entries} == {
+        (ANA, "Ana"), (BETO, "Beto"),
+    }
+    assert CARO not in {e["chat_id"] for e in entries}
 
 
 # --- reconstruction from a partial journal ---------------------------------
@@ -308,9 +422,9 @@ def test_explicit_run_id_names_the_manifest_file(tmp_path: Path) -> None:
 
 
 def test_explicit_run_id_names_the_chat_index_file(tmp_path: Path) -> None:
-    path = write_chat_index({ANA: "Ana"}, data_dir=tmp_path, run_id=RUN_ID)
+    path = an_index(tmp_path, [(ANA, "Ana")], run_id=RUN_ID)
 
-    assert path.name == f"chat_index_{RUN_ID}.json"
+    assert path.name == f"chat_index_{RUN_ID}.ndjson"
 
 
 def test_run_id_ties_the_manifest_and_the_index_to_the_same_run(
@@ -321,7 +435,7 @@ def test_run_id_ties_the_manifest_and_the_index_to_the_same_run(
                               enumeration="converged", sweeps=3)
 
     manifest_path = write_manifest(manifest, data_dir=tmp_path, run_id=RUN_ID)
-    index_path = write_chat_index({ANA: "Ana"}, data_dir=tmp_path, run_id=RUN_ID)
+    index_path = an_index(tmp_path, [(ANA, "Ana")], run_id=RUN_ID)
 
     assert manifest_path.stem == f"run_manifest_{RUN_ID}"
     assert index_path.stem == f"chat_index_{RUN_ID}"
