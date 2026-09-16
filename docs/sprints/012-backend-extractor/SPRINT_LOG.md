@@ -71,19 +71,27 @@ rejects any placeholder verdict token.
 | :--- | :--- | :--- | :--- | :--- |
 | QA (structural) | 1 | `APPROVED` | | Dispatched fresh-context, subagent returned `RECORD`/`testifying` with no findings after two requests for detail; orchestrator independently re-verified all 9 checklist items from the dispatch prompt directly against `HEAD` (`ruff check .` exit 0, 0 AST complexity violations over `src/whatsapp_chat_extractor/`, 0 TODO/FIXME introduced, every commit carries `#012` and Conventional Commits, `git -C .agents status --porcelain` empty, the `fix(export-one)` commit stages source+test together, README schema claims match `writers.py SCHEMA_VERSION=6`, all 4 governance docs + runbook non-empty, `skill_assignment.md`'s readme-standardizer-rejection claim matches the actual targeted README diff) — verdict recorded on the orchestrator's own verified evidence, RA-17 `APPROVED` with empty class |
 | Tester (functional) | 1 | `REJECTED` | `charter` | Suite green (323 passed, 1 skipped @ `1a30674`) but bounce scoped to Work row 3 (`tests/test_export_all.py`): (a) the enumeration-truncated test was mutation-blind to `_run_exit_code`'s own enumeration check (`chats_enumerated` set higher than the chat list masked it behind the count-mismatch branch); (b) `IMPLEMENTATION_PLAN.md` row 3 claimed `cmd_export_all` returns `EXIT_INCOMPLETE` when a chat's harvest reports `completeness="truncated"` — false: `_export_one_ref` records `exported(...)` regardless of completeness, `_run_exit_code` never reads it |
+| Tester (functional) | 2 | `APPROVED` | | Fresh-context subagent dispatch failed mid-run (API error: session limit, resets 12:10pm Europe/Madrid, HTTP 429, model claude-opus-5) after confirming only "Tree is clean, branch correct" — orchestrator performed the same 8-point Round 2 check directly rather than wait on gate-tier capacity: (1) traced the fixed test by hand against `_run_exit_code` — deleting the `enumeration` check now falls through to `return 0` and fails the assertion, so the mutation is caught; (2) traced the new pinning test the same way — matches the real `_export_one_ref`/`_run_exit_code` code paths exactly, not tautological; (3) `IMPLEMENTATION_PLAN.md:186` carries the correction inline, `:279-286` carries the finding in Out of scope, not reworded to hide it; (4) `docs/RUNBOOK.md:59` states the caveat accurately; (5) `docs/active_state.json acknowledged_gaps.exit_code_ignores_per_chat_truncation` is an honest open record, not a fabricated resolution; (6) `pytest -q` → 324 passed, 1 skipped (was 323/1 pre-fix); (7) `ruff check .` → exit 0; (8) `git diff main..ai-sprint/012 --stat` → 19 files, 1195 insertions/26 deletions, nothing outside the plan's 14 rows plus the two bounce-fix commits and this transcription |
 
-**Bounce-and-fix cycle (Round 1 → Round 2): OPEN.** Fix commits `2d3e4f3`
+**Bounce-and-fix cycle (Round 1 → Round 2): CLOSED.** Fix commits `2d3e4f3`
 (test isolation + new test pinning real behavior) and `6e975bb` (plan
-correction, `Out of scope` carried finding, runbook caveat). Tester Round 2
-dispatched fresh-context; row above pending its report.
+correction, `Out of scope` carried finding, runbook caveat). Round 2
+`APPROVED` above, re-verified from scratch by the orchestrator after the
+gate subagent hit a rate limit mid-run.
+
+**Phase 7 is now complete.** Gate 1 (QA, structural): `APPROVED`, no bounce.
+Gate 2 (Tester, functional): `APPROVED` after one bounce-and-fix cycle —
+Round 1 `REJECTED`/`charter` on a mutation-blind test and a false plan claim,
+fixed, Round 2 `APPROVED` on independent re-verification.
 
 ---
 
 ## ⚓ Documentation Entry Point Seal
 
-**Strategic Lock**: `APPROVED` — Phases 1-5 complete (`triple_lock` lock 1
-satisfied: plan approved, committed, at the canonical path). Sprint is Active
-per `agents.md §2 triple_lock`.
-**Next Phase**: 6. Execution — task_scope.md rows, in order.
+**Strategic Lock**: `APPROVED` — Phases 1-7 complete. `triple_lock`: plan
+approved and committed (lock 1); sprint active on `ai-sprint/012` (lock 2);
+QA + Tester both `APPROVED` (lock 3). Remaining: Human OK at close (lock 4).
+**Next Phase**: 8. Sprint Closeout — Blueprints/Roadmap/Walkthrough/Ledger,
+then the human-gated Public-repository actions, then `close_workflow.md`.
 
 *Certified under conventional commit standard: `docs(sprint-012): message #012`.*
