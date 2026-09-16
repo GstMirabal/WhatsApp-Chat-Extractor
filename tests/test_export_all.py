@@ -188,3 +188,75 @@ def test_a_run_ending_exception_reconstructs_as_one_export_and_two_skips(
         chat["reason"] for chat in manifest["chats"] if chat["outcome"] == OUTCOME_SKIPPED
     ]
     assert skipped_reasons == ["run ended before this conversation"] * 2
+
+
+def test_deadline_seconds_reaches_harvest_history(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Sprint 011 Tester: nothing asserts what `harvest_history` receives at
+    this boundary — the `three_chats` fixture above replaces
+    `_export_open_chat` wholesale, one layer above where `--deadline-seconds`
+    is threaded, so a mutation turning it into a no-op would leave the suite
+    green.
+    """
+    received: dict = {}
+
+    def fake_harvest_history(page: object, **kwargs: object) -> dict:
+        received.update(kwargs)
+        return {
+            "messages": [], "completeness": "unproven",
+            "stopped_reason": "stalled", "passes_used": 1,
+        }
+
+    monkeypatch.setattr(cli, "harvest_history", fake_harvest_history)
+    cli._export_open_chat(
+        object(), "Ana",
+        an_args(deadline_seconds=42, source_timezone="UTC", data_dir=tmp_path),
+    )
+    assert received["deadline_seconds"] == 42
+
+
+def test_cmd_export_all_returns_exit_incomplete_when_enumeration_did_not_converge() -> None:
+    """`test_strength_gaps` F-4: no test named `EXIT_INCOMPLETE` for
+    `cmd_export_all` before this row. `_run_exit_code` is the pure function
+    that decides it, so it is exercised directly rather than through a
+    Playwright-driving harness this project deliberately does not build
+    (README § Contributing: no live WhatsApp in CI).
+    """
+    manifest = {
+        "enumeration": "truncated",
+        "counts": {OUTCOME_FAILED: 0},
+        "chats": [{"outcome": OUTCOME_EXPORTED}],
+        "chats_enumerated": 3,
+    }
+    assert cli._run_exit_code(manifest) == cli.EXIT_INCOMPLETE
+
+
+def test_cmd_export_all_returns_exit_incomplete_when_a_chat_failed() -> None:
+    manifest = {
+        "enumeration": cli.ENUMERATION_CONVERGED,
+        "counts": {OUTCOME_FAILED: 1},
+        "chats": [{"outcome": OUTCOME_EXPORTED}, {"outcome": OUTCOME_FAILED}],
+        "chats_enumerated": 2,
+    }
+    assert cli._run_exit_code(manifest) == cli.EXIT_INCOMPLETE
+
+
+def test_cmd_export_all_returns_exit_incomplete_when_fewer_chats_than_enumerated() -> None:
+    manifest = {
+        "enumeration": cli.ENUMERATION_CONVERGED,
+        "counts": {OUTCOME_FAILED: 0},
+        "chats": [{"outcome": OUTCOME_EXPORTED}],
+        "chats_enumerated": 3,
+    }
+    assert cli._run_exit_code(manifest) == cli.EXIT_INCOMPLETE
+
+
+def test_cmd_export_all_returns_zero_when_the_run_is_whole() -> None:
+    manifest = {
+        "enumeration": cli.ENUMERATION_CONVERGED,
+        "counts": {OUTCOME_FAILED: 0},
+        "chats": [{"outcome": OUTCOME_EXPORTED}] * 3,
+        "chats_enumerated": 3,
+    }
+    assert cli._run_exit_code(manifest) == 0
