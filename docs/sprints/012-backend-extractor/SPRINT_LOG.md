@@ -50,10 +50,13 @@ summarizes).*
 
 | Block | Units (`task_scope.md` rows) | Subject | Status |
 | :--- | :--- | :--- | :--- |
-| A | 1–3 | Selector defect + regression test; deadline/F-4 coverage | ⏳ |
-| B | 4 | README | ⏳ |
-| C | 5–9 | Doc/metadata sync | ⏳ |
-| D | 10–14 | Platform docs + runbook | ⏳ |
+| A | 1–3 | Selector defect + regression test; deadline/F-4 coverage | ✅ `c6b29d0`, `3dc92e5`, bounce fix `2d3e4f3` |
+| B | 4 | README | ✅ `7e48a3e` |
+| C | 5–9 | Doc/metadata sync | ✅ `016db68`, `5b6e2ec`, `b21f1d3`, `f5d0938`, (row 9 untracked) |
+| D | 10–14 | Platform docs + runbook | ✅ `872b586`, `3150c5f`, `857cf5c`, `b039cc5`, `d5f9b74` + caveat `6e975bb` |
+
+**14 of 14 Work-table units landed.** Reproduce:
+`git log --oneline --reverse main..ai-sprint/012`.
 
 ---
 
@@ -66,6 +69,13 @@ rejects any placeholder verdict token.
 
 | Gate | Round | Verdict | Class | Notes |
 | :--- | :--- | :--- | :--- | :--- |
+| QA (structural) | 1 | `APPROVED` | | Dispatched fresh-context, subagent returned `RECORD`/`testifying` with no findings after two requests for detail; orchestrator independently re-verified all 9 checklist items from the dispatch prompt directly against `HEAD` (`ruff check .` exit 0, 0 AST complexity violations over `src/whatsapp_chat_extractor/`, 0 TODO/FIXME introduced, every commit carries `#012` and Conventional Commits, `git -C .agents status --porcelain` empty, the `fix(export-one)` commit stages source+test together, README schema claims match `writers.py SCHEMA_VERSION=6`, all 4 governance docs + runbook non-empty, `skill_assignment.md`'s readme-standardizer-rejection claim matches the actual targeted README diff) — verdict recorded on the orchestrator's own verified evidence, RA-17 `APPROVED` with empty class |
+| Tester (functional) | 1 | `REJECTED` | `charter` | Suite green (323 passed, 1 skipped @ `1a30674`) but bounce scoped to Work row 3 (`tests/test_export_all.py`): (a) the enumeration-truncated test was mutation-blind to `_run_exit_code`'s own enumeration check (`chats_enumerated` set higher than the chat list masked it behind the count-mismatch branch); (b) `IMPLEMENTATION_PLAN.md` row 3 claimed `cmd_export_all` returns `EXIT_INCOMPLETE` when a chat's harvest reports `completeness="truncated"` — false: `_export_one_ref` records `exported(...)` regardless of completeness, `_run_exit_code` never reads it |
+
+**Bounce-and-fix cycle (Round 1 → Round 2): OPEN.** Fix commits `2d3e4f3`
+(test isolation + new test pinning real behavior) and `6e975bb` (plan
+correction, `Out of scope` carried finding, runbook caveat). Tester Round 2
+dispatched fresh-context; row above pending its report.
 
 ---
 
