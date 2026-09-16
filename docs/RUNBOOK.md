@@ -56,6 +56,15 @@ Exit codes to check (`README.md` § Usage / `commands.py::_run_exit_code`):
 | `3` | Enumeration didn't converge, at least one chat failed, or fewer chats landed than were enumerated | Resume it (below) |
 | *process killed / crashed, no exit at all* | Something ended the run outright (e.g. a lost WhatsApp session) | Resume it (below) — the journal already has everything the run got to before it died |
 
+**Exit `0` does not mean every chat's own harvest reached its end.**
+`_run_exit_code` checks enumeration convergence, whether any chat raised an
+exception, and whether every enumerated chat has a journal line — it does
+not read a chat's own `completeness`. A conversation whose harvest was
+individually `truncated` (its panel never resolved within `--max-passes` or
+the deadline) still counts as `exported`, not `failed`, so the run can exit
+`0` with one or more truncated conversations inside it. Check the printed
+manifest's `counts["truncated"]` if that distinction matters to you.
+
 ## Recovering a run that didn't finish
 
 The run's `run_id` is printed at the start of the run (also derivable from

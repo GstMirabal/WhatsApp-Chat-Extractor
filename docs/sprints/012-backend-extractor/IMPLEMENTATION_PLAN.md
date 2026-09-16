@@ -177,11 +177,26 @@ fail against the *current* order before row 1 lands (`KI-H001-B`).
 
 Row 3 detail: two new tests — (a) `_export_open_chat` forwards
 `args.deadline_seconds` to `harvest_history` unchanged (fake `harvest_history`
-records the kwargs it received); (b) `cmd_export_all` returns
-`EXIT_INCOMPLETE` (3) end-to-end when a chat's harvest reports
-`completeness="truncated"` (closes `test_strength_gaps` F-4 for
-`cmd_export_all`; `cmd_export_one`'s own real-`sync_playwright()` launch
-remains untested by design, unchanged project convention).
+records the kwargs it received); (b) `_run_exit_code` — the pure function
+`cmd_export_all`'s `EXIT_INCOMPLETE` (3) resolves to — pinned for each of its
+three real branches (`test_strength_gaps` F-4; `cmd_export_one`'s own
+real-`sync_playwright()` launch remains untested by design, unchanged
+project convention).
+
+**Correction (Tester Round 1, `REJECTED`/`charter`):** this row originally
+claimed (b) as "`cmd_export_all` returns `EXIT_INCOMPLETE` when a chat's
+harvest reports `completeness=\"truncated\"`" — false. `_export_one_ref`
+(`commands.py:282-292`) records `exported(...)` for any harvest that does not
+raise, regardless of `completeness`, and `_run_exit_code`
+(`commands.py:523-541`) never reads per-chat `completeness` at all — only
+`enumeration`, `counts[OUTCOME_FAILED]` and the chat/enumerated count. A run
+with a truncated chat but no exception, converged enumeration and a matching
+chat count returns `0`. The Tester also found the first test's assertion was
+mutation-blind to `_run_exit_code`'s own `enumeration` check (`chats_enumerated`
+was set higher than the chat list, so the count-mismatch branch masked the
+enumeration branch). Both fixed: the test now isolates the enumeration
+branch, and a new test pins the actual (surprising) current behavior instead
+of the false claim — see § Out of scope for the carried finding.
 
 ---
 
@@ -228,7 +243,8 @@ the ratio again after Phase 6 begins.
 | :--- | :--- |
 | New: `_open_first_result` opens the chat via `[data-testid="cell-frame-container"]` when `#pane-side div[role="row"]` also matches | **Yes** — current order clicks the `role="row"` wrapper first and opens nothing |
 | New: `_export_open_chat` forwards `deadline_seconds` to `harvest_history` unchanged | **Yes** — no test references `deadline_seconds` at this boundary today (`grep -rn "deadline_seconds" tests/` → 0 hits) |
-| New: `cmd_export_all` returns `EXIT_INCOMPLETE` (3) when a chat truncates | **Yes** — `test_strength_gaps` F-4, no test names `EXIT_INCOMPLETE` for `cmd_export_all` today |
+| New: `_run_exit_code` returns `EXIT_INCOMPLETE` for each of its three branches (enumeration, a failed chat, an under-count), and `0` for a whole run | **Yes** — `test_strength_gaps` F-4, no test named `EXIT_INCOMPLETE`/`_run_exit_code` for `cmd_export_all` today |
+| New: a per-chat `completeness="truncated"` does NOT alone cause `EXIT_INCOMPLETE` (pins current behavior, corrected from Tester Round 1's finding — see § Work row 3 detail) | **Yes** — untested before, and the plan's original claim about this case was itself false |
 | Existing suite after rows 1-3 | **No** — regression guard; must still pass 100% |
 
 ---
@@ -268,6 +284,7 @@ the ratio again after Phase 6 begins.
 | Los 11 (verificado: 12) hallazgos upstream del framework en `docs/audits/` | Deuda de gobernanza de `.agents`, jurisdicción nucleus (`agents.md §4 feedback_upstream`) — no se resuelve desde un sprint host |
 | Script de orquestación (reintentos/alertas) para la corrida de ~15h | Operator decision: runbook en lugar de código nuevo (ver Design) |
 | `composer_write_risk` (hardening candidate) | Ya investigado y registrado como "RESOLVED AS NOT OBSERVED" en `docs/active_state.json`; no es un defecto confirmado, no hay nada que parchear |
+| `cmd_export_all`'s exit code ignores a per-chat `completeness="truncated"` (found by Tester Round 1, this sprint) — a run with a truncated chat but no exception, converged enumeration and a matching chat count exits `0`, unlike `export-one`'s own exit `3` for the same condition on a single chat | Cambiar el comportamiento de producción está fuera del alcance aprobado en Phase 5 (fila 3 era test-only); queda `docs/active_state.json` `acknowledged_gaps.exit_code_ignores_per_chat_truncation` para que un sprint futuro decida si el exit code debe reflejarlo, dado que la información ya está en `counts.truncated` del manifest |
 
 ---
 
