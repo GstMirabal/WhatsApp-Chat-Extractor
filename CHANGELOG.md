@@ -8,6 +8,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · Versioning: [SemVer](
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-09-16
+
 ### Added
 
 - **Platform docs the repository needed to publish** (`#012`). `CONTRIBUTING.md`
