@@ -2,7 +2,7 @@
 
 **Canonical path**: `docs/sprints/012-backend-extractor/IMPLEMENTATION_PLAN.md` (extracted here at Phase 3)
 **Branch**: `ai-sprint/012` · **Base**: `main` at `6259d5e06119987066e097aa4ac8b8ec0d04f9e8`
-**Status**: `DRAFT`
+**Status**: `APPROVED`
 
 ---
 
@@ -314,9 +314,9 @@ Decidido antes de ejecutar, no renegociable una vez hundido el costo:
 
 | Field | Value |
 | :--- | :--- |
-| **Approved by** | *(pendiente)* |
-| **Date** | *(pendiente)* |
-| **Plan commit at approval** | *(pendiente — se completa en Phase 3)* |
+| **Approved by** | Human, attended, chat (`gst.mirabal@gmail.com`) |
+| **Date** | 2026-09-16T05:53:28Z |
+| **Plan commit at approval** | `1f0f117` |
 | **Remaining locks** | Active Sprint · QA + Tester verdicts · Human OK at close |
 
 *Phase 5 is a single attended human authorization. It MUST NOT be wrapped inside an
