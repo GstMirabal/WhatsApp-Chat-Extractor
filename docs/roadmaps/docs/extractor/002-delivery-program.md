@@ -243,6 +243,36 @@ Playwright harness this project does not have.
 
 ---
 
+## Sprint 012 — Public-readiness closure
+
+Approved and closed 2026-09-16. Bundled every item blocking (a) publishing
+the repository and (b) routine unattended use into one sprint, by operator
+decision, rather than treating publication readiness as a separate protocol
+(`docs/sprints/012-backend-extractor/IMPLEMENTATION_PLAN.md` § Design).
+
+| # | Deliverable | Outcome |
+| :--- | :--- | :--- |
+| 1-2 | `SEARCH_RESULT_SELECTORS` tried the wrapper that opens nothing (`role="row"`, 59 matches) before the one that actually opens a chat (`data-testid="cell-frame-container"`) | **DONE.** Reordered; regression test proves the defect against the pre-fix order (`tests/test_open_first_result.py`) |
+| 3 | `--deadline-seconds` CLI→harvest wiring and `test_strength_gaps` F-4 (`cmd_export_all`/`EXIT_INCOMPLETE`) had no test | **DONE**, with a correction mid-sprint: Tester Round 1 found the plan's own claim about F-4 was false — a per-chat `completeness="truncated"` does not alone cause `EXIT_INCOMPLETE` in production, only enumeration/failure/count-mismatch do. Fixed the test (was mutation-blind to the enumeration check) and the plan's wording; the false claim's underlying behavior is carried, not fixed (`docs/active_state.json` `acknowledged_gaps.exit_code_ignores_per_chat_truncation`) |
+| 4 | README drifted from the shipped code in three independent ways (schema v4 badge / v5 example vs. real v6; `recover`/`consolidate`/`--resume`/`--deadline-seconds` undocumented; `--write-index` described the pre-011 batched writer) | **DONE.** Targeted correction — the `readme-standardizer` skill's mandatory full-overwrite was invoked, evaluated, and rejected as disproportionate (`skill_assignment.md`) |
+| 5-9 | `0_SYSTEM_OVERVIEW.md` and `EXTRACTOR_BLUEPRINT.md` audit stamps stale; `pyproject.toml` version stuck at `0.4.0` against tag `v0.10.0`; repo-name typo in `identity.config.json`; a stale hotfix-id label in `active_state.json` colliding with a real, different `H-002` | **DONE**, all five |
+| 10-14 | `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, `NOTICE.md` absent since Sprint 006; no runbook for unattended operation | **DONE.** Runbook leads with the constraint that decides the whole design — every browser launch is hardcoded `headless=False`, so `launchd` (GUI session) is required over plain `cron` |
+
+14 of 14 Work-table units landed. QA (structural) `APPROVED`, no bounce.
+Tester (functional) `REJECTED`/`charter` (Round 1, the F-4 finding above) →
+`APPROVED` (Round 2, re-verified by the orchestrator directly after the
+gate subagent hit a session rate limit). Suite: 316/1 (Sprint 011 baseline)
+→ 324/1. Full account: `docs/sprints/012-backend-extractor/SPRINT_LOG.md`,
+`IMPLEMENTATION_PLAN.md`.
+
+**Followed by human-gated Public-repository actions** (rename, visibility,
+branch protection, secret scanning, Dependabot merges) — not Work rows,
+executed after this sprint's own gates passed, each requiring a separate
+confirmation. Recorded in `docs/PLATFORM_HARDENING.md`, not in this roadmap:
+they change the repository's public posture, not its delivery phases.
+
+---
+
 ## Phase notes
 
 | Phase | In | Out |
@@ -256,6 +286,7 @@ Playwright harness this project does not have.
 | P4 | Platform controls and upstream contributions | Product features — **the sprint departed from this** |
 | P5 | Measuring the `unknown` rates; surviving a 15-hour run | New capability; anything `ADR-0001` did not ask for |
 | P6 | Folding the v6 per-chat exports into one corpus file; the Sprint 009 carries, including a wall-clock bound for the harvest loop | Re-harvesting or re-exporting any conversation; new capability beyond consolidation |
+| P7 | Closing every gap between the code and its own documentation; the platform docs a public repository needs; a runbook for unattended operation | New product capability; changing production behavior found stale mid-sprint (carried instead, `acknowledged_gaps.exit_code_ignores_per_chat_truncation`) |
 
 **P4's exclusion did not hold, and saying so is the point.** The row reads *"Out:
 Product features"*, and Sprint 008 shipped `sweep_until_stable`, `ADR-0005` and

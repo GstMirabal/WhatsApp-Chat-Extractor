@@ -1,7 +1,25 @@
 {
-  "last_update": "2026-09-15",
-  "sprint_id": "011",
+  "last_update": "2026-09-16",
+  "sprint_id": "012",
   "entries": [
+    {
+      "id": "KI-012-A",
+      "summary": "Invoke .agents Makefile targets as `make -f .agents/Makefile <target>` from the host root, never `cd .agents && make <target>`: many targets (docs-freshness-check, model-ledger) are host-scoped by cwd, and cd'ing into .agents first makes them check or write the wrong repository's tree entirely, reproduced at close_workflow.md's docs_freshness_gate and model_ledger_regen steps.",
+      "routing_class": "host",
+      "sprint": "012"
+    },
+    {
+      "id": "KI-012-B",
+      "summary": "When a plan's Tests/Context table elaborates a vague carried gap ('no test names X') into a specific behavioral claim ('X does Y under condition Z'), trace that claim against the actual current source before committing to it - Sprint 012's own plan claimed cmd_export_all returns EXIT_INCOMPLETE when a chat's harvest is truncated, and production never checks per-chat completeness at all; the false claim survived to Phase 6 and was only caught by the Tester gate.",
+      "routing_class": "host",
+      "sprint": "012"
+    },
+    {
+      "id": "KI-012-C",
+      "summary": "A gate subagent (qa_agent/tester_agent) that returns an unsubstantiated verdict (e.g. 'RECORD/testifying, nothing left to do here') even after being asked explicitly to restate its full report is not evidence of a clean review - independently re-run the same checklist yourself rather than accept it or re-prompt indefinitely; Sprint 012's QA Round 1 and Tester Round 2 verdicts were both recorded on the orchestrator's own re-verified evidence for exactly this reason.",
+      "routing_class": "host",
+      "sprint": "012"
+    },
     {
       "id": "KI-001-A",
       "summary": "On a host, run session claim from the host root (python3 .agents/scripts/session_state.py claim); session_start.py --boot can never claim the host anchor because repo_root() is the parent of scripts/ resolved via __file__ and every subprocess runs with cwd=repo_root, while ACTIVE_STATE is relative to CWD - a scripts/ symlink does not fix it.",

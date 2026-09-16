@@ -2,7 +2,7 @@
 
 [![Python][python-shield]][python-url]
 [![License: Proprietary][license-shield]][license-url]
-[![Schema v4][schema-shield]][schema-url]
+[![Schema v6][schema-shield]][schema-url]
 
 </div>
 
@@ -59,7 +59,7 @@ field name, which is why the boolean was replaced
 | Property | Value |
 | :--- | :--- |
 | Scope | One chat (`export-one`) or every chat (`export-all`), full history |
-| Output | `data/chat_<digest>_<timestamp>.json`, schema v5, plus a run manifest for `export-all` |
+| Output | `data/chat_<digest>_<timestamp>.json`, schema v6, plus a run manifest for `export-all` |
 | Media | Recorded as a placeholder with a `kind`; no media file is downloaded |
 | Identity | No contact name reaches the payload or the filename |
 | Network | WhatsApp Web only; nothing is sent anywhere else |
@@ -86,8 +86,8 @@ field name, which is why the boolean was replaced
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/GstMirabal/WhastApp-Chat-Extractor.git
-   cd WhastApp-Chat-Extractor
+   git clone https://github.com/GstMirabal/WhatsApp-Chat-Extractor.git
+   cd WhatsApp-Chat-Extractor
    ```
 
 2. **Create the virtual environment**
@@ -136,6 +136,7 @@ Useful options:
 | :--- | :--- | :--- |
 | `--max-passes` | `2000` | Upper bound on scroll passes. Raise it when exit `3` persists. |
 | `--stall-threshold` | `3` | Passes revealing nothing new before the harvest gives up. |
+| `--deadline-seconds` | none (unbounded) | Wall-clock bound on one conversation's harvest, independent of pass count. A stuck conversation stops at the deadline (`stopped_reason: "deadline"`) instead of burning the full `--max-passes` budget unattended. |
 | `--data-dir` | `data/` | Where the JSON is written. |
 
 From an agent session, `/wa-export <chat>` runs the same command and reports
@@ -156,6 +157,7 @@ with `--limit 3` to see it work before committing to a full run.
 | `--limit` | `0` (all) | Export only the first N chats. The rest are recorded as `skipped`, never omitted. |
 | `--write-index` | off | **Writes real conversation names to disk.** See below. |
 | `--settle-ms` | `1200` | Wait after each chat-list scroll. Raise it on a slow connection. |
+| `--resume` | none | Continue an earlier run by its `run_id`: re-enumerates the chat list from scratch and steps over the conversations that run's journal already exported. See *Resuming a crashed run*, below. |
 
 **A full run is long.** Measured on 2026-08-31 against an account with 910
 conversations: enumeration took about 3 minutes, and each conversation then took
@@ -172,9 +174,12 @@ The manifest carries **no names**:
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
+  "started_at": "2026-08-31T18:07:00Z",
+  "finished_at": "2026-08-31T21:14:00Z",
   "chats_enumerated": 910,
-  "enumeration_complete": true,
+  "enumeration": "converged",
+  "sweeps": 3,
   "counts": { "exported": 3, "failed": 0, "skipped": 907,
               "proven": 0, "unproven": 3, "truncated": 0, "messages": 129 },
   "chats": [
@@ -185,10 +190,50 @@ The manifest carries **no names**:
 }
 ```
 
-`--write-index` additionally writes `data/chat_index_<stamp>.json`, mapping each
-`chat_id` to the **real conversation name**. It is the only file this project
-writes that contains names, it is off by default, and it is deliberately a
-separate file so you can delete it without losing the manifest.
+`enumeration` is `ADR-0005`'s verdict on the chat-list sweep: `converged`
+(two consecutive sweeps found nothing new — the only value that means a
+whole-account export), `unconverged` (still finding new conversations when
+the sweep budget ran out) or `truncated` (the sweep never reached the foot of
+the list). `sweeps` makes `converged` auditable.
+
+`--write-index` additionally writes `data/chat_index_<run_id>.ndjson`, one
+line per conversation as discovered, mapping each `chat_id` to the **real
+conversation name**. It is the only file this project writes that contains
+names, it is off by default, and append-only — a crash mid-run loses at most
+the entry in flight, not every title gathered so far.
+
+### Resuming a crashed run
+
+`export-all` writes an append-only journal (`data/run_journal_<run_id>.ndjson`)
+as it goes. If the process dies — a lost WhatsApp session, a killed terminal —
+continue it instead of starting over:
+
+```bash
+.venv/bin/wa-extract export-all --resume 20260831T180700Z
+```
+
+The chat list is enumerated again from scratch (never trusted from the
+journal), and every conversation the journal already marks `exported` is
+stepped over. To rebuild the run's manifest without opening a browser at all
+— useful right after a crash, before deciding whether to resume —
+`recover` reads the journal alone:
+
+```bash
+.venv/bin/wa-extract recover --run-id 20260831T180700Z
+```
+
+### Building one corpus (`consolidate`)
+
+Joins every per-conversation `data/chat_*.json` from one run into a single
+NDJSON file for a downstream reader, picking the newest run manifest under
+`--data-dir` unless told otherwise:
+
+```bash
+.venv/bin/wa-extract consolidate
+```
+
+`--from-manifest <path>` names the source run explicitly; `--out <path>`
+overrides the default `<data-dir>/corpus_<run-id>.ndjson`.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -196,19 +241,32 @@ separate file so you can delete it without losing the manifest.
 
 ```json
 {
-  "schema_version": 5,
+  "schema_version": 6,
   "chat_id": "chat_9f60a8baaaab",
   "exported_at": "2026-08-30T08:53:00Z",
   "message_count": 301,
+  "undated_messages": 4,
   "complete": false,
   "completeness": "unproven",
   "stopped_reason": "stalled",
+  "passes_used": 214,
+  "source_locale": "es-AR",
+  "source_timezone": "America/Argentina/Buenos_Aires",
   "messages": [
-    { "sender": "contact", "timestamp": "18:29, 28/8/2026",
+    { "message_id": "b21b3a7f...", "sender": "contact",
+      "timestamp": "18:29, 28/8/2026", "timestamp_iso": "2026-08-28T18:29:00-03:00",
       "body": "¿lo tienes?", "kind": "text", "order": 137 }
   ]
 }
 ```
+
+`source_locale` and `source_timezone` record how the timestamps in this file
+were rendered — without them the day/month order in `timestamp` has no frame,
+and a file written before schema v6 cannot be repaired after the fact.
+`undated_messages` counts rows WhatsApp rendered with a clock and no date (see
+Known limitation, below). `message_id` and `timestamp_iso` sit beside the
+original `sender`/`timestamp` fields, additive since v6
+([ADR-0007](docs/decisions/ADR-0007-corpus-contract-v6.md)).
 
 ### How complete is it?
 
@@ -301,7 +359,7 @@ Gustavo Mirabal — gst.mirabal@gmail.com
 
 - GitHub: [@GstMirabal](https://github.com/GstMirabal)
 
-Project Link: [https://github.com/GstMirabal/WhastApp-Chat-Extractor](https://github.com/GstMirabal/WhastApp-Chat-Extractor)
+Project Link: [https://github.com/GstMirabal/WhatsApp-Chat-Extractor](https://github.com/GstMirabal/WhatsApp-Chat-Extractor)
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -310,5 +368,5 @@ Project Link: [https://github.com/GstMirabal/WhastApp-Chat-Extractor](https://gi
 [python-url]: https://www.python.org/downloads/
 [license-shield]: https://img.shields.io/badge/license-Proprietary-red.svg?style=for-the-badge
 [license-url]: LICENSE
-[schema-shield]: https://img.shields.io/badge/export%20schema-v4-green.svg?style=for-the-badge
+[schema-shield]: https://img.shields.io/badge/export%20schema-v6-green.svg?style=for-the-badge
 [schema-url]: docs/decisions/ADR-0003-media-placeholders-in-export.md

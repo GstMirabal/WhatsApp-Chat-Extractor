@@ -8,6 +8,47 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · Versioning: [SemVer](
 
 ## [Unreleased]
 
+### Added
+
+- **Platform docs the repository needed to publish** (`#012`). `CONTRIBUTING.md`
+  (states plainly that outside code contributions are not accepted),
+  `SECURITY.md` (private vulnerability reporting), `CODE_OF_CONDUCT.md`
+  (Contributor Covenant v2.1, adapted), `NOTICE.md` (third-party license
+  notices for Playwright and the dev-only dependencies). Absent since Sprint
+  006.
+- **A runbook for unattended operation** (`#012`, `docs/RUNBOOK.md`). No new
+  orchestration code: documents `--resume`/`recover` as the recovery
+  primitive and leads with the constraint that decides the whole design —
+  every browser launch is hardcoded `headless=False`, so a `launchd`
+  LaunchAgent (GUI session) is required over plain `cron`.
+
+### Fixed
+
+- **`export-one`/`export-all` could silently fail to open the requested
+  chat** (`#012`). `SEARCH_RESULT_SELECTORS` tried `#pane-side
+  div[role="row"]` (59 matches, a wrapper that accepts a click and opens
+  nothing) before `[data-testid="cell-frame-container"]` (the entry that
+  actually opens a chat, per `scripts/probe_chat_start.py`). Reordered;
+  regression test pins it against the pre-fix order.
+
+### Changed
+
+- **README, `docs/0_SYSTEM_OVERVIEW.md`, `docs/architecture/EXTRACTOR_BLUEPRINT.md`,
+  `pyproject.toml` and `identity.config.json` synced against the shipped
+  code and the sealed `v0.10.0` tag** (`#012`). The schema badge and JSON
+  example read `v4`/`v5`; the real constant is `6`. `recover`, `consolidate`,
+  `--resume` and `--deadline-seconds` were undocumented. The version stamp
+  read `0.4.0` against tag `v0.10.0`. No structural rewrite — a targeted
+  correction pass (the `readme-standardizer` skill's mandatory full-overwrite
+  was invoked, evaluated, and rejected as disproportionate).
+- **`--deadline-seconds`'s CLI→harvest wiring and `cmd_export_all`'s
+  `EXIT_INCOMPLETE` gained test coverage** (`#012`, `test_strength_gaps`
+  F-4), extending the project's existing fake-`Page`/monkeypatch pattern
+  rather than a Playwright-driving harness. No production-code change; one
+  finding surfaced and carried instead of silently fixed — a per-chat
+  `completeness="truncated"` does not alone flip the run's exit code, unlike
+  `export-one`'s own exit `3` for the identical condition on a single chat.
+
 ## [0.10.0] - 2026-09-15
 
 ### Added

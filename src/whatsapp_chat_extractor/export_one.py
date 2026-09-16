@@ -46,10 +46,15 @@ SEARCH_PLACEHOLDERS = (
     "Search input textbox",
     "Buscar o empezar un chat nuevo",
 )
+# `role="row"` matches a wrapper that accepts a click and opens nothing;
+# `data-testid` is the entry that actually opens the conversation
+# (scripts/probe_chat_start.py runs 1-2). Neither raises on `.click()`, so
+# the order below is what decides which one fires — measure again before
+# reordering.
 SEARCH_RESULT_SELECTORS = (
     '#pane-side div[role="listitem"]',
-    '#pane-side div[role="row"]',
     '[data-testid="cell-frame-container"]',
+    '#pane-side div[role="row"]',
     '#side div[role="listitem"]',
 )
 MESSAGE_PANEL_SELECTORS = (

@@ -1,6 +1,6 @@
 # Walkthrough: EXTRACTOR
 **File**: `docs/walkthroughs/EXTRACTOR_WALKTHROUGH.md`
-**Last updated**: Sprint #011
+**Last updated**: Sprint #012
 
 ---
 
@@ -16,6 +16,7 @@
 | #009 | P4 resume + corpus v6 | `export-all` writes an append-only NDJSON run journal (`data/run_journal_<run_id>.ndjson`) as it goes; `export-all --resume <run_id>` re-enumerates the chat list and exports only what the journal lacks; `recover --run-id <id>` rebuilds `data/run_manifest_<run_id>.json` from the journal with no browser. Schema v6 adds `message_id` and `timestamp_iso` per message and `passes_used`, `source_locale`, `source_timezone`, `undated_messages` per export (`ADR-0006`, `ADR-0007`). Suite 277 passed / 1 skipped, from a 224 / 1 baseline |
 | H-003 | Unresolved-spinner hotfix | A harvest whose "load older messages from your phone" request the phone never answers previously ran the full `--max-passes` budget (~8.3 h per conversation). It now gives up after `loading_grace` stalled passes past the stall threshold (default `20`) with `stopped_reason: loading_unresolved` and `completeness: truncated`, ~6 minutes instead. Landed on `ai-sprint/009` at `1728519` |
 | #011 | Backlog closure | Closed every item carried from Sprints 009-010 in one sprint. `--deadline-seconds` bounds the harvest loop by wall-clock time (`STOP_DEADLINE`) so a stuck conversation no longer risks the full `--max-passes` budget with no operator watching; the chat-index journal (`--write-index`) is now append-only and survives a crash mid-run instead of losing every title on one batched write; `journal.read_journal` keeps the first `--resume` header, not the last; every `cmd_*` handler moved out of `__main__.py` into a new `commands.py` (`__main__.py` 854→277 lines); timezone-prompt functions gained test coverage. 13/13 units, QA `APPROVED` after one bounce-and-fix cycle, Tester `RECORD`. Suite 294 / 1 → 316 / 1 |
+| #012 | Public-readiness closure | Bundled everything blocking publication and routine unattended use. `_open_first_result` was silently clicking a dead wrapper (`role="row"`, 59 matches, opens nothing) before the selector that actually opens a chat — reordered, with a regression test proving the pre-fix defect. Closed the `--deadline-seconds`/F-4 coverage gap, and along the way found the plan's own claim about it was false: a truncated per-chat harvest does not alone flip `cmd_export_all`'s exit code (carried, not fixed — production behavior, out of this row's approved scope). README, `0_SYSTEM_OVERVIEW.md`, `EXTRACTOR_BLUEPRINT.md`, `pyproject.toml` and `identity.config.json` brought current against the shipped code and the sealed `v0.10.0` tag. Added the four platform docs absent since Sprint 006, and a runbook for unattended operation built around the one constraint that decides its shape — every browser launch is hardcoded `headless=False`. 14/14 units, QA `APPROVED` no bounce, Tester `REJECTED`/`charter` → `APPROVED` after one bounce-and-fix cycle (a mutation-blind test and the false claim above). Suite 316 / 1 → 324 / 1 |
 
 ## 2. Current state
 

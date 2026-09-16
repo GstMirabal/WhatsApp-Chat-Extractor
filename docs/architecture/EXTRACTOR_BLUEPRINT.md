@@ -2,9 +2,15 @@
 **File**: `docs/architecture/EXTRACTOR_BLUEPRINT.md`
 **Status**: `RATIFIED`
 **Sprint of origin**: #003
-**Last Audit Sprint**: #008
-**Last Audit Date**: 2026-09-01
-**Last Audit Commit SHA**: `d30a1b5`
+**Last Audit Sprint**: #012
+**Last Audit Date**: 2026-09-16
+**Last Audit Commit SHA**: `016db68`
+
+> **Stamp correction (Sprint 012):** this header still read `#008` /
+> `d30a1b5` while the body below already documented Sprint 011 content in
+> four places (`grep -n "Sprint 011" docs/architecture/EXTRACTOR_BLUEPRINT.md`)
+> — `RA-05 SPRINT_CLOSEOUT` requires the stamp to move with the sprint that
+> touches the file, and Sprint 011 touched it without advancing this line.
 
 ---
 
@@ -84,6 +90,31 @@ Data model (schema v6, #009):
   `chats_enumerated`, `enumeration`, `sweeps` — written once, the moment
   enumeration returns. The journal versions independently of both
   `ChatExport` and `RunManifest`: it is at v1
+
+### Search-result selector order (#012)
+
+`_open_first_result` (`export_one.py`) tries `SEARCH_RESULT_SELECTORS` in
+order and clicks the first one that matches anything. Until Sprint 012 that
+order was `#pane-side div[role="listitem"]` (0 matches, measured), then
+`#pane-side div[role="row"]` (59 matches — a wrapper that accepts a click
+and opens nothing), then `[data-testid="cell-frame-container"]` (the entry
+that actually opens a chat, per `scripts/probe_chat_start.py` runs 1-2).
+Neither selector raises on `.click()`, so the click silently landed on the
+dead wrapper first: `export-one --query "..."` could return with no chat
+open, requiring a manual open. Reordered to try `data-testid` before
+`role="row"`; regression test (`tests/test_open_first_result.py`) pins the
+order against the pre-fix defect.
+
+**Known gap, carried, not fixed here** (`cmd_export_all`'s exit code):
+`_export_one_ref` records `exported(...)` for any per-chat harvest that does
+not raise, regardless of `harvest["completeness"]`, and `_run_exit_code`
+(`commands.py:523-541`) reads only `enumeration`, `counts[OUTCOME_FAILED]`
+and the chat/enumerated count — never per-chat `completeness`. A run with a
+`truncated` conversation inside it can still exit `0`, unlike `export-one`'s
+own exit `3` for the identical condition on a single chat. The tally exists
+(`counts["truncated"]` in the manifest) but the exit code does not reflect
+it. Found by Sprint 012's Tester Agent while closing a coverage gap;
+`docs/active_state.json acknowledged_gaps.exit_code_ignores_per_chat_truncation`.
 
 ### Kind contract (ADR-0003, #005)
 
