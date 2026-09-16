@@ -2,9 +2,15 @@
 **File**: `docs/architecture/EXTRACTOR_BLUEPRINT.md`
 **Status**: `RATIFIED`
 **Sprint of origin**: #003
-**Last Audit Sprint**: #008
-**Last Audit Date**: 2026-09-01
-**Last Audit Commit SHA**: `d30a1b5`
+**Last Audit Sprint**: #012
+**Last Audit Date**: 2026-09-16
+**Last Audit Commit SHA**: `016db68`
+
+> **Stamp correction (Sprint 012):** this header still read `#008` /
+> `d30a1b5` while the body below already documented Sprint 011 content in
+> four places (`grep -n "Sprint 011" docs/architecture/EXTRACTOR_BLUEPRINT.md`)
+> — `RA-05 SPRINT_CLOSEOUT` requires the stamp to move with the sprint that
+> touches the file, and Sprint 011 touched it without advancing this line.
 
 ---
 
