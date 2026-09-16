@@ -222,14 +222,43 @@ def test_cmd_export_all_returns_exit_incomplete_when_enumeration_did_not_converg
     that decides it, so it is exercised directly rather than through a
     Playwright-driving harness this project deliberately does not build
     (README § Contributing: no live WhatsApp in CI).
+
+    `chats_enumerated` is deliberately 1, matching the single `chats` entry,
+    so only the `enumeration` check can fail this assertion — a manifest
+    that also under-counts chats would pass even with the enumeration check
+    deleted, which is exactly the mutation this test exists to catch.
     """
     manifest = {
         "enumeration": "truncated",
         "counts": {OUTCOME_FAILED: 0},
         "chats": [{"outcome": OUTCOME_EXPORTED}],
-        "chats_enumerated": 3,
+        "chats_enumerated": 1,
     }
     assert cli._run_exit_code(manifest) == cli.EXIT_INCOMPLETE
+
+
+def test_a_truncated_chats_harvest_does_not_alone_cause_exit_incomplete() -> None:
+    """Pins current behavior, does not endorse it. `_export_one_ref`
+    (`commands.py:288-292`) always records `exported(...)` when the harvest
+    does not raise, regardless of `harvest["completeness"]` — a `truncated`
+    harvest is not `OUTCOME_FAILED`. `_run_exit_code` never reads per-chat
+    `completeness` at all, only `enumeration`, `counts[OUTCOME_FAILED]` and
+    the chat/enumerated count. So a run where enumeration converged, nothing
+    raised, and every enumerated chat has a journal line returns 0 even if
+    one of those chats never reached the end of its own conversation - the
+    `completeness` tally lives in `counts["truncated"]` (`manifest.py:183`),
+    readable from the manifest, but not reflected in the exit code the way
+    `export-one`'s own exit 3 reflects it for a single chat. Named as a
+    carried finding, not fixed here: `docs/active_state.json`
+    `acknowledged_gaps.exit_code_ignores_per_chat_truncation`.
+    """
+    manifest = {
+        "enumeration": cli.ENUMERATION_CONVERGED,
+        "counts": {OUTCOME_FAILED: 0, "truncated": 1},
+        "chats": [{"outcome": OUTCOME_EXPORTED, "completeness": "truncated"}],
+        "chats_enumerated": 1,
+    }
+    assert cli._run_exit_code(manifest) == 0
 
 
 def test_cmd_export_all_returns_exit_incomplete_when_a_chat_failed() -> None:
