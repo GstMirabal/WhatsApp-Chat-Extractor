@@ -49,7 +49,7 @@ applies; every other unit is a direct file edit needing no skill lookup.
 
 | Skill | Why |
 | :--- | :--- |
-| `readme-standardizer` | Row 4 updates `README.md`; the skill's own trigger is unconditional ("ALWAYS ... update") |
+| None | See row 4 rejection below |
 
 ---
 
@@ -57,6 +57,7 @@ applies; every other unit is a direct file edit needing no skill lookup.
 
 | Candidate | Why rejected |
 | :--- | :--- |
+| `readme-standardizer` (row 4) | Invoked, then rejected on output: its mandatory procedure OVERWRITES the entire `README.md` with a generic template, moving old content into "About"/"Usage" at its own discretion. `IMPLEMENTATION_PLAN.md` § Design and § Work row 4 both state this is a targeted 4-item correction preserving the existing mature, evidence-based structure — an overwrite would destroy content (exit-code tables, `completeness` semantics, the Privacy constraints section) the plan never asked to touch. Applied the 4 fixes directly with `Edit` instead. |
 | `python-quality-auditor` | Owned by the Phase 7 QA Gate (`agents.md §1 linter_command`), not Phase 4.2 authoring; rows 1-3 still get `ruff check .` and the AST complexity walk at Verification/Phase 7, unchanged |
 | `omni-context-minimizer` | Every file this sprint touches is under 200 lines except none identified over the threshold at plan time; re-check per file at Phase 6 if a target turns out longer (`agents.md §2 ast_skeleton`) |
 | `env-shielding-auditor` | No `.env`/secret-shaped file is created or modified by any Work row |

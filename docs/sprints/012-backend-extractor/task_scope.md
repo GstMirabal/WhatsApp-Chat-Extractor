@@ -16,10 +16,10 @@ subtask from claiming the same file.
 
 | # | File | Operation | Risk | Assignee | Model | Effort | Status |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| 1 | `src/whatsapp_chat_extractor/export_one.py` | modify | medium | `implementer_agent` | sonnet | medium | ⏳ |
-| 2 | `tests/test_open_first_result.py` | create | low | `implementer_agent` | sonnet | medium | ⏳ |
-| 3 | `tests/test_export_all.py` | modify | low | `implementer_agent` | sonnet | medium | ⏳ |
-| 4 | `README.md` | modify | low | `implementer_agent` | sonnet | medium | ⏳ |
+| 1 | `src/whatsapp_chat_extractor/export_one.py` | modify | medium | `implementer_agent` | sonnet | medium | ✅ `c6b29d0` |
+| 2 | `tests/test_open_first_result.py` | create | low | `implementer_agent` | sonnet | medium | ✅ `c6b29d0` |
+| 3 | `tests/test_export_all.py` | modify | low | `implementer_agent` | sonnet | medium | ✅ `3dc92e5` |
+| 4 | `README.md` | modify | low | `implementer_agent` | sonnet | medium | ✅ `7e48a3e` |
 | 5 | `docs/0_SYSTEM_OVERVIEW.md` | modify | low | `doc_orchestrator` | sonnet | medium | ⏳ |
 | 6 | `docs/architecture/EXTRACTOR_BLUEPRINT.md` | modify | low | `doc_orchestrator` | sonnet | medium | ⏳ |
 | 7 | `pyproject.toml` | modify | low | `implementer_agent` | sonnet | medium | ⏳ |
